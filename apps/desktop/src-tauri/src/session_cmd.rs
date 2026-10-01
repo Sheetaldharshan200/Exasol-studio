@@ -4,15 +4,13 @@
 
 use std::time::Instant;
 
-use serde::Serialize;
 use sqlx_core::transaction::TransactionManager;
 use sqlx_exasol::{AssertSqlSafe, ExaTransactionManager, Executor};
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
-use crate::session::{info_of, open_schema_sql, SessionInfo};
+use crate::session::{info_of, open_schema_sql, Fence, PendingTab, SessionInfo};
 use crate::state::AppState;
-
 
 #[tauri::command]
 pub async fn session_info(state: State<'_, AppState>, tab_id: String) -> AppResult<SessionInfo> {
@@ -79,8 +77,8 @@ pub async fn session_set_schema(state: State<'_, AppState>, profile_id: String, 
 
 /// Close a tab's session; `commit` decides what happens to open changes.
 #[tauri::command]
-pub async fn session_close(state: State<'_, AppState>, tab_id: String, commit: bool, seen: Option<usize>) -> AppResult<()> {
-    state.sessions.close(&tab_id, commit, seen).await
+pub async fn session_close(state: State<'_, AppState>, tab_id: String, commit: bool, seen: Option<u64>) -> AppResult<()> {
+    state.sessions.close(&tab_id, commit, Fence::Shown(seen)).await
 }
 
 /// Set once the person has settled open transactions and asked to quit.
@@ -113,22 +111,8 @@ pub fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingTab {
-    pub tab_id: String,
-    pub changes: usize,
-    pub recent: Vec<String>,
-}
-
 /// Tabs with uncommitted changes — for disconnect and quit.
 #[tauri::command]
 pub async fn sessions_with_changes(state: State<'_, AppState>, profile_id: Option<String>) -> AppResult<Vec<PendingTab>> {
-    Ok(state
-        .sessions
-        .with_changes(profile_id.as_deref())
-        .await
-        .into_iter()
-        .map(|(tab_id, changes, recent)| PendingTab { tab_id, changes, recent })
-        .collect())
+    Ok(state.sessions.with_changes(profile_id.as_deref()).await)
 }

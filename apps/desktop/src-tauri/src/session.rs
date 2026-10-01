@@ -33,6 +33,9 @@ pub struct TabSession {
     pub manual: bool,
     /// Statements since the last commit/rollback that changed something.
     pub changes: Vec<String>,
+    /// Bumped by every run that changed or settled something — never reset,
+    /// so "what the person was shown" is a version, not just a count.
+    pub change_seq: u64,
     pub last_used: Instant,
 }
 
@@ -74,6 +77,26 @@ pub struct SessionInfo {
     pub idle_seconds: u64,
     /// Whether the tab has a session at all yet.
     pub open: bool,
+    /// The version of `changes`; a close names the one it was shown.
+    pub change_seq: u64,
+}
+
+/// A tab with uncommitted changes — for disconnect and quit.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingTab {
+    pub tab_id: String,
+    pub changes: usize,
+    pub recent: Vec<String>,
+    pub change_seq: u64,
+}
+
+/// What a close checks before it commits or rolls back.
+pub enum Fence {
+    /// Nobody is asked (quit fallback, disconnect cleanup): just end it.
+    Force,
+    /// The `change_seq` the person was shown, or None if shown nothing.
+    Shown(Option<u64>),
 }
 
 const RECENT: usize = 10;
@@ -112,11 +135,12 @@ pub(crate) fn info_of(s: &TabSession) -> SessionInfo {
         recent: s.changes.iter().rev().take(RECENT).cloned().collect(),
         idle_seconds: s.last_used.elapsed().as_secs(),
         open: true,
+        change_seq: s.change_seq,
     }
 }
 
 fn closed_info() -> SessionInfo {
-    SessionInfo { session_id: None, schema: None, autocommit: true, changes: 0, recent: Vec::new(), idle_seconds: 0, open: false }
+    SessionInfo { session_id: None, schema: None, autocommit: true, changes: 0, recent: Vec::new(), idle_seconds: 0, open: false, change_seq: 0 }
 }
 
 impl TabSessions {
@@ -169,18 +193,21 @@ impl TabSessions {
     }
 
     /// End a tab's session: commit or roll back what is open, then close.
-    /// `seen` is how many changes the person was shown when they chose; if
-    /// more arrived since, nothing happens and the session stays (None skips
-    /// the check — for ends nobody is asked about). A commit that fails keeps
-    /// the session too: the person chose Commit and must hear that it may not
-    /// have happened. The slot lock waits for a statement still running.
-    pub async fn close(&self, tab_id: &str, commit: bool, seen: Option<usize>) -> AppResult<()> {
+    /// With `Fence::Shown`, uncommitted changes the person was not shown (a
+    /// different `change_seq`) stop the close and the session stays. A commit
+    /// that fails keeps the session too: the person chose Commit and must
+    /// hear that it may not have happened. The slot lock waits for a statement
+    /// still running, and is held until the map entry is gone, so a checkout
+    /// waiting on it opens a fresh slot instead of reusing this one.
+    pub async fn close(&self, tab_id: &str, commit: bool, fence: Fence) -> AppResult<()> {
         let slot = self.0.lock().await.get(tab_id).cloned();
         let Some(slot) = slot else { return Ok(()) };
         let mut guard = slot.lock().await;
         if let Some(s) = guard.as_mut().filter(|s| s.manual) {
-            if let Some(why) = seen.and_then(|n| close_refusal(s.changes.len(), n)) {
-                return Err(AppError::InvalidSettings(why));
+            if let Fence::Shown(seen) = fence {
+                if let Some(why) = close_refusal(s.changes.len(), s.change_seq, seen) {
+                    return Err(AppError::InvalidSettings(why));
+                }
             }
             if commit {
                 if let Err(e) = ExaTransactionManager::commit(&mut s.conn).await {
@@ -193,11 +220,12 @@ impl TabSessions {
             }
         }
         *guard = None;
-        drop(guard);
         let mut map = self.0.lock().await;
         if map.get(tab_id).is_some_and(|cur| Arc::ptr_eq(cur, &slot)) {
             map.remove(tab_id);
         }
+        drop(map);
+        drop(guard);
         Ok(())
     }
 
@@ -216,13 +244,13 @@ impl TabSessions {
     /// Every session (optionally of one profile) with uncommitted changes —
     /// read from the sessions themselves, never a cache. Waits for a session
     /// that is busy running.
-    pub async fn with_changes(&self, profile_id: Option<&str>) -> Vec<(String, usize, Vec<String>)> {
+    pub async fn with_changes(&self, profile_id: Option<&str>) -> Vec<PendingTab> {
         let slots: Vec<(String, Slot)> = self.0.lock().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         let mut out = Vec::new();
         for (tab, slot) in slots {
             if let Some(s) = slot.lock().await.as_ref() {
                 if s.manual && !s.changes.is_empty() && profile_id.is_none_or(|p| s.profile_id == p) {
-                    out.push((tab, s.changes.len(), s.changes.iter().rev().take(RECENT).cloned().collect()));
+                    out.push(PendingTab { tab_id: tab, changes: s.changes.len(), recent: s.changes.iter().rev().take(RECENT).cloned().collect(), change_seq: s.change_seq });
                 }
             }
         }
@@ -247,7 +275,7 @@ impl TabSessions {
         for (tab, slot) in slots {
             let belongs = slot.lock().await.as_ref().is_some_and(|s| s.profile_id == profile_id);
             if belongs {
-                let _ = self.close(&tab, false, None).await;
+                let _ = self.close(&tab, false, Fence::Force).await;
             }
         }
     }
@@ -256,7 +284,7 @@ impl TabSessions {
     pub async fn close_all(&self) {
         let tabs: Vec<String> = self.0.lock().await.keys().cloned().collect();
         for t in tabs {
-            let _ = self.close(&t, false, None).await;
+            let _ = self.close(&t, false, Fence::Force).await;
         }
     }
 }
@@ -277,7 +305,7 @@ async fn open_session(state: &AppState, profile_id: &str) -> AppResult<TabSessio
     if manual {
         ExaTransactionManager::begin(&mut conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
     }
-    Ok(TabSession { profile_id: profile_id.to_string(), conn, session_id, manual, changes: Vec::new(), last_used: Instant::now() })
+    Ok(TabSession { profile_id: profile_id.to_string(), conn, session_id, manual, changes: Vec::new(), change_seq: 0, last_used: Instant::now() })
 }
 
 /// After a run on the session: count what changed, keep manual mode open.
@@ -285,6 +313,9 @@ pub fn after_run(s: &mut TabSession, ran: &[(String, bool)]) {
     s.last_used = Instant::now();
     if !s.manual {
         return;
+    }
+    if ran.iter().any(|(st, ok)| *ok && (is_txn_end(st) || counts_as_change(st))) {
+        s.change_seq += 1;
     }
     record_changes(&mut s.changes, ran);
 }
@@ -312,13 +343,12 @@ pub async fn restart_manual(conn: &mut ExaConnection) -> Result<(), String> {
     ExaTransactionManager::begin(conn, None).await.map_err(|e| e.to_string())
 }
 
-/// Why a close must not go ahead: changes the person was not shown.
-pub fn close_refusal(changes: usize, seen: usize) -> Option<String> {
-    (changes > seen).then(|| {
-        let new = changes - seen;
+/// Why a close must not go ahead: uncommitted changes other than the ones
+/// the person was shown (`seen` is the version they saw, None for nothing).
+pub fn close_refusal(changes: usize, change_seq: u64, seen: Option<u64>) -> Option<String> {
+    (changes > 0 && seen != Some(change_seq)).then(|| {
         format!(
-            "{new} more uncommitted change{} arrived after you were asked. Nothing was committed or rolled back — review the tab and choose again.",
-            if new == 1 { "" } else { "s" }
+            "Uncommitted changes changed after you were asked ({changes} now). Nothing was committed or rolled back — review the tab and choose again."
         )
     })
 }
@@ -422,13 +452,15 @@ mod live {
 
         // Closing after being shown fewer changes than there are is refused
         // and the session stays; with the right count it rolls back.
-        assert!(state.sessions.close("tab-1", false, Some(0)).await.is_err());
+        let seq = state.sessions.peek("tab-1").await.change_seq;
+        assert!(state.sessions.close("tab-1", false, Fence::Shown(None)).await.is_err());
+        assert!(state.sessions.close("tab-1", false, Fence::Shown(Some(seq - 1))).await.is_err());
         assert!(state.sessions.peek("tab-1").await.open);
-        state.sessions.close("tab-1", false, Some(1)).await.unwrap();
+        state.sessions.close("tab-1", false, Fence::Shown(Some(seq))).await.unwrap();
         assert!(!state.sessions.peek("tab-1").await.open);
         assert_eq!(crate::query::fetch_all_rows(&pool, "SELECT COUNT(*) FROM STUDIO_SESSION_PROBE.T").await.unwrap()[0][0], serde_json::json!(2));
 
-        state.sessions.close("tab-1", false, None).await.unwrap();
+        state.sessions.close("tab-1", false, Fence::Force).await.unwrap();
         pool.execute("DROP SCHEMA STUDIO_SESSION_PROBE CASCADE").await.ok();
         pool.close().await;
         let _ = std::fs::remove_dir_all(dir);
@@ -475,12 +507,13 @@ mod tests {
     }
 
     #[test]
-    fn a_close_is_refused_only_when_changes_arrived_after_the_question() {
-        assert!(close_refusal(0, 0).is_none());
-        assert!(close_refusal(3, 3).is_none());
-        assert!(close_refusal(2, 5).is_none(), "fewer than shown (a COMMIT ran) is safe");
-        assert!(close_refusal(1, 0).unwrap().starts_with("1 more uncommitted change arrived"));
-        assert!(close_refusal(4, 1).unwrap().starts_with("3 more uncommitted changes arrived"));
+    fn a_close_is_refused_unless_the_person_saw_this_version_of_the_changes() {
+        assert!(close_refusal(0, 0, None).is_none(), "nothing open, nothing to lose");
+        assert!(close_refusal(0, 7, Some(3)).is_none(), "settled meanwhile: nothing to lose");
+        assert!(close_refusal(2, 5, Some(5)).is_none());
+        assert!(close_refusal(1, 1, None).is_some(), "shown nothing, but changes exist");
+        // Same count, different changes (COMMIT; INSERT C ran meanwhile).
+        assert!(close_refusal(2, 6, Some(5)).unwrap().contains("2 now"));
     }
 
     #[test]

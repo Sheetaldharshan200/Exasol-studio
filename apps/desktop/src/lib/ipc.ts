@@ -400,6 +400,8 @@ export type SessionInfo = {
   idleSeconds: number;
   /** Whether the tab has a session at all yet. */
   open: boolean;
+  /** Version of the uncommitted changes; a close names the one it showed. */
+  changeSeq: number;
 };
 /** One file picked through the OS dialog and copied into the attachments folder. */
 export type PickedAttachment = { name: string; path: string; size: number; mime: string; inline?: string };
@@ -910,9 +912,10 @@ export const ipc = {
   sessionCommit: (profileId: string, tabId: string) => call<SessionInfo>("session_commit", { profileId, tabId }),
   sessionRollback: (profileId: string, tabId: string) => call<SessionInfo>("session_rollback", { profileId, tabId }),
   sessionSetSchema: (profileId: string, tabId: string, schema: string) => call<SessionInfo>("session_set_schema", { profileId, tabId, schema }),
-  /** `seen`: the uncommitted changes the person was shown; more → refused. */
+  /** `seen`: the `changeSeq` the person was shown (none if shown nothing);
+   *  any other uncommitted changes → refused, the session stays. */
   sessionClose: (tabId: string, commit: boolean, seen?: number) => call<null>("session_close", { tabId, commit, seen }),
-  sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number; recent: string[] }[]>("sessions_with_changes", { profileId }),
+  sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number; recent: string[]; changeSeq: number }[]>("sessions_with_changes", { profileId }),
   /** The page has a quit request and is asking the person (stops the watchdog). */
   quitAck: () => call<null>("quit_ack"),
   /** Quit for real, after open transactions were settled. */
