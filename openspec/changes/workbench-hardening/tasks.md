@@ -97,11 +97,11 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 
 ## Phase 6 — Network
 
-- [ ] 6.1 SSH tunnel: host, port, user; password, private key + passphrase, or agent (`ssh_tunnel.rs`; test: `ssh_tunnel.rs`).
-- [ ] 6.2 Host-key checking (strict / accept new / ask) and known_hosts.
-- [ ] 6.3 Jump host and `~/.ssh/config` host aliases.
-- [ ] 6.4 Tunnel keep-alive and connect timeout; tunnel shared across tabs of one connection.
-- [ ] 6.5 HTTP/SOCKS proxy (`connection.rs`).
+- [x] 6.1 SSH tunnel: host, port, user; password, private key + passphrase, or agent (`ssh_tunnel.rs`; test: `ssh_tunnel.rs`). System OpenSSH (`ssh -N -L`); a password or passphrase through an askpass helper and the child environment, never argv. Live-tested against a real sshd forwarding to Exasol.
+- [x] 6.2 Host-key checking (strict / accept new / ask) and known_hosts. Ask: the fingerprint is shown and only exactly that key is stored (Studio's own known_hosts, read with ~/.ssh/known_hosts); accept new; strict. Live-tested.
+- [x] 6.3 Jump host and `~/.ssh/config` host aliases. Native via OpenSSH: `-J` and every ~/.ssh/config setting; "ask" resolves aliases with `ssh -G`. Through a jump host "ask" cannot show the key and says so.
+- [x] 6.4 Tunnel keep-alive and connect timeout; tunnel shared across tabs of one connection. ServerAliveInterval, ConnectTimeout = the app's connect timeout; one tunnel per connection (its pool), shared by its tabs; a forward the server refuses is reported.
+- [x] 6.5 HTTP/SOCKS proxy (`connection.rs`). `proxy_tunnel.rs`: SOCKS5 (RFC 1928/1929) and HTTP CONNECT with Basic; TLS stays end to end. End-to-end test through a SOCKS5 proxy.
 
 ## Phase 7 — Daily-use polish
 

@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { displayFingerprint, trustOffer, type TrustOffer } from "@/lib/connect-flow";
+import { displayFingerprint, hostKeyOffer, trustOffer, type TrustOffer } from "@/lib/connect-flow";
 import {
   errorMessage,
   ipc,
@@ -62,6 +62,8 @@ export function ConnectRunOverlay({
   const [done, setDone] = useState<null | "ok" | "fail">(null);
   // A certificate to decide about, and the draft a retry would use.
   const [offer, setOffer] = useState<TrustOffer | null>(null);
+  // An SSH host key to decide about, with the draft that met it.
+  const [hostKey, setHostKey] = useState<{ host: string; fingerprint: string; draft: Draft } | null>(null);
   // Connect failed: the draft can still be saved, without connecting.
   const [unsaved, setUnsaved] = useState<Draft | null>(null);
   const rerun = useRef<(d: Draft) => void>(() => undefined);
@@ -119,26 +121,34 @@ export function ConnectRunOverlay({
       setSteps({ reach: "idle", auth: "idle", db: "idle" });
       setDone(null);
       setOffer(null);
+      setHostKey(null);
       setUnsaved(null);
       setStep("reach", "running");
-      append("info", `Pinging ${d.host}:${d.port} …`);
-      try {
-        const ping = await ipc.pingServer(d.host, d.port);
-        if (cancelled) return;
-        if (!ping.reachable) {
+      const route = d.network?.ssh ? `the SSH server ${d.network.ssh.host}` : d.network?.proxy ? `the proxy ${d.network.proxy.host}:${d.network.proxy.port}` : null;
+      if (route) {
+        // Only reachable through the route: connecting is the check.
+        append("info", `Reaching ${d.host}:${d.port} through ${route} …`);
+        setStep("reach", "ok");
+      } else {
+        append("info", `Pinging ${d.host}:${d.port} …`);
+        try {
+          const ping = await ipc.pingServer(d.host, d.port);
+          if (cancelled) return;
+          if (!ping.reachable) {
+            setStep("reach", "fail");
+            append("error", ping.error ?? "Server unreachable.");
+            finish("fail");
+            return;
+          }
+          setStep("reach", "ok");
+          append("success", `Server reachable — ${ping.latencyMs} ms.`);
+        } catch (err) {
+          if (cancelled) return;
           setStep("reach", "fail");
-          append("error", ping.error ?? "Server unreachable.");
+          append("error", errorMessage(err));
           finish("fail");
           return;
         }
-        setStep("reach", "ok");
-        append("success", `Server reachable — ${ping.latencyMs} ms.`);
-      } catch (err) {
-        if (cancelled) return;
-        setStep("reach", "fail");
-        append("error", errorMessage(err));
-        finish("fail");
-        return;
       }
 
       setStep("auth", "running");
@@ -176,7 +186,9 @@ export function ConnectRunOverlay({
         setSteps((s) => ({ ...s, auth: s.auth === "running" ? "fail" : s.auth, db: "idle" }));
         append("error", errorMessage(err));
         const o = trustOffer(err);
+        const hk = hostKeyOffer(err);
         if (o) setOffer(o);
+        else if (hk) setHostKey({ ...hk, draft: d });
         else if (m === "connect") setUnsaved(d);
         finish("fail");
       }
@@ -334,7 +346,36 @@ export function ConnectRunOverlay({
         </div>
       </div>
 
-      {offer ? (
+      {hostKey ? (
+        <div className="shrink-0 space-y-2 border-t border-border px-4 py-3">
+          <p className="text-[12.5px] text-foreground">
+            The SSH server {hostKey.host} is not known yet. Compare its host key with the one its administrator gives you before trusting it.
+          </p>
+          <pre className="font-mono text-[11.5px] break-all whitespace-pre-wrap text-muted-foreground">{hostKey.fingerprint}</pre>
+          <div className="flex justify-end gap-2">
+            <button onClick={onClose} className="flex h-8 items-center rounded-lg border border-border px-3 text-[13px] text-muted-foreground hover:text-foreground">
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                const { draft: d, fingerprint } = hostKey;
+                const ssh = d.network?.ssh;
+                if (!ssh) return;
+                try {
+                  await ipc.sshTrustHostKey(ssh, fingerprint);
+                  rerun.current(d);
+                } catch (e) {
+                  setHostKey(null);
+                  setLogs((l) => [...l, { id: ++logId, ts: clock(), level: "error", text: errorMessage(e) }]);
+                }
+              }}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" /> Trust this host key
+            </button>
+          </div>
+        </div>
+      ) : offer ? (
         <div className="shrink-0 space-y-2 border-t border-border px-4 py-3">
           <p className="text-[12.5px] text-foreground">
             {offer.changedFrom

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { displayFingerprint, encryptionChoice, hookNotice, importNotice, isSaasHost, trustOffer } from "./connect-flow.ts";
+import { displayFingerprint, encryptionChoice, hookNotice, hostKeyOffer, importNotice, isSaasHost, trustOffer } from "./connect-flow.ts";
 
 const FP = "AB".repeat(32);
 const OLD = "CD".repeat(32);
@@ -55,4 +55,12 @@ test("an import says what was added, skipped and refused", () => {
   assert.equal(importNotice({ added: [], skipped: ["C"], failed: [] }).title, "Nothing new to import");
   assert.equal(importNotice({ added: ["A"], skipped: [], failed: ["D: bad port"] }).kind, "warning");
   assert.equal(importNotice({ added: [], skipped: [], failed: [] }).body, "The file has no connections.");
+});
+
+test("an unknown SSH host key becomes a host-key offer", () => {
+  const e = { kind: "unknown-host-key", message: "…", host: "bastion", fingerprint: "ED25519 SHA256:abc" };
+  assert.deepEqual(hostKeyOffer(e), { host: "bastion", fingerprint: "ED25519 SHA256:abc" });
+  assert.equal(hostKeyOffer({ ...e, fingerprint: "nothing" }), null);
+  assert.equal(hostKeyOffer({ kind: "untrusted-certificate", fingerprint: "AB".repeat(32) }), null);
+  assert.equal(hostKeyOffer(null), null);
 });
