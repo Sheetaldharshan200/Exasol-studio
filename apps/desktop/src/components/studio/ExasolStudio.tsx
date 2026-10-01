@@ -74,6 +74,7 @@ import { nullLabel } from "@/lib/null-label";
 import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
 import { errorMarker, runStartIn } from "@/lib/error-markers";
+import { importNotice } from "@/lib/connect-flow";
 import { execDefaults, maxRowsOptions, splitsFor, type ExecDefaults } from "@/lib/exec-settings";
 import { openableSource, sourceQuery, sourceTitle } from "@/lib/script-source";
 import { QueryPlanView } from "./QueryPlanView";
@@ -3061,6 +3062,32 @@ export function ExasolStudio({
               onFocusConnection={onFocusConnection}
               onDisconnect={disconnectSafely}
               onRemoveConnection={(id) => void removeConnection(id)}
+              onExportConnections={() =>
+                void ipc
+                  .exportConnections()
+                  .then((path) => path && pushNotification("success", "Connections exported", `Saved to ${path}. Passwords are not in the file.`))
+                  .catch((e) => pushNotification("warning", "Could not export the connections", errorMessage(e)))
+              }
+              onImportConnections={() =>
+                void ipc
+                  .importConnections()
+                  .then(async (report) => {
+                    if (!report) return;
+                    await onSaved?.();
+                    const n = importNotice(report);
+                    pushNotification(n.kind, n.title, n.body);
+                  })
+                  .catch((e) => pushNotification("warning", "Could not import the connections", errorMessage(e)))
+              }
+              onDuplicateConnection={(id) =>
+                void ipc
+                  .duplicateConnectionProfile(id)
+                  .then(async (copy) => {
+                    await onSaved?.();
+                    pushNotification("success", "Connection duplicated", `"${copy.name}" was added. Edit it in its Properties.`);
+                  })
+                  .catch((e) => pushNotification("warning", "Could not duplicate the connection", errorMessage(e)))
+              }
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
               onNewVirtualSchema={openAddSource}

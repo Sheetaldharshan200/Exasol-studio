@@ -71,22 +71,22 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 
 ## Phase 4 — Connection essentials
 
-- [ ] 4.1 TLS certificate fingerprint pinning (`host/FP:port` and a Fingerprint field) (`connection.rs`, `lib/dsn.ts`; test: `dsn.test.ts`, `connection.rs`).
-- [ ] 4.2 Trust-on-first-use: on an unverified certificate show its SHA-256 fingerprint and offer "Trust this certificate" → pinned (`ConnectRunOverlay.tsx`, `connection.rs::server_fingerprint`; test: `connection.rs`).
-- [ ] 4.3 Custom CA file (`connection.rs`; test: `connection.rs`).
-- [ ] 4.4 Remove "Disabled" encryption (Exasol 8.19+ rejects it); one default ("Verify certificate" with TOFU) for new, edited and imported profiles (`ConnectionPropertiesTab.tsx`, `profiles.rs`; test: `profiles.rs`).
-- [ ] 4.5 OpenID access token / refresh token auth (`connection.rs`, `ConnectionPropertiesTab.tsx`; test: `connection.rs`).
-- [ ] 4.6 SaaS: personal access token, host from the web console, allow-list hint in errors (`ConnectionPropertiesTab.tsx`, `error.rs`; test: `error.rs`).
-- [ ] 4.7 Host lists and ranges `host1..5:8563`, with UI help and tests (`lib/dsn.ts`; test: `dsn.test.ts`).
-- [ ] 4.8 Port validated 1–65535 with a clear message (`lib/dsn.ts`, `profiles.rs`; test: `dsn.test.ts`).
-- [ ] 4.9 Test Connection in the edit view; it tests the selected driver (`ConnectionPropertiesTab.tsx`, `connection.rs::test_connection`).
-- [ ] 4.10 "Save & Connect" saves only after a successful connect (or asks) (`ConnectRunOverlay.tsx`).
-- [ ] 4.11 Password prompt on connect when not saved (`ConnectPasswordDialog.tsx`).
-- [ ] 4.12 Profile identity: editing host/port/user updates the shared-registry entry instead of resurrecting the old one; real duplicates allowed and a Duplicate action (`profiles.rs`, `shared_registry.rs`; test: `profiles.rs`).
-- [ ] 4.13 `ping_server` tries every resolved address (IPv4 and IPv6) (`connection.rs`; test: `connection.rs`).
-- [ ] 4.14 Connect hook failures shown to the user (`connection.rs`).
-- [ ] 4.15 Paste a JDBC URL / pyexasol DSN to fill the form (`lib/dsn.ts::parseDsn`; test: `dsn.test.ts`).
-- [ ] 4.16 Import / export connections as JSON (passwords excluded) (`profiles.rs`; test: `profiles.rs`).
+- [x] 4.1 TLS certificate fingerprint pinning (`host/FP:port` and a Fingerprint field) (`connection.rs`, `lib/dsn.ts`; test: `dsn.test.ts`, `connection.rs`). Studio checks the pin itself before every connect (the driver cannot pin): `tls_trust.rs`, `profile_check.rs`; parsing in `lib/dsn.ts`.
+- [x] 4.2 Trust-on-first-use: on an unverified certificate show its SHA-256 fingerprint and offer "Trust this certificate" → pinned (`ConnectRunOverlay.tsx`, `connection.rs::server_fingerprint`; test: `connection.rs`). Live-tested against the local database: untrusted → pinned → connects; a different pin → certificate changed.
+- [x] 4.3 Custom CA file (`connection.rs`; test: `connection.rs`). Native driver (`ssl-ca`); other drivers say so plainly.
+- [x] 4.4 Remove "Disabled" encryption (Exasol 8.19+ rejects it); one default ("Verify certificate" with TOFU) for new, edited and imported profiles (`ConnectionPropertiesTab.tsx`, `profiles.rs`; test: `profiles.rs`). "Disabled" maps to "Required"; new connections default to "Verify certificate and host". The agent's own connect encrypts without verifying (it cannot answer the trust question).
+- [x] 4.5 OpenID access token / refresh token auth (`connection.rs`, `ConnectionPropertiesTab.tsx`; test: `connection.rs`). Native driver; bridge drivers refuse token sign-in with the reason.
+- [x] 4.6 SaaS: personal access token, host from the web console, allow-list hint in errors (`ConnectionPropertiesTab.tsx`, `error.rs`; test: `error.rs`). The PAT goes in the password field; `error.rs::with_saas_hint` adds the allow-list cause.
+- [x] 4.7 Host lists and ranges `host1..5:8563`, with UI help and tests (`lib/dsn.ts`; test: `dsn.test.ts`). Ranges as the driver reads them; comma lists refused with the range form (the driver has none).
+- [x] 4.8 Port validated 1–65535 with a clear message (`lib/dsn.ts`, `profiles.rs`; test: `dsn.test.ts`). `lib/dsn.ts::checkPort` and `profile_check.rs`.
+- [x] 4.9 Test Connection in the edit view; it tests the selected driver (`ConnectionPropertiesTab.tsx`, `connection.rs::test_connection`). Uses the stored secret when none is typed; bridges and exarrow run the same two reads.
+- [x] 4.10 "Save & Connect" saves only after a successful connect (or asks) (`ConnectRunOverlay.tsx`). The draft is tested first; on failure "Save without connecting".
+- [x] 4.11 Password prompt on connect when not saved (`ConnectPasswordDialog.tsx`). `ipc.connect` asks through the registered prompt for every connect path; "Save it" only when the policy saves.
+- [x] 4.12 Profile identity: editing host/port/user updates the shared-registry entry instead of resurrecting the old one; real duplicates allowed and a Duplicate action (`profiles.rs`, `shared_registry.rs`; test: `profiles.rs`). Phase 1 already removed the old shared entry on an address change; a new profile merges only with the same name and address (`profile_check::same_connection`); Duplicate copies secret and settings.
+- [x] 4.13 `ping_server` tries every resolved address (IPv4 and IPv6) (`connection.rs`; test: `connection.rs`). `reach_any`, tested with an IPv6 address that fails and an IPv4 one that answers.
+- [x] 4.14 Connect hook failures shown to the user (`connection.rs`). Connect hook failures come back in `ServerInfo.hookErrors`, disconnect ones from `disconnect`; shown as a notice and in the connect window's log.
+- [x] 4.15 Paste a JDBC URL / pyexasol DSN to fill the form (`lib/dsn.ts::parseDsn`; test: `dsn.test.ts`). Pasting into the server field fills the form; passwords are never read from a paste.
+- [x] 4.16 Import / export connections as JSON (passwords excluded) (`profiles.rs`; test: `profiles.rs`). `profile_io.rs`: versioned format, settings and pin included, secrets never; existing connections skipped.
 
 ## Phase 5 — Production safety
 

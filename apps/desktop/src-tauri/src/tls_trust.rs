@@ -107,7 +107,8 @@ pub fn is_untrusted_certificate(error: &str) -> bool {
 /// the nodes of a cluster present the same certificate.
 pub fn first_host(host: &str) -> String {
     let b = host.as_bytes();
-    if let Some(i) = host.find("..") {
+    // The last "..", as the driver reads a range.
+    if let Some(i) = host.rfind("..") {
         let digit_before = i > 0 && b[i - 1].is_ascii_digit();
         let end = host[i + 2..].find(|c: char| !c.is_ascii_digit()).map_or(host.len(), |n| i + 2 + n);
         if digit_before && end > i + 2 {

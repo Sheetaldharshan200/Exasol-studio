@@ -108,6 +108,32 @@ pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionP
     Ok(profile)
 }
 
+/// Copy a connection — its secret and its Properties settings — under a free
+/// name. The copy is a connection of its own from then on.
+#[tauri::command]
+pub fn duplicate_profile(state: State<'_, AppState>, profile_id: String) -> AppResult<ConnectionProfile> {
+    let src = find_profile(&state, &profile_id)?;
+    let taken: Vec<String> = load_profiles(&state)?.into_iter().map(|p| p.name).collect();
+    let mut copy = src.clone();
+    copy.id = String::new();
+    copy.name = crate::profile_check::copy_name(&src.name, &taken);
+    copy.created_at = None;
+    copy.last_used_at = None;
+    let saved = save_profile(&state, copy)?;
+    let settings = crate::connection_settings::read_settings(&state, &profile_id);
+    if !settings.is_null() {
+        crate::connection_settings::write_settings(&state, &saved.id, settings)?;
+    }
+    Ok(saved)
+}
+
+/// Whether connecting needs the secret asked for: none is stored, and none
+/// is kept for this session.
+#[tauri::command]
+pub fn profile_secret_missing(state: State<'_, AppState>, profile_id: String) -> AppResult<bool> {
+    Ok(find_profile(&state, &profile_id)?.password.is_empty())
+}
+
 /// Keep a password for this run only, and remove any stored copy — file and
 /// keychain — so "this session only" means exactly that. An empty password
 /// forgets it.
@@ -300,12 +326,7 @@ pub fn save_profile(
     let existing_index = if !profile.id.is_empty() {
         profiles.iter().position(|p| p.id == profile.id)
     } else {
-        profiles.iter().position(|p| {
-            p.host.trim().eq_ignore_ascii_case(profile.host.trim())
-                && p.port == profile.port
-                && p.username == profile.username
-                && p.driver_id == profile.driver_id
-        })
+        profiles.iter().position(|p| crate::profile_check::same_connection(p, &profile))
     };
 
     // Encrypt the password at rest (no-op when no vault is configured). If the

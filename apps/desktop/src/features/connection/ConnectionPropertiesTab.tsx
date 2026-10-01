@@ -24,7 +24,8 @@ import type { ActiveConnection } from "@/state/useConnections";
 import { cn } from "@/lib/utils";
 import { connectionUrl } from "@/lib/connection-url";
 import { AUTH_METHODS } from "@/lib/connect-flow";
-import { ConnectionTrustFields, SignInMethodRow, type TrustDraft } from "@/features/connection/ConnectionTrustFields";
+import { AddressNote, ConnectionTrustFields, SignInMethodRow, type TrustDraft } from "@/features/connection/ConnectionTrustFields";
+import { checkHost, checkPort, parseDsn } from "@/lib/dsn";
 import { DEFAULT_CONN_SETTINGS, withConnDefaults, type ConnSettings } from "@/lib/conn-settings";
 export { DEFAULT_CONN_SETTINGS, type ConnSettings };
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
@@ -378,7 +379,7 @@ export function ConnectionPropertiesTab({
       id: profile?.id ?? "",
       name: profileDraft.name.trim() || `${profileDraft.username}@${profileDraft.host}`,
       host: profileDraft.host.trim(),
-      port: Number(profileDraft.port) || 8563,
+      port: checkPort(profileDraft.port).ok ? Number(profileDraft.port) : 0,
       username: profileDraft.username.trim(),
       password: profileDraft.password,
       schema: profileDraft.schema.trim() || null,
@@ -441,7 +442,8 @@ export function ConnectionPropertiesTab({
           name: profileDraft.name.trim() || profile.name,
           notes: profileDraft.notes,
           host: profileDraft.host.trim() || profile.host,
-          port: Number(profileDraft.port) || profile.port,
+          // An invalid port is refused by the backend with the reason.
+          port: checkPort(profileDraft.port).ok ? Number(profileDraft.port) : 0,
           schema: profileDraft.schema.trim() || null,
           username: profileDraft.username.trim() || profile.username,
           sslMode: profileDraft.sslMode,
@@ -697,12 +699,12 @@ export function ConnectionPropertiesTab({
   const usesToken = (profileDraft.authMethod ?? "password") !== "password";
   const secretLabel = AUTH_METHODS.find((m) => m.value === (profileDraft.authMethod ?? "password"))?.secret ?? "Password";
   // What a test or connect needs before it can start.
-  const canTry = !!profileDraft.host.trim() && (usesToken || !!profileDraft.username.trim());
+  const canTry = checkHost(profileDraft.host).ok && checkPort(profileDraft.port).ok && (usesToken || !!profileDraft.username.trim());
 
   const editRow = (
     label: string,
     key: "name" | "notes" | "host" | "port" | "schema" | "username" | "password",
-    opts?: { type?: string; placeholder?: string },
+    opts?: { type?: string; placeholder?: string; onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void },
   ) => (
     <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
       <span className="w-56 shrink-0 text-[12px] text-muted-foreground">{label}</span>
@@ -711,10 +713,26 @@ export function ConnectionPropertiesTab({
         value={profileDraft[key]}
         placeholder={opts?.placeholder}
         onChange={(e) => setProfileDraft((d) => ({ ...d, [key]: e.target.value }))}
+        onPaste={opts?.onPaste}
         className="h-8 w-full max-w-md rounded-md border border-border bg-secondary/30 px-2.5 font-mono text-[12.5px] text-foreground outline-none focus:border-primary/60"
       />
     </div>
   );
+  /** A pasted JDBC URL / exa:// URL / pyexasol DSN fills the address fields. */
+  function fillFromPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const parsed = parseDsn(e.clipboardData.getData("text"));
+    if (!parsed) return;
+    e.preventDefault();
+    setProfileDraft((d) => ({
+      ...d,
+      host: parsed.host,
+      ...(parsed.port ? { port: parsed.port } : {}),
+      ...(parsed.username ? { username: parsed.username } : {}),
+      ...(parsed.schema ? { schema: parsed.schema } : {}),
+      ...(parsed.fingerprint ? { fingerprint: parsed.fingerprint } : {}),
+      ...(parsed.sslMode ? { sslMode: parsed.sslMode } : {}),
+    }));
+  }
 
   const uptime = (() => {
     if (!connectedLive?.connectedAt) return null;
@@ -840,8 +858,9 @@ export function ConnectionPropertiesTab({
               {editRow("Notes", "notes", { placeholder: "Optional description" })}
             </SectionCard>
             <SectionCard title="Database">
-              {editRow("Database Server", "host")}
+              {editRow("Database Server", "host", { onPaste: fillFromPaste })}
               {editRow("Database Port", "port")}
+              <AddressNote host={profileDraft.host} port={profileDraft.port} />
               {editRow("Initial Schema", "schema", { placeholder: "Optional" })}
               <div className="flex items-center gap-3 py-2">
                 <span className="w-56 shrink-0 text-[12px] text-muted-foreground">Server Info</span>

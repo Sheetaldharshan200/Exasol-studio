@@ -42,3 +42,29 @@ export const AUTH_METHODS: { value: string; label: string; secret: string }[] = 
 export function isSaasHost(host: string): boolean {
   return /\.exasol\.com$/i.test(host.trim().split(/[/:]/)[0] ?? "");
 }
+
+/** The notice for connection hooks that failed (Properties → Connection Hooks). */
+export function hookNotice(errors: readonly string[] | undefined, phase: "connect" | "disconnect"): { title: string; body: string } | null {
+  if (!errors?.length) return null;
+  const n = errors.length;
+  return {
+    title: `${n} connection hook statement${n === 1 ? "" : "s"} failed`,
+    body: `${phase === "connect" ? "Connected, but these SQL-at-connect" : "Disconnected, but these SQL-at-disconnect"} statements failed:\n${errors.join("\n")}`,
+  };
+}
+
+/** What an import did, for the notice. */
+export function importNotice(r: { added: string[]; skipped: string[]; failed: string[] }): { kind: "success" | "warning" | "info"; title: string; body: string } {
+  const parts = [
+    r.added.length ? `Added: ${r.added.join(", ")}.` : "",
+    r.skipped.length ? `Already there: ${r.skipped.join(", ")}.` : "",
+    r.failed.length ? `Not imported: ${r.failed.join("; ")}.` : "",
+    r.added.length ? "Passwords are not in the file — each connection asks on its first connect." : "",
+  ].filter(Boolean);
+  const n = r.added.length;
+  return {
+    kind: r.failed.length ? "warning" : n ? "success" : "info",
+    title: n ? `${n} connection${n === 1 ? "" : "s"} imported` : "Nothing new to import",
+    body: parts.join(" ") || "The file has no connections.",
+  };
+}
