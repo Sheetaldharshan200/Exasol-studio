@@ -22,7 +22,16 @@ export type DbConnectionInfo = {
   verify?: boolean;
   /** Pinned certificate, SHA-256 hex: checked on the connection itself. */
   fingerprint?: string | null;
+  /** A read-only connection (Properties → Safety): the agent only reads. */
+  readOnly?: boolean;
 };
+
+/** The agent's write paths refuse a read-only connection. */
+export function assertWritable(info: DbConnectionInfo | undefined, id: string): DbConnectionInfo {
+  if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+  if (info.readOnly) throw new Error(`"${info.name}" is read-only: the assistant can only read from it.`);
+  return info;
+}
 
 export type QueryOutput = {
   columns: string[];
@@ -115,8 +124,7 @@ export class DbRegistry {
    * connection is closed either way — the shared pool driver is untouched.
    */
   async bulkLoad<T>(id: string, work: (execute: (sql: string) => Promise<number>) => Promise<T>): Promise<T> {
-    const info = this.conns.get(id);
-    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const info = assertWritable(this.conns.get(id), id);
     const driver = this.makeDriver(info, { autocommit: false });
     await driver.connect();
     // Write notifications are held until COMMIT: observers must never see
@@ -215,8 +223,7 @@ export class DbRegistry {
 
   /** P5 companion to queryIsolated for statements that modify state. */
   async executeIsolated(id: string, sql: string): Promise<number> {
-    const info = this.conns.get(id);
-    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const info = assertWritable(this.conns.get(id), id);
     const driver = this.makeDriver(info);
     try {
       await driver.connect();
@@ -275,6 +282,7 @@ export class DbRegistry {
 
   /** Run DDL/DML; returns affected row count. */
   async execute(id: string, sql: string): Promise<number> {
+    assertWritable(this.conns.get(id), id);
     let affected: number;
     try {
       const d = await this.driver(id);

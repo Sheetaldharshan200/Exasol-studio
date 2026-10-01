@@ -26,7 +26,7 @@ import { connectionUrl } from "@/lib/connection-url";
 import { AUTH_METHODS } from "@/lib/connect-flow";
 import { AddressNote, ConnectionTrustFields, SignInMethodRow, type TrustDraft } from "@/features/connection/ConnectionTrustFields";
 import { checkHost, checkPort, parseDsn } from "@/lib/dsn";
-import { DEFAULT_CONN_SETTINGS, withConnDefaults, type ConnSettings } from "@/lib/conn-settings";
+import { DEFAULT_CONN_SETTINGS, ENVIRONMENTS, withConnDefaults, type ConnSettings, type Environment } from "@/lib/conn-settings";
 export { DEFAULT_CONN_SETTINGS, type ConnSettings };
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
@@ -146,11 +146,12 @@ function InputRow({ label, value, onChange, type = "text", mono = true, width = 
 
 type CategoryId =
   | "dbProfile" | "driverProps"
-  | "authentication" | "physical" | "transaction" | "hooks" | "color" | "sqlEditor";
+  | "authentication" | "physical" | "transaction" | "hooks" | "color" | "sqlEditor" | "safety";
 
 const CATEGORIES: { id: CategoryId; label: string; group: "root" | "exasol" }[] = [
   { id: "dbProfile", label: "Database Profile", group: "root" },
   { id: "driverProps", label: "Driver Properties", group: "root" },
+  { id: "safety", label: "Environment and Safety", group: "exasol" },
   { id: "authentication", label: "Authentication", group: "exasol" },
   { id: "physical", label: "Physical Connection", group: "exasol" },
   { id: "transaction", label: "Transaction", group: "exasol" },
@@ -171,6 +172,7 @@ function categoryDefaults(s: ConnSettings, cat: CategoryId): ConnSettings {
     case "hooks": next.hooks = d.hooks; break;
     case "color": next.color = d.color; break;
     case "sqlEditor": next.sqlEditor = d.sqlEditor; break;
+    case "safety": next.safety = d.safety; break;
     default: break;
   }
   return next;
@@ -658,6 +660,24 @@ export function ConnectionPropertiesTab({
             <CheckRow label="SQL tabs" checked={s.color.sqlTabs} onChange={(v) => patch((n) => { n.color.sqlTabs = v; })} />
             <CheckRow label="Show in Database Connection name" checked={s.color.showInName} onChange={(v) => patch((n) => { n.color.showInName = v; })} />
           </SectionCard>
+        );
+      case "safety":
+        return (
+          <div className="space-y-4">
+            <SectionCard title="Environment" description="Tag the connection so its tabs and the title bar show where statements will run. Prod always asks before statements that destroy data, and before saving grid edits.">
+              <RadioRow
+                options={ENVIRONMENTS.map((e) => ({ value: e.value, label: e.label, hint: e.value === "prod" ? "Confirms DROP, TRUNCATE, DELETE/UPDATE without WHERE, and grid edits" : undefined }))}
+                value={s.safety.env}
+                onChange={(v) => patch((n) => { n.safety.env = v as Environment; })}
+              />
+            </SectionCard>
+            <SectionCard title="Read-only connection" description="Only statements that change nothing run: queries, session settings and transaction control. Inserts, updates, DDL, grants, scripts and grid edits are refused before they reach the server — in the editor, notebooks, object menus and the assistant.">
+              <CheckRow label="Read-only connection" checked={s.safety.readOnly} onChange={(v) => patch((n) => { n.safety.readOnly = v; })} />
+            </SectionCard>
+            <SectionCard title="Confirm destructive statements" description="Ask before running DROP, TRUNCATE, and DELETE or UPDATE without a WHERE clause. Always on for Prod.">
+              <CheckRow label="Confirm destructive statements" checked={s.safety.confirmDangerous || s.safety.env === "prod"} onChange={(v) => patch((n) => { n.safety.confirmDangerous = v; })} />
+            </SectionCard>
+          </div>
         );
       case "sqlEditor":
         return (

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_CONN_SETTINGS, connSettingPaths, withConnDefaults } from "./conn-settings.ts";
+import { DEFAULT_CONN_SETTINGS, confirmsDanger, connSettingPaths, withConnDefaults } from "./conn-settings.ts";
 
 test("stored values win over the defaults, at any depth", () => {
   const s = withConnDefaults({ driver: { queryTimeoutSeconds: 30 }, sqlEditor: { initialSchema: "recent" } });
@@ -45,4 +45,11 @@ test("the paths list every setting once", () => {
   assert.equal(new Set(paths).size, paths.length);
   assert.ok(paths.includes("color.accent"));
   assert.ok(paths.includes("sqlEditor.initialSchema"));
+});
+
+test("Prod always confirms; elsewhere the setting decides", () => {
+  assert.equal(confirmsDanger({ env: "prod", readOnly: false, confirmDangerous: false }), true);
+  assert.equal(confirmsDanger({ env: "dev", readOnly: false, confirmDangerous: false }), false);
+  assert.equal(confirmsDanger({ env: "none", readOnly: false, confirmDangerous: true }), true);
+  assert.equal(withConnDefaults({ safety: { env: "prod" } }).safety.readOnly, false);
 });

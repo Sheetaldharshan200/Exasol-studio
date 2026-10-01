@@ -73,6 +73,10 @@ import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
 import { nullLabel } from "@/lib/null-label";
 import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
+import { useConnSettings } from "./use-conn-settings";
+import { EnvBadge, envOf } from "./EnvBadge";
+import { DEFAULT_CONN_SETTINGS, ENVIRONMENTS, confirmsDanger } from "@/lib/conn-settings";
+import { classifyScript, dangerQuestion, editsQuestion, readOnlyRefusal } from "@/lib/sql-classify";
 import { errorMarker, runStartIn } from "@/lib/error-markers";
 import { importNotice } from "@/lib/connect-flow";
 import { execDefaults, maxRowsOptions, splitsFor, type ExecDefaults } from "@/lib/exec-settings";
@@ -437,34 +441,12 @@ export function ExasolStudio({
   const tabs = tabsFor(connKey);
   // Connection accent (Properties → Color and Border → SQL tabs): tints the
   // top edge of this connection's tab chips — the prod-vs-dev guard.
-  const [connAccent, setConnAccent] = useState<string | null>(null);
-  useEffect(() => {
-    let dead = false;
-    if (!connKey || connKey === "none") {
-      setConnAccent(null);
-      return;
-    }
-    void ipc
-      .connectionSettingsGet(connKey)
-      .then((raw) => {
-        const c = (raw as { color?: { accent?: string | null; sqlTabs?: boolean } } | null)?.color;
-        if (!dead) setConnAccent(c?.accent && c.sqlTabs !== false ? c.accent : null);
-      })
-      .catch(() => {
-        if (!dead) setConnAccent(null);
-      });
-    const bump = () => {
-      void ipc.connectionSettingsGet(connKey).then((raw) => {
-        const c = (raw as { color?: { accent?: string | null; sqlTabs?: boolean } } | null)?.color;
-        if (!dead) setConnAccent(c?.accent && c.sqlTabs !== false ? c.accent : null);
-      }).catch(() => undefined);
-    };
-    window.addEventListener("studio:conn-settings-changed", bump);
-    return () => {
-      dead = true;
-      window.removeEventListener("studio:conn-settings-changed", bump);
-    };
-  }, [connKey]);
+  const connSettings = useConnSettings(connKey);
+  const connAccent = connSettings?.color.accent && connSettings.color.sqlTabs ? connSettings.color.accent : null;
+  // Properties → Environment and Safety, for the guards below.
+  const safety = connSettings?.safety ?? DEFAULT_CONN_SETTINGS.safety;
+  // Tabs carry the connection's accent, else its environment's colour.
+  const tabEdge = connAccent ?? envOf(safety.env)?.color ?? null;
   const activeTab =
     tabs.find((t) => t.id === activeIdByConn[connKey]) ?? tabs[tabs.length - 1] ?? WELCOME_TAB;
 
@@ -844,6 +826,9 @@ export function ExasolStudio({
   // produced it, never the editor buffer.
   async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
     if (!connection || !statements.length) return { ok: false, error: "No active connection." };
+    if (safety.env === "prod" && !window.confirm(editsQuestion(statements.length, `${connection.profile.name} (Prod)`))) {
+      return { ok: false, error: "Not saved — the changes are still in the grid." };
+    }
     try {
       const out = await ipc.applyRowEdits(connection.profile.id, connection.profile.name, statements, activeTab.id);
       void tabSession.refresh(activeTab.id);
@@ -1625,7 +1610,7 @@ export function ExasolStudio({
           setTabMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
         }}
         title={tab.view === "sql" || tab.view === "visualizer" ? "Double-click to rename · right-click to group" : "Right-click to group"}
-        style={connAccent ? { boxShadow: `inset 0 2px 0 0 ${connAccent}` } : undefined}
+        style={tabEdge ? { boxShadow: `inset 0 2px 0 0 ${tabEdge}` } : undefined}
         className={cn(
           "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
           grouped && "border-r-0",
@@ -1666,6 +1651,7 @@ export function ExasolStudio({
             {tab.title}
           </span>
         )}
+        {tab.view === "sql" ? <EnvBadge env={safety.env} /> : null}
         {!isEditing ? (
           <span className="ml-1 flex items-center">
             {tab.pinned ? (
@@ -1739,6 +1725,29 @@ export function ExasolStudio({
   }, []);
 
   // Open (and optionally run) a query built in the visual query builder.
+  /**
+   * Production safety before a run (Properties → Environment and Safety): a
+   * read-only connection refuses writes (the backend refuses them too), and
+   * statements that destroy data ask first — always on Prod. False: do not run.
+   */
+  function safeToRun(sql: string, split: boolean): boolean {
+    if (!connection) return true;
+    const stmts = classifyScript(sql, split);
+    if (safety.readOnly) {
+      const why = readOnlyRefusal(stmts, connection.profile.name);
+      if (why) {
+        pushNotification("warning", "Read-only connection", why);
+        return false;
+      }
+    }
+    if (confirmsDanger(safety)) {
+      const env = ENVIRONMENTS.find((e) => e.value === safety.env && e.value !== "none");
+      const q = dangerQuestion(stmts, env ? `${connection.profile.name} (${env.label})` : connection.profile.name);
+      if (q && !window.confirm(q)) return false;
+    }
+    return true;
+  }
+
   async function openBuiltSql(sql: string, runNow: boolean, title?: string) {
     const key = connKey;
     tabCounter.current += 1;
@@ -1753,6 +1762,7 @@ export function ExasolStudio({
     updateTabs(key, (list) => [...list, tab]);
     setActiveIdByConn((a) => ({ ...a, [key]: tab.id }));
     if (runNow && connection) {
+      if (!safeToRun(sql, splitsFor("script", execSettings.splitStatements))) return;
       if (!acquireRun(connection.profile.id)) {
         // The tab still opens with its SQL — it just waits for the session.
         patchTab(tab.id, { execError: "Another statement is running on this connection. Press Run when it finishes.", resultView: "results" });
@@ -2315,6 +2325,7 @@ export function ExasolStudio({
       // splitting is off (Settings → Execution, or the toolbar).
       const split = splitsFor(scope, execSettings.splitStatements);
       const stop = { onError: execSettings.stopOnError, onNoRows: execSettings.stopOnNoRows };
+      if (!safeToRun(sqlToRun, split)) return;
 
       if (!acquireRun(connection.profile.id)) return;
       // The marker belongs to THIS tab's model, even if the tab changes mid-run.
@@ -2421,7 +2432,7 @@ export function ExasolStudio({
         releaseRun();
       }
     },
-    [connection, running, activeTab, maxRows, loadHistory, execSettings],
+    [connection, running, activeTab, maxRows, loadHistory, execSettings, safety],
   );
 
   // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).
@@ -2969,6 +2980,7 @@ export function ExasolStudio({
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <UncommittedDialog pending={tabSession.pending} />
       <TitleBar
+        env={safety.env}
         connection={connection}
         onConnect={() => openConnect()}
         onDisconnect={disconnectSafely}

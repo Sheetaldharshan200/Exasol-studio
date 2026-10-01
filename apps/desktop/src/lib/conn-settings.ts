@@ -11,7 +11,24 @@ export type ConnSettings = {
   hooks: { connectEnabled: boolean; connectSql: string; disconnectEnabled: boolean; disconnectSql: string };
   color: { accent: string | null; sqlTabs: boolean; showInName: boolean };
   sqlEditor: { initialSchema: "default" | "none" | "recent"; lossHandling: "none" | "reconnect" | "reexecute" };
+  /** Production safety: the environment tag, a read-only guard, and
+   *  confirmation of statements that destroy data (always on Prod). */
+  safety: { env: Environment; readOnly: boolean; confirmDangerous: boolean };
 };
+
+export type Environment = "none" | "dev" | "test" | "prod";
+
+export const ENVIRONMENTS: { value: Environment; label: string; color: string }[] = [
+  { value: "none", label: "No tag", color: "" },
+  { value: "dev", label: "Dev", color: "#10b981" },
+  { value: "test", label: "Test", color: "#eab308" },
+  { value: "prod", label: "Prod", color: "#e11d48" },
+];
+
+/** Whether a statement that destroys data asks first: always on Prod. */
+export function confirmsDanger(safety: ConnSettings["safety"]): boolean {
+  return safety.env === "prod" || safety.confirmDangerous;
+}
 
 export const DEFAULT_CONN_SETTINGS: ConnSettings = {
   auth: { passwordPolicy: "save" },
@@ -21,6 +38,7 @@ export const DEFAULT_CONN_SETTINGS: ConnSettings = {
   hooks: { connectEnabled: false, connectSql: "", disconnectEnabled: false, disconnectSql: "" },
   color: { accent: null, sqlTabs: true, showInName: true },
   sqlEditor: { initialSchema: "default", lossHandling: "reexecute" },
+  safety: { env: "none", readOnly: false, confirmDangerous: false },
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
