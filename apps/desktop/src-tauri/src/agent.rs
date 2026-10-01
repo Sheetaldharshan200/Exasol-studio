@@ -230,6 +230,16 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
         let state = app.state::<AppState>();
         crate::profiles::find_profile(&state, &profile_id)?
     };
+    // The agent connects on its own (agent-core): it applies the pin and the
+    // verify modes; what it cannot do (tokens, a CA file) is refused here
+    // rather than connected less safely.
+    if profile.auth_method != "password" {
+        return Err(AppError::Assistant("The assistant signs in with a password; this connection uses a token.".into()));
+    }
+    if profile.ssl_ca.is_some() && profile.fingerprint.is_none() {
+        return Err(AppError::Assistant("The assistant cannot use this connection's CA file. Pin the server's certificate instead.".into()));
+    }
+    let (_, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode);
     let info = ensure_agent(&app)?;
     let body = serde_json::json!({
         "id": profile.id,
@@ -238,7 +248,9 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
         "port": profile.port,
         "user": profile.username,
         "password": profile.password,
-        "encryption": profile.ssl_mode != "disabled",
+        "encryption": true,
+        "verify": verify,
+        "fingerprint": profile.fingerprint,
         "schema": profile.schema,
     });
     let client = reqwest::Client::new();
@@ -255,8 +267,8 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
     // Keep exapump usable for the SAME database: the agent's data loads run
     // `exapump upload … -p studio`, so provision/refresh that profile with
     // this connection's credentials (best-effort — exapump may be absent).
-    // validate-certificate=false: the local Personal DB serves a self-signed
-    // cert that would otherwise fail every load.
+    // A pinned certificate is passed as exapump's own pin; otherwise the
+    // connection's verify mode decides (the local Personal DB is unverified).
     {
         let state = app.state::<AppState>();
         let exapump = state.data_dir.join("personal-local").join("bin").join("exapump");
@@ -265,26 +277,18 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
             let _ = crate::process::command(&exapump)
                 .args(["profile", "remove", "studio"])
                 .output();
-            let _ = crate::process::command(&exapump)
-                .args([
-                    "profile",
-                    "add",
-                    "studio",
-                    "--host",
-                    &profile.host,
-                    "--port",
-                    &profile.port.to_string(),
-                    "--user",
-                    &profile.username,
-                    "--password",
-                    &profile.password,
-                    "--tls",
-                    if profile.ssl_mode == "disabled" { "false" } else { "true" },
-                    "--validate-certificate",
-                    "false",
-                    "--default",
-                ])
-                .output();
+            let port = profile.port.to_string();
+            let mut args: Vec<&str> = vec![
+                "profile", "add", "studio", "--host", &profile.host, "--port", &port, "--user", &profile.username,
+                "--password", &profile.password, "--tls", "true",
+            ];
+            // The same trust as the connection: its pin, else its verify mode.
+            match profile.fingerprint.as_deref() {
+                Some(fp) => args.extend(["--validate-certificate", "false", "--certificate-fingerprint", fp]),
+                None => args.extend(["--validate-certificate", if verify { "true" } else { "false" }]),
+            }
+            args.push("--default");
+            let _ = crate::process::command(&exapump).args(&args).output();
         }
     }
     Ok(())

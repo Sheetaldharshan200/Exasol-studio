@@ -1,6 +1,8 @@
 import { ExasolDriver, type ExaWebsocket } from "@exasol/exasol-driver-ts";
 import { WebSocket } from "ws";
+import type { TLSSocket } from "node:tls";
 import { log } from "./log.ts";
+import { pinMatches, rejectUnauthorized } from "./tls-pin.ts";
 
 /**
  * Registered database connections, held IN MEMORY ONLY. The desktop app's
@@ -16,6 +18,10 @@ export type DbConnectionInfo = {
   password: string;
   encryption?: boolean;
   schema?: string;
+  /** Verify the certificate (the connection's verify modes). */
+  verify?: boolean;
+  /** Pinned certificate, SHA-256 hex: checked on the connection itself. */
+  fingerprint?: string | null;
 };
 
 export type QueryOutput = {
@@ -71,11 +77,22 @@ export class DbRegistry {
 
   private makeDriver(info: DbConnectionInfo, opts?: { autocommit?: boolean }): ExasolDriver {
     return new ExasolDriver(
-      (url) =>
-        // Local/self-signed deployments (Exasol Personal) need TLS
-        // verification off; the connection never leaves this machine
-        // unless the user pointed it elsewhere on purpose.
-        new WebSocket(url, { rejectUnauthorized: false }) as unknown as ExaWebsocket,
+      (url) => {
+        // The connection's own trust settings (tls-pin.ts): a pin is checked
+        // at the TLS upgrade, before the driver sends the login.
+        const ws = new WebSocket(url, { rejectUnauthorized: rejectUnauthorized(info) });
+        const pin = info.fingerprint;
+        if (pin) {
+          ws.on("upgrade", (res) => {
+            const cert = (res.socket as TLSSocket).getPeerCertificate?.();
+            if (!pinMatches(cert?.fingerprint256, pin)) {
+              ws.emit("error", new Error("The server's certificate does not match the pinned fingerprint."));
+              ws.terminate();
+            }
+          });
+        }
+        return ws as unknown as ExaWebsocket;
+      },
       {
         host: info.host,
         port: info.port,
