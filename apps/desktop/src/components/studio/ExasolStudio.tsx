@@ -791,7 +791,8 @@ export function ExasolStudio({
       setEditTable(null);
       return;
     }
-    const t = parseSingleTable(activeTab.sql);
+    // The table the DISPLAYED rows came from — not whatever the buffer says now.
+    const t = parseSingleTable(sqlBehindGrid(activeTab));
     const schema = t?.schema ?? connection.profile.schema ?? undefined;
     if (!t || !schema) {
       setEditTable(null);
@@ -813,7 +814,7 @@ export function ExasolStudio({
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
+  }, [activeTab.response, activeTab.sql, activeTab.runMeta, activeTab.view, connection]);
 
   // Apply staged row edits ("Confirm & Save"): one transaction on one
   // connection, each change required to touch exactly one row — all of it or

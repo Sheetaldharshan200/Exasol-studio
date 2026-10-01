@@ -35,6 +35,36 @@ one. A lost session is detected on use, the tab says so, and the
 DML since the last commit drives an open-transaction badge and a confirm on
 disconnect, tab close and app quit.
 
+### Manual commit (autocommit off): best practice
+
+The Exasol driver keeps its autocommit switch private and flips it only by
+starting a transaction, so a tab in manual mode owns an open transaction on
+its own session. That is how DataGrip and DBeaver run manual mode too, and it
+is only safe with these rules:
+
+1. **Autocommit on by default.** Manual mode is chosen per tab (or set as a
+   connection's default), never inherited silently.
+2. **The transaction lives exactly as long as its session.** It belongs to
+   the tab's dedicated connection, never to a pooled one; closing the tab,
+   disconnecting, losing the connection or quitting ends it.
+3. **Nothing ends it without the person.** Closing a tab, disconnecting or
+   quitting with uncommitted changes asks: Commit, Roll back, or Cancel.
+   A lost connection is reported as "uncommitted changes were rolled back by
+   the server", never hidden.
+4. **Uncommitted work is always visible.** A badge on the tab and the toolbar
+   ("Uncommitted · 3 statements") from the driver's own `open_transaction`
+   flag, plus the statements that made it.
+5. **Commit and Roll back act on that session only**, through the driver's
+   transaction API, not as SQL text on whichever connection is free.
+6. **Idle transactions are bounded.** After a configurable idle time (default
+   30 min) the tab warns; it never commits on its own. Long-open transactions
+   hold Exasol's locks and block other writers, so the warning names that.
+7. **Reads stay consistent and cheap.** Read-only statements in manual mode
+   do not count as changes; switching back to autocommit with uncommitted
+   changes asks first.
+8. **Edits from the grid follow the tab's mode**: in manual mode they join the
+   open transaction and show as uncommitted, instead of committing on their own.
+
 ## Phases 3–7
 
 Specified in tasks.md; each phase gets its own design note in its PR when the

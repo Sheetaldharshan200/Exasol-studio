@@ -215,7 +215,8 @@ export function stripSqlComments(sql: string): string {
     plain = [];
   };
   while (i < lines.length) {
-    if (lines[i].trimStart().startsWith("--/")) {
+    // A `--/` line inside a still-open string literal is string content.
+    if (lines[i].trimStart().startsWith("--/") && !endsInsideString(plain.join("\n"))) {
       flush();
       const block: string[] = [];
       while (i < lines.length) {
@@ -234,6 +235,30 @@ export function stripSqlComments(sql: string): string {
   }
   flush();
   return out.join("\n");
+}
+
+/** Whether `sql` ends inside an unterminated '…' or "…" (comments skipped). */
+function endsInsideString(sql: string): boolean {
+  let quote: string | null = null;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    if (quote) {
+      if (c === quote) {
+        if (sql[i + 1] === quote) i++;
+        else quote = null;
+      }
+    } else if (c === "'" || c === '"') quote = c;
+    else if (c === "-" && sql[i + 1] === "-") {
+      const nl = sql.indexOf("\n", i);
+      if (nl < 0) return false;
+      i = nl;
+    } else if (c === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      if (end < 0) return false;
+      i = end + 1;
+    }
+  }
+  return quote !== null;
 }
 
 function stripCommentsOutsideBlocks(sql: string): string {

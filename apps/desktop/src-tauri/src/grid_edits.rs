@@ -90,7 +90,15 @@ pub async fn apply_batch(pool: &ExaPool, statements: &[String]) -> AppResult<Edi
         }
     }
     if let Err(e) = tx.commit().await {
-        return Ok(EditOutcome { ok: false, failed_index: None, error: Some(format!("Commit failed: {e}. Nothing was saved.")) });
+        // The server may have committed before the reply was lost, so this is
+        // NOT "nothing was saved" — saving again could apply the edits twice.
+        return Ok(EditOutcome {
+            ok: false,
+            failed_index: None,
+            error: Some(format!(
+                "The commit could not be confirmed ({e}). The changes may or may not have been saved — refresh the result to check before saving again."
+            )),
+        });
     }
     Ok(EditOutcome { ok: true, failed_index: None, error: None })
 }

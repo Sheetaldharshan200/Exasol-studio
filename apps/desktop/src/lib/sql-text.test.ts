@@ -370,3 +370,10 @@ describe("stripSqlComments keeps Exasol script blocks whole", () => {
     assert.equal(stripSqlComments("--/\nlocal x -- keep"), "--/\nlocal x -- keep");
   });
 });
+
+describe("stripSqlComments and string literals", () => {
+  test("a --/ line inside a multi-line string is string content, not a script block", () => {
+    const sql = "SELECT 'line one\n--/ still the string' AS s -- gone\nFROM t";
+    assert.equal(stripSqlComments(sql), "SELECT 'line one\n--/ still the string' AS s \nFROM t");
+  });
+});

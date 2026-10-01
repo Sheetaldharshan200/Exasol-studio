@@ -154,3 +154,9 @@ test("a file-backed tab keeps its last-saved text, so a restored tab is not mark
   const out = roundTrip(state)!;
   assert.equal(out.tabsByConn.c1[0].savedSql, "SELECT 1");
 });
+
+test("a file-backed tab from an older workspace without savedSql restores as saved, not modified", () => {
+  const raw = JSON.stringify({ v: 1, tabsByConn: { c1: [{ id: "f", title: "a.sql", view: "sql", sql: "SELECT 1", filePath: "/w/a.sql" }] }, groupsByConn: {}, activeIdByConn: {} });
+  const out = deserializeWorkspace(raw)!;
+  assert.equal(out.tabsByConn.c1[0].savedSql, "SELECT 1");
+});

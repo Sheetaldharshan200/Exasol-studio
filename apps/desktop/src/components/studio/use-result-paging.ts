@@ -11,7 +11,7 @@
 // Extracted from ExasolStudio.tsx, which must not grow.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { splitStatements } from "../../lib/sql-text.ts";
+import { splitStatements, stripSqlComments } from "../../lib/sql-text.ts";
 import { pagePlan, pageSql, type PagePlan } from "../../lib/result-pages.ts";
 import type { ExecuteResponse } from "../../lib/ipc.ts";
 
@@ -23,7 +23,8 @@ export function pageBase(sql: string): string | null {
   const stmts = splitStatements(sql);
   if (stmts.length !== 1) return null;
   const base = stmts[0].text.trim().replace(/;\s*$/, "");
-  return /^select|^with/i.test(base) ? base : null;
+  // Leading comments are not the statement: `-- report\nSELECT …` pages too.
+  return /^(select|with)\b/i.test(stripSqlComments(base).trim()) ? base : null;
 }
 
 /** Which cached page to drop when a tab holds more than it should. */
@@ -116,7 +117,19 @@ export function useResultPaging(opts: {
     // A page served from the cache, or the run itself again: not a new run.
     if (entry && entry.sql === base && (entry.run === res || [...entry.pages.values()].includes(res))) return;
     cache.current.set(activeTab.id, { sql: base, plan, run: res, pages: new Map() });
-    if (res.results[0]?.truncated) void prefetch(activeTab.id, base, 1);
+    if (!res.results[0]?.truncated) return;
+    // There is a next page: fetch page 0 under the plan and show it in place of
+    // the run, so the rows on screen are exactly the rows page 1 continues.
+    const tabId = activeTab.id;
+    void (async () => {
+      await prefetch(tabId, base, 0);
+      const p0 = cache.current.get(tabId)?.pages.get(0);
+      const now = ctx.current.activeTab;
+      if (p0 && now.id === tabId && now.response === res && (now.resultPage ?? 0) === 0) {
+        ctx.current.patchTab(tabId, { response: p0, execError: null, resultPage: 0 });
+      }
+      void prefetch(tabId, base, 1);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.id, activeTab.response, activeTab.resultPage]);
 

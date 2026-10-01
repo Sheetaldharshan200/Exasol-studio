@@ -16,6 +16,8 @@ test("only a single SELECT or WITH can be paged", () => {
   assert.equal(pageBase("INSERT INTO T VALUES (1)"), null);
   assert.equal(pageBase("SELECT 1; SELECT 2;"), null);
   assert.equal(pageBase(""), null);
+  assert.equal(pageBase("-- monthly report\nSELECT * FROM T"), "-- monthly report\nSELECT * FROM T", "a leading comment is not the statement");
+  assert.equal(pageBase("/* x */ DELETE FROM T"), null);
 });
 
 test("a run is paged by a plan made from its statement and its columns", () => {

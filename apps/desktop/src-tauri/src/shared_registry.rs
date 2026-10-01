@@ -120,19 +120,10 @@ pub fn publish(entry: SharedConnection, password: Option<&str>) -> AppResult<()>
 
     if let Some(secret) = password.filter(|p| !p.is_empty()) {
         if !write_credential(&id, secret) {
-            // No credential store on this machine: fall back to a 0600 file so
-            // sharing still works, rather than silently dropping the secret.
-            if let Some(cred) = credential_path(&id) {
-                if let Some(dir) = cred.parent() {
-                    std::fs::create_dir_all(dir)?;
-                }
-                std::fs::write(&cred, secret)?;
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&cred, std::fs::Permissions::from_mode(0o600));
-                }
-            }
+            // No credential store on this machine: the password is NOT shared.
+            // A plaintext file — even 0600 — is a copy anyone with the disk
+            // can read; the exa CLI asks for the password instead.
+            eprintln!("no OS credential store: the password for {id} is not shared with the exa CLI");
         }
     }
     Ok(())
@@ -278,6 +269,10 @@ fn secret_write_command(id: &str, secret: &str) -> Option<SecretWrite> {
 
 /// Delete one secret from the OS credential store (best effort).
 pub(crate) fn delete_credential(id: &str) {
+    // An older build may have left a plaintext copy; it goes as well.
+    if let Some(path) = credential_path(id) {
+        let _ = std::fs::remove_file(path);
+    }
     if let Some(cmd) = secret_delete_command(id) {
         let _ = crate::process::command(&cmd[0])
             .args(&cmd[1..])

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ArrowRight, Check, Copy, Download, Eye, EyeOff } from "lucide-react";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { errorMessage, ipc } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
@@ -95,11 +94,7 @@ export function VaultSetup({ onDone }: { onDone: () => void }) {
     const download = async () => {
       const body = `Exasol Studio — recovery keys\nEach one can reset your master password once. Keep them safe.\n\n${codes.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n`;
       try {
-        const path = await saveDialog({
-          defaultPath: "exasol-studio-recovery-keys.txt",
-          filters: [{ name: "Text", extensions: ["txt"] }],
-        });
-        if (path) await ipc.writeTextFile(path, body);
+        await ipc.saveTextAs("exasol-studio-recovery-keys.txt", ["txt"], body);
       } catch {
         /* cancelled or write failed */
       }
