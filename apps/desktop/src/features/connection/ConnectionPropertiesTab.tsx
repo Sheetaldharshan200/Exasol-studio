@@ -550,6 +550,11 @@ export function ConnectionPropertiesTab({
           password: settings.auth.passwordPolicy === "session" ? "" : profileDraft.password,
         });
         setProfile(saved);
+        // "This session only": the typed password lives in memory for this run
+        // and every saved copy (file, keychain) is removed.
+        if (settings.auth.passwordPolicy === "session" && profileDraft.password) {
+          await ipc.setSessionPassword(saved.id, profileDraft.password);
+        }
         const draft = { ...profileDraft, password: "" };
         setProfileDraft(draft);
         setProfileSnapshot(JSON.stringify(draft));

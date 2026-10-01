@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
-use crate::security;
 use crate::state::AppState;
 use crate::storage::{read_json, write_json};
 
@@ -72,9 +71,41 @@ pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionP
         .ok_or_else(|| {
             AppError::InvalidSettings(format!("unknown connection profile `{profile_id}`"))
         })?;
-    // Decrypt the stored password for actual use (connect / driver bridges).
-    profile.password = security::decrypt_secret(dek(state).as_ref(), &profile.password)?;
+    // The password for actual use (connect / driver bridges): sealed in the
+    // file, or in the keychain, or — from older files — plaintext, which is
+    // moved off the file now that it has been seen.
+    let key = dek(state);
+    let (plain, legacy) = crate::profile_secret::from_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::read_credential)?;
+    if legacy {
+        let moved = crate::profile_secret::to_store(key.as_ref(), &profile.id, &plain, crate::shared_registry::write_credential);
+        let mut all = load_profiles(state)?;
+        if let Some(p) = all.iter_mut().find(|p| p.id == profile.id) {
+            p.password = moved;
+        }
+        write_json(&profiles_path(state), &all)?;
+    }
+    // "This session only": not on disk, only in memory for this run.
+    profile.password = if plain.is_empty() {
+        state.session_passwords.lock().ok().and_then(|m| m.get(&profile.id).cloned()).unwrap_or_default()
+    } else {
+        plain
+    };
     Ok(profile)
+}
+
+/// Keep a password for this run only, and remove any stored copy — file and
+/// keychain — so "this session only" means exactly that. An empty password
+/// forgets it.
+#[tauri::command]
+pub fn set_session_password(state: State<'_, AppState>, profile_id: String, password: String) -> AppResult<()> {
+    clear_profile_password(&state, &profile_id)?;
+    let mut map = state.session_passwords.lock().map_err(|_| AppError::Storage("session password store poisoned".into()))?;
+    if password.is_empty() {
+        map.remove(&profile_id);
+    } else {
+        map.insert(profile_id, password);
+    }
+    Ok(())
 }
 
 /// Blank a profile's stored password (Connection Properties → Authentication
@@ -83,6 +114,12 @@ pub fn clear_profile_password(state: &AppState, profile_id: &str) -> AppResult<(
     let mut profiles = load_profiles(state)?;
     if let Some(profile) = profiles.iter_mut().find(|p| p.id == profile_id) {
         profile.password = String::new();
+    }
+    // The keychain copy and any in-memory one go too: "cleared" must mean
+    // cleared everywhere.
+    crate::shared_registry::delete_credential(&crate::profile_secret::keychain_account(profile_id));
+    if let Ok(mut map) = state.session_passwords.lock() {
+        map.remove(profile_id);
     }
     write_json(&profiles_path(state), &profiles)
 }
@@ -261,24 +298,26 @@ pub fn save_profile(
     // field is left blank while editing an existing connection, keep the stored
     // one instead of clobbering it.
     let key = dek(state);
+    // Remember the plaintext for publishing before it is stored away.
+    let typed = profile.password.clone();
     match existing_index {
         Some(idx) => {
+            profile.id = profiles[idx].id.clone();
             if profile.password.is_empty() {
                 profile.password = profiles[idx].password.clone();
             } else {
-                profile.password = security::encrypt_secret(key.as_ref(), &profile.password);
+                profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
             }
-            profile.id = profiles[idx].id.clone();
             profile.created_at = profiles[idx].created_at.clone();
             profiles[idx] = profile.clone();
         }
         None => {
-            profile.password = security::encrypt_secret(key.as_ref(), &profile.password);
             profile.id = format!(
                 "conn-{}-{}",
                 chrono::Utc::now().timestamp_millis(),
                 profiles.len() + 1
             );
+            profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
             profile.created_at = Some(chrono::Utc::now().to_rfc3339());
             profiles.push(profile.clone());
         }
@@ -293,7 +332,13 @@ pub fn save_profile(
         profile.password = String::new();
         return Ok(profile);
     }
-    let plaintext = security::decrypt_secret(key.as_ref(), &profile.password).unwrap_or_default();
+    let plaintext = if typed.is_empty() {
+        crate::profile_secret::from_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::read_credential)
+            .map(|(p, _)| p)
+            .unwrap_or_default()
+    } else {
+        typed
+    };
     let shared = crate::shared_registry::SharedConnection {
         id: crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username),
         name: profile.name.clone(),
@@ -345,7 +390,10 @@ pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
             continue;
         }
         let password =
-            security::decrypt_secret(key.as_ref(), &profile.password).ok().filter(|p| !p.is_empty());
+            crate::profile_secret::from_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::read_credential)
+                .ok()
+                .map(|(p, _)| p)
+                .filter(|p| !p.is_empty());
         let entry = crate::shared_registry::SharedConnection {
             id,
             name: profile.name.clone(),
@@ -495,5 +543,6 @@ pub async fn delete_connection_profile(
         }
     }
     profiles.retain(|p| p.id != profile_id);
+    crate::shared_registry::delete_credential(&crate::profile_secret::keychain_account(&profile_id));
     write_json(&profiles_path(&state), &profiles)
 }

@@ -44,6 +44,7 @@ mod market;
 mod metadata;
 mod print;
 mod process;
+mod profile_secret;
 mod profiles;
 mod shared_registry;
 mod query;
@@ -193,6 +194,7 @@ pub fn run() {
             market::market_doc_file,
             market::open_external,
             local_network::open_local_network_settings,
+            profiles::set_session_password,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,
