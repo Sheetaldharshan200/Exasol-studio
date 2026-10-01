@@ -51,6 +51,7 @@ mod shared_registry;
 mod query;
 mod security;
 mod session;
+mod session_cmd;
 mod settings;
 mod state;
 mod storage;
@@ -200,15 +201,15 @@ pub fn run() {
             grid_edits::apply_row_edits,
             files::save_text_as,
             files::open_text_file,
-            session::session_info,
-            session::session_set_autocommit,
-            session::session_commit,
-            session::session_rollback,
-            session::session_set_schema,
-            session::session_close,
-            session::sessions_with_changes,
-            session::quit_ack,
-            session::quit_app,
+            session_cmd::session_info,
+            session_cmd::session_set_autocommit,
+            session_cmd::session_commit,
+            session_cmd::session_rollback,
+            session_cmd::session_set_schema,
+            session_cmd::session_close,
+            session_cmd::sessions_with_changes,
+            session_cmd::quit_ack,
+            session_cmd::quit_app,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,
@@ -293,18 +294,18 @@ pub fn run() {
             if let tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } = &event {
                 use std::sync::atomic::Ordering;
                 if label == "main"
-                    && !crate::session::QUIT_CONFIRMED.load(Ordering::SeqCst)
+                    && !crate::session_cmd::QUIT_CONFIRMED.load(Ordering::SeqCst)
                     && app.state::<AppState>().sessions.might_have_changes_now()
                 {
                     api.prevent_close();
-                    crate::session::QUIT_ACKED.store(false, Ordering::SeqCst);
+                    crate::session_cmd::QUIT_ACKED.store(false, Ordering::SeqCst);
                     let _ = app.emit("studio:quit-requested", ());
                     // A page that cannot answer must not keep the app open — nor
                     // end the work without the person: ask natively instead.
                     let handle = app.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_secs(4));
-                        if crate::session::QUIT_ACKED.load(Ordering::SeqCst) {
+                        if crate::session_cmd::QUIT_ACKED.load(Ordering::SeqCst) {
                             return;
                         }
                         use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -316,7 +317,7 @@ pub fn run() {
                             .buttons(MessageDialogButtons::OkCancelCustom("Roll back and quit".into(), "Cancel".into()))
                             .blocking_show();
                         if quit {
-                            crate::session::rollback_all_and_quit(&handle);
+                            crate::session_cmd::rollback_all_and_quit(&handle);
                         }
                     });
                 }

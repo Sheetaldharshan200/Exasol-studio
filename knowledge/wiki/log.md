@@ -257,3 +257,13 @@ Audit-driven (openspec/changes/workbench-hardening). Gotchas worth keeping:
 - **File writes**: only the workspace (checked on the canonical path) or a path picked in a Rust-side dialog (`save_text_as`, `open_text_file`); O_NOFOLLOW open; no hidden/Library/system/non-text targets.
 - Two Codex passes (11 + 8 findings), all fixed.
 
+
+## [2026-10-01] correctness | workbench-hardening phase 2 — one session per SQL tab, manual commit without silent loss
+Gotchas worth keeping:
+- **sqlx-exasol autocommit** is `pub(crate)`; only `ExaTransactionManager::begin` turns it off (needs `sqlx_core::transaction::TransactionManager` in scope). The driver's `open_transaction` is literally `!autocommit`.
+- **A COMMIT/ROLLBACK typed as SQL keeps autocommit off**: the server runs the next statement in a new transaction already. Calling `begin` again fails with "transaction already open" — the old code ignored that error, so it looked like it worked. `restart_manual` begins only when no transaction is open (live-tested: `INSERT; COMMIT; INSERT` leaves the second insert uncommitted).
+- **Close is fenced**: `session_close(tab, commit, seen)` waits on the tab's slot lock (a running statement finishes first), refuses if more changes exist than the person was shown, keeps the session when a commit is not confirmed, and removes the map entry only if it still points at the same slot.
+- **The backend is the source of truth** for "what would be lost": close/disconnect/quit call `sessions_with_changes`, never a cached snapshot. `session_info` only peeks, so looking at a tab never connects it.
+- **Empty result headers** are described on the tab's own connection: a table created in an uncommitted transaction is invisible to the pool.
+- Removed the unwired "Ask when auto-commit is off" and "Commit batch size" settings: Studio always asks, grid edits are atomic.
+- Two Codex passes (12 + 9 findings). One "critical" (mid-batch COMMIT drops manual mode) was disproved by the driver source and a live test; the rest were fixed.

@@ -101,19 +101,22 @@ export function useTabSession(opts: {
         const p = byId.get(t.id);
         return p && p.changes > 0 ? [{ title: t.title, changes: p.changes, recent: p.recent }] : [];
       });
-      const forget = () =>
+      const forget = (ids: string[]) =>
         setInfos((m) => {
           const next = { ...m };
-          for (const t of tabs) delete next[t.id];
+          for (const id of ids) delete next[id];
           return next;
         });
-      // A failed commit is reported and the tabs stay open, so the person
-      // can check what reached the database before redoing anything.
+      // A failed commit, or changes that arrived after the question, are
+      // reported and the tabs stay open with their sessions.
+      // Each close carries the count the person was shown: the backend
+      // refuses if more changes arrived meanwhile.
       const end = async (commit: boolean) => {
-        const results = await Promise.allSettled(tabs.map((t) => ipc.sessionClose(t.id, commit)));
-        forget();
+        const results = await Promise.allSettled(tabs.map((t) => ipc.sessionClose(t.id, commit, byId.get(t.id)?.changes ?? 0)));
+        forget(tabs.filter((_, i) => results[i].status === "fulfilled").map((t) => t.id));
+        tabs.forEach((t, i) => results[i].status === "rejected" && void refresh(t.id));
         const failed = results.flatMap((r) => (r.status === "rejected" ? [errorMessage(r.reason)] : []));
-        if (failed.length) notify("warning", commit ? "Commit failed" : "Could not end the session", failed.join("\n"));
+        if (failed.length) notify("warning", commit ? "Commit not confirmed" : "Tab kept open", failed.join("\n"));
         return failed.length === 0;
       };
       if (!dirty.length) return end(false);
@@ -131,7 +134,7 @@ export function useTabSession(opts: {
       if (choice === "cancel") return false;
       return end(choice === "commit");
     },
-    [notify],
+    [notify, refresh],
   );
   settleRef.current = settleBeforeClose;
 

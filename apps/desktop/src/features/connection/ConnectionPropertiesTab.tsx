@@ -52,10 +52,7 @@ export type ConnSettings = {
   physical: { singleConnection: boolean; validationSql: string; keepAlive: boolean; idleSeconds: number };
   transaction: {
     autoCommit: boolean;
-    askAlways: boolean;
-    askWhenUncommitted: boolean;
     isolation: "none" | "serializable";
-    commitBatchSize: number;
   };
   encoding: { textToBinary: string };
   sqlTemplates: Record<string, string>;
@@ -87,7 +84,7 @@ export const DEFAULT_CONN_SETTINGS: ConnSettings = {
     columns: { scripting: false, autoCompletion: false, queryBuilder: true, export: true },
   },
   physical: { singleConnection: false, validationSql: "", keepAlive: false, idleSeconds: 120 },
-  transaction: { autoCommit: true, askAlways: false, askWhenUncommitted: true, isolation: "none", commitBatchSize: 100 },
+  transaction: { autoCommit: true, isolation: "none" },
   encoding: { textToBinary: "UTF-8" },
   sqlTemplates: { ...DEFAULT_TEMPLATES },
   hooks: { connectEnabled: false, connectSql: "", disconnectEnabled: false, disconnectSql: "" },
@@ -142,7 +139,7 @@ const ENCODINGS = [
 
 /* ── shared building blocks (info-page design language) ─────────────────── */
 
-function SectionCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function SectionCard({ title, description, children }: { title: string; description?: string; children?: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-panel/50 p-4">
       <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
@@ -743,18 +740,12 @@ export function ConnectionPropertiesTab({
       case "transaction":
         return (
           <div className="space-y-4">
-            <SectionCard title="Auto Commit" description="With auto-commit on, every statement commits as its own transaction. Off, statements group into transactions ended by COMMIT or ROLLBACK. Affects new connections — reconnect to apply.">
+            <SectionCard title="Auto Commit" description="With auto-commit on, every statement commits as its own transaction. Off, statements group into transactions ended by COMMIT or ROLLBACK. This is the default for new SQL tabs; each tab can switch with its own toggle.">
               <CheckRow label="Auto Commit" checked={s.transaction.autoCommit} onChange={(v) => patch((n) => { n.transaction.autoCommit = v; })} />
             </SectionCard>
-            <SectionCard title="Ask when Auto Commit is OFF" description="Whether a confirmation shows after executing requests while auto-commit is off.">
-              <CheckRow label="Always" checked={s.transaction.askAlways} onChange={(v) => patch((n) => { n.transaction.askAlways = v; })} />
-              <CheckRow label="When Uncommitted Updates" checked={s.transaction.askWhenUncommitted} onChange={(v) => patch((n) => { n.transaction.askWhenUncommitted = v; })} />
-            </SectionCard>
+            <SectionCard title="Uncommitted changes" description="Closing a tab, disconnecting or quitting with uncommitted changes always asks: Commit, Roll back, or Cancel. Nothing is committed or rolled back without asking. Grid edits join the tab's open transaction; with auto-commit on they save together or not at all." />
             <SectionCard title="Transaction Isolation" description="Exasol always runs SERIALIZABLE — the strictest level. Shown here so the behavior is explicit; it cannot be lowered.">
               <PickerRow label="Transaction Isolation" value={s.transaction.isolation === "none" ? "Do not set" : "SERIALIZABLE"} options={["Do not set", "SERIALIZABLE"]} onChange={(v) => patch((n) => { n.transaction.isolation = v === "SERIALIZABLE" ? "serializable" : "none"; })} />
-            </SectionCard>
-            <SectionCard title="Commit Batch Size (rows)" description="After how many rows the data editor issues a COMMIT while saving grid edits. 0 = commit only when the save completes.">
-              <InputRow label="Commit Batch Size (rows)" value={String(s.transaction.commitBatchSize)} onChange={(v) => patch((n) => { n.transaction.commitBatchSize = Math.max(0, Number(v) || 0); })} width="w-24" />
             </SectionCard>
           </div>
         );

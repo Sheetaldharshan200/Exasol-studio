@@ -104,7 +104,7 @@ export function ExasolStudio({
   profiles: ConnectionProfile[];
   onConnected: (profile: ConnectionProfile, server: ServerInfo) => void | Promise<void>;
   onFocusConnection: (profileId: string) => void;
-  onDisconnect: (profileId?: string) => void;
+  onDisconnect: (profileId?: string) => void | Promise<void>;
   onSaved: () => void | Promise<void>;
 }) {
   const connected = Boolean(connection);
@@ -2605,7 +2605,7 @@ export function ExasolStudio({
   async function disconnectSafely(profileId?: string): Promise<boolean> {
     const id = profileId ?? connection?.profile.id;
     if (id && !(await tabSession.settleBeforeClose(tabsFor(id).filter((t) => t.view === "sql"), "Disconnect with uncommitted changes?"))) return false;
-    onDisconnect(profileId);
+    await onDisconnect(profileId);
     return true;
   }
   const pushNotification = (kind: "info" | "warning" | "success", title: string, body: string) =>
