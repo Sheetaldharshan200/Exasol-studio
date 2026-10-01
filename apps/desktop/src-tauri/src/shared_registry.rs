@@ -124,6 +124,10 @@ pub fn publish(entry: SharedConnection, password: Option<&str>) -> AppResult<()>
             // A plaintext file — even 0600 — is a copy anyone with the disk
             // can read; the exa CLI asks for the password instead.
             eprintln!("no OS credential store: the password for {id} is not shared with the exa CLI");
+            // An older build may have left a plaintext copy; it must not stay usable.
+            if let Some(cred) = credential_path(&id) {
+                let _ = std::fs::remove_file(cred);
+            }
         }
     }
     Ok(())

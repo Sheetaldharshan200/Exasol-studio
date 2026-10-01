@@ -847,6 +847,8 @@ export const ipc = {
   /** Native save dialog, then write: the backend only writes where the person picked. Null when cancelled. */
   saveTextAs: (defaultName: string, extensions: string[], contents: string) =>
     call<string | null>("save_text_as", { defaultName, extensions, contents }),
+  /** Native open dialog for a .sql/.txt file: [path, text], or null when cancelled. The file may then be saved back. */
+  openTextFile: () => call<[string, string] | null>("open_text_file"),
   /** Open `html` in a print window and run the system print dialog on it;
    *  false when the window opened but the dialog did not. */
   printHtml: (title: string, html: string) => call<boolean>("print_html", { title, html }),

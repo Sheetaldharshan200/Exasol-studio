@@ -376,4 +376,8 @@ describe("stripSqlComments and string literals", () => {
     const sql = "SELECT 'line one\n--/ still the string' AS s -- gone\nFROM t";
     assert.equal(stripSqlComments(sql), "SELECT 'line one\n--/ still the string' AS s \nFROM t");
   });
+
+  test("a --/ line inside a block comment is comment, not a script block", () => {
+    assert.equal(stripSqlComments("/* note\n--/\nignored\n/\n*/\nSELECT 1"), "\nSELECT 1");
+  });
 });

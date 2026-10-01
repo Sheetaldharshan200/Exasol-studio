@@ -13,7 +13,18 @@ pub async fn write_text_file(path: String, contents: String) -> AppResult<()> {
     let home = home_dir();
     let workspace = home.as_ref().map(|h| h.join("ExasolStudio"));
     let approved = approved_paths().lock().map(|s| s.contains(&target)).unwrap_or(false);
-    if !write_authorized(&target, workspace.as_deref(), approved) {
+    // Authorize the place the bytes will really land: a symlinked folder in
+    // the workspace must not reach a file outside it.
+    let real_workspace = workspace.as_deref().and_then(|w| std::fs::canonicalize(w).ok());
+    let real_target = target
+        .parent()
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .map(|p| p.join(target.file_name().unwrap_or_default()));
+    let in_workspace = match (&real_target, &real_workspace) {
+        (Some(t), Some(w)) => write_authorized(t, Some(w), false),
+        _ => false,
+    };
+    if !(approved || in_workspace) {
         return Err(crate::error::AppError::InvalidSettings(format!(
             "Refusing to write {}: only files in your Studio workspace, files you opened, or a place you picked in a save dialog can be written.",
             target.display()
@@ -34,8 +45,41 @@ fn write_checked(target: &std::path::Path, contents: &str, home: Option<&std::pa
         let real = real_parent.join(target.file_name().unwrap_or_default());
         write_permitted(&real, home).map_err(crate::error::AppError::InvalidSettings)?;
     }
-    std::fs::write(target, contents)?;
+    write_no_follow(target, contents.as_bytes())?;
     Ok(())
+}
+
+/// Write without following a symlink at the target, atomically with the open,
+/// so a link swapped in after the checks above is refused rather than followed.
+fn write_no_follow(target: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(libc::O_NOFOLLOW);
+    }
+    opts.open(target)?.write_all(bytes)
+}
+
+/// Open a text file the person picks in the native dialog. The dialog runs
+/// here, so the file becomes writable (saved back to) because they chose it.
+#[tauri::command]
+pub async fn open_text_file(app: tauri::AppHandle) -> AppResult<Option<(String, String)>> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().add_filter("SQL", &["sql", "txt"]).blocking_pick_file()
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    if std::fs::metadata(&path)?.len() > 8_000_000 {
+        return Err(crate::error::AppError::Storage("File is too large to open (over 8 MB).".into()));
+    }
+    let text = String::from_utf8_lossy(&std::fs::read(&path)?).to_string();
+    approve_path(&path);
+    Ok(Some((path.to_string_lossy().into_owned(), text)))
 }
 
 fn home_dir() -> Option<std::path::PathBuf> {
