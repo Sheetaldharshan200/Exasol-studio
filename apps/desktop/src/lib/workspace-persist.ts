@@ -50,6 +50,7 @@ const KEEP: readonly (keyof SqlTab)[] = [
   "sql",
   "pinned",
   "filePath",
+  "savedSql",
   "fileMissing",
   "groupId",
   "mcpPreset",
@@ -85,6 +86,9 @@ function reviveTab(raw: unknown): SqlTab | null {
     title: t.title,
     view: t.view,
     sql: typeof t.sql === "string" ? t.sql : "",
+    // Workspaces saved before the last-saved text was kept have none: a
+    // file-backed tab then counts as saved as restored, not as modified.
+    ...(typeof t.filePath === "string" && typeof t.savedSql !== "string" ? { savedSql: typeof t.sql === "string" ? t.sql : "" } : {}),
     response: null,
     execError: null,
   };
