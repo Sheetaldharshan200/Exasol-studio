@@ -215,8 +215,8 @@ export function stripSqlComments(sql: string): string {
     plain = [];
   };
   while (i < lines.length) {
-    // A `--/` line inside a still-open string literal is string content.
-    if (lines[i].trimStart().startsWith("--/") && !endsInsideString(plain.join("\n"))) {
+    // A `--/` line inside a still-open string or block comment is not a script.
+    if (lines[i].trimStart().startsWith("--/") && !endsInsideLiteral(plain.join("\n"))) {
       flush();
       const block: string[] = [];
       while (i < lines.length) {
@@ -237,8 +237,8 @@ export function stripSqlComments(sql: string): string {
   return out.join("\n");
 }
 
-/** Whether `sql` ends inside an unterminated '…' or "…" (comments skipped). */
-function endsInsideString(sql: string): boolean {
+/** Whether `sql` ends inside an unterminated '…', "…" or block comment. */
+function endsInsideLiteral(sql: string): boolean {
   let quote: string | null = null;
   for (let i = 0; i < sql.length; i++) {
     const c = sql[i];
@@ -254,7 +254,7 @@ function endsInsideString(sql: string): boolean {
       i = nl;
     } else if (c === "/" && sql[i + 1] === "*") {
       const end = sql.indexOf("*/", i + 2);
-      if (end < 0) return false;
+      if (end < 0) return true;
       i = end + 1;
     }
   }

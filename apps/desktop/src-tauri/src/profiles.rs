@@ -307,6 +307,15 @@ pub fn save_profile(
     match existing_index {
         Some(idx) => {
             profile.id = profiles[idx].id.clone();
+            // A changed address is a different shared connection: the old one
+            // (registry entry and its secret) goes, or it would come back on
+            // the next list and keep its password usable from the CLI.
+            let old = crate::shared_registry::connection_id(&profiles[idx].host, profiles[idx].port, &profiles[idx].username);
+            let new = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
+            let still_used = profiles.iter().enumerate().any(|(i, p)| i != idx && crate::shared_registry::connection_id(&p.host, p.port, &p.username) == old);
+            if old != new && !still_used {
+                let _ = crate::shared_registry::remove(&old);
+            }
             if profile.password.is_empty() {
                 profile.password = profiles[idx].password.clone();
             } else {

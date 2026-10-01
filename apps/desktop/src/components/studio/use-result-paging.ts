@@ -121,14 +121,25 @@ export function useResultPaging(opts: {
     // There is a next page: fetch page 0 under the plan and show it in place of
     // the run, so the rows on screen are exactly the rows page 1 continues.
     const tabId = activeTab.id;
+    // Until then the pager waits (`paging`): page 1 must never continue rows
+    // other than the ones on screen. Without a planned page 0, no paging.
+    setPaging(true);
     void (async () => {
-      await prefetch(tabId, base, 0);
-      const p0 = cache.current.get(tabId)?.pages.get(0);
-      const now = ctx.current.activeTab;
-      if (p0 && now.id === tabId && now.response === res && (now.resultPage ?? 0) === 0) {
-        ctx.current.patchTab(tabId, { response: p0, execError: null, resultPage: 0 });
+      try {
+        await prefetch(tabId, base, 0);
+        const p0 = cache.current.get(tabId)?.pages.get(0);
+        if (!p0) {
+          cache.current.delete(tabId);
+          return;
+        }
+        const now = ctx.current.activeTab;
+        if (now.id === tabId && now.response === res && (now.resultPage ?? 0) === 0) {
+          ctx.current.patchTab(tabId, { response: p0, execError: null, resultPage: 0 });
+        }
+        void prefetch(tabId, base, 1);
+      } finally {
+        setPaging(false);
       }
-      void prefetch(tabId, base, 1);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.id, activeTab.response, activeTab.resultPage]);

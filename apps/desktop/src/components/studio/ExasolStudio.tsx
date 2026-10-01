@@ -1430,14 +1430,14 @@ export function ExasolStudio({
       openFile("scratch.sql", "-- new query\n");
       return;
     }
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ multiple: false, filters: [{ name: "SQL", extensions: ["sql", "txt"] }] });
-    if (typeof picked !== "string") return;
     try {
-      const text = await ipc.fsReadText(picked);
+      // The dialog runs in Rust, which is what lets this file be saved back to.
+      const opened = await ipc.openTextFile();
+      if (!opened) return;
+      const [picked, text] = opened;
       openFile(picked.split("/").pop() ?? "query.sql", text, picked);
-    } catch {
-      /* unreadable */
+    } catch (e) {
+      pushNotification("warning", "Could not open the file", errorMessage(e));
     }
   }
 
@@ -2364,7 +2364,15 @@ export function ExasolStudio({
         );
         setFilesRefresh((n) => n + 1);
       } catch (e) {
-        pushNotification("warning", "Could not save", errorMessage(e));
+        // A file Studio may not write back to (opened from the file tree, not
+        // picked in a dialog): offer the save dialog rather than failing.
+        try {
+          const name = activeTab.filePath.split("/").pop() ?? "query.sql";
+          const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
+          if (saved) patchTab(activeTab.id, { title: saved.split("/").pop() ?? name, savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+        } catch (e2) {
+          pushNotification("warning", "Could not save", errorMessage(e2 ?? e));
+        }
       }
       return;
     }

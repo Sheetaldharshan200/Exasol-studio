@@ -198,6 +198,7 @@ pub fn run() {
             profiles::set_session_password,
             grid_edits::apply_row_edits,
             files::save_text_as,
+            files::open_text_file,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,
