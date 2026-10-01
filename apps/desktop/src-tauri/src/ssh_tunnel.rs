@@ -58,8 +58,11 @@ pub fn ssh_args(s: &SshSettings, target_host: &str, target_port: u16, timeout_se
         }
         Mode::Direct => {
             a.extend(["-T".into(), "-W".into(), format!("{target}:{target_port}")]);
-            // "Authenticated to …" tells when the session is up.
+            // "Authenticated to …" tells when the session is up — so its own
+            // session, never a master the user's config may name.
             opt(&mut a, "LogLevel=VERBOSE".into());
+            opt(&mut a, "ControlMaster=no".into());
+            opt(&mut a, "ControlPath=none".into());
         }
     }
     opt(&mut a, format!("ConnectTimeout={}", timeout_secs.max(1)));
@@ -279,16 +282,24 @@ async fn relay(local: tokio::net::TcpStream, plan: Arc<Plan>) {
 pub struct SshTunnel {
     pub port: u16,
     task: tokio::task::JoinHandle<()>,
+    // Declared in drop order: the channels go, then the master, then its socket.
     _master: Option<tokio::process::Child>,
-    control: Option<PathBuf>,
+    _control: Option<ControlSocket>,
 }
 
 impl Drop for SshTunnel {
     fn drop(&mut self) {
         self.task.abort();
-        if let Some(c) = &self.control {
-            let _ = std::fs::remove_file(c);
-        }
+    }
+}
+
+/// The master's control socket: removed whenever it goes out of scope, a
+/// failed open included.
+struct ControlSocket(PathBuf);
+
+impl Drop for ControlSocket {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
     }
 }
 
@@ -342,7 +353,8 @@ pub async fn open(s: &SshSettings, secret: &str, target_host: &str, target_port:
     }
     let t = timeout.as_secs();
     let (channel, master, control) = if cfg!(unix) {
-        let ctl = control_path(data_dir)?;
+        let control = ControlSocket(control_path(data_dir)?);
+        let ctl = control.0.clone();
         let master_plan = Plan { args: ssh_args(s, target_host, target_port, t, &known, has_secret, Mode::Master(&ctl)), env };
         let mut master = spawn(&master_plan, false).map_err(|e| AppError::Database(format!("Could not run ssh ({e}). Install the OpenSSH client.")))?;
         let master_said = collect_stderr(&mut master);
@@ -371,7 +383,7 @@ pub async fn open(s: &SshSettings, secret: &str, target_host: &str, target_port:
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
         let channel = Plan { args: ssh_args(s, target_host, target_port, t, &known, false, Mode::Channel(&ctl)), env: Vec::new() };
-        (channel, Some(master), Some(ctl))
+        (channel, Some(master), Some(control))
     } else {
         let channel = Plan { args: ssh_args(s, target_host, target_port, t, &known, has_secret, Mode::Direct), env };
         wait_signed_in(&channel, &s.host, timeout).await?;
@@ -394,7 +406,7 @@ pub async fn open(s: &SshSettings, secret: &str, target_host: &str, target_port:
             }
         }
     });
-    Ok(SshTunnel { port, task, _master: master, control })
+    Ok(SshTunnel { port, task, _master: master, _control: control })
 }
 
 // ── Host keys ("ask") ───────────────────────────────────────────────────────
@@ -592,7 +604,7 @@ mod tests {
         let j = ssh_args(&s(), "db.internal", 8563, 15, Path::new("/k"), true, Mode::Channel(ctl)).join(" ");
         assert_eq!(j, "-S /d/ssh/ctl/ab12 -o ControlMaster=no -T -W db.internal:8563 -- bastion");
         let d = ssh_args(&s(), "::1", 8563, 15, Path::new("/k"), false, Mode::Direct).join(" ");
-        assert!(d.starts_with("-T -W [::1]:8563 -o LogLevel=VERBOSE "), "without multiplexing each channel signs in: {d}");
+        assert!(d.starts_with("-T -W [::1]:8563 -o LogLevel=VERBOSE -o ControlMaster=no -o ControlPath=none "), "its own sign-in, never a user's master: {d}");
     }
 
     #[test]
