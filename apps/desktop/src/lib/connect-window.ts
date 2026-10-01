@@ -8,6 +8,9 @@ export const EV_READY = "connect:ready";
 export const EV_REQUEST = "connect:request";
 export const EV_ESTABLISHED = "connect:established";
 export const EV_TESTED = "connect:tested";
+/** A certificate the person chose to trust in the connect window. */
+export const EV_TRUSTED = "connect:trusted";
+export type TrustedCertificate = { host: string; port: number; fingerprint: string };
 
 /** True when the current webview is the dedicated connect window. */
 export function isConnectWindow(): boolean {

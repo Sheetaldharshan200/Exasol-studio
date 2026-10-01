@@ -144,3 +144,19 @@ test("deserialize tolerates malformed tab entries without throwing", () => {
   assert.equal(out.tabsByConn.c1.length, 1);
   assert.equal(out.tabsByConn.c1[0].id, "ok");
 });
+
+test("a file-backed tab keeps its last-saved text, so a restored tab is not marked modified", () => {
+  const state: WorkspaceState = {
+    tabsByConn: { c1: [tab({ id: "f", filePath: "/w/a.sql", sql: "SELECT 1", savedSql: "SELECT 1" })] },
+    groupsByConn: {},
+    activeIdByConn: { c1: "f" },
+  };
+  const out = roundTrip(state)!;
+  assert.equal(out.tabsByConn.c1[0].savedSql, "SELECT 1");
+});
+
+test("a file-backed tab from an older workspace without savedSql restores as saved, not modified", () => {
+  const raw = JSON.stringify({ v: 1, tabsByConn: { c1: [{ id: "f", title: "a.sql", view: "sql", sql: "SELECT 1", filePath: "/w/a.sql" }] }, groupsByConn: {}, activeIdByConn: {} });
+  const out = deserializeWorkspace(raw)!;
+  assert.equal(out.tabsByConn.c1[0].savedSql, "SELECT 1");
+});

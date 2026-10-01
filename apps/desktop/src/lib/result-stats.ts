@@ -19,20 +19,39 @@ export function filterRows(rows: readonly unknown[][], query: string): unknown[]
   return rows.filter((row) => row.some((cell) => cellText(cell).toLowerCase().includes(needle)));
 }
 
-/** Escape a single CSV field per RFC 4180 (quote when it contains , " or a newline). */
-function csvField(value: unknown): string {
-  const text = cellText(value);
+/** Text a spreadsheet would run as a formula (`=`, `+`, `@`, tab, CR, or `-`
+ *  not starting a number). Numbers are never touched. */
+function looksLikeFormula(text: string): boolean {
+  return /^[=+@\t\r]/.test(text) || /^-(?![\d.])/.test(text);
+}
+
+/** Escape a single CSV field per RFC 4180. NULL is an empty field; an empty
+ *  string is `""`, so the two stay apart. */
+function csvField(value: unknown, guardFormulas: boolean): string {
+  if (value === null || value === undefined) return "";
+  let text = cellText(value);
+  if (text === "") return '""';
+  if (guardFormulas && typeof value === "string" && looksLikeFormula(text)) text = `'${text}`;
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
+
+export type CsvOptions = {
+  /** Prefix text cells a spreadsheet would execute (default true: files are
+   *  opened in spreadsheets more often than anywhere else). */
+  guardFormulas?: boolean;
+  /** Start with a UTF-8 byte order mark so Excel reads non-ASCII text right. */
+  bom?: boolean;
+};
 
 /**
  * Render columns + rows as RFC 4180 CSV (CRLF line endings, header row from
  * column names). Empty rows still emit the header.
  */
-export function toCsv(columns: readonly ColumnMeta[], rows: readonly unknown[][]): string {
-  const header = columns.map((c) => csvField(c.name)).join(",");
-  const body = rows.map((row) => row.map(csvField).join(","));
-  return [header, ...body].join("\r\n");
+export function toCsv(columns: readonly ColumnMeta[], rows: readonly unknown[][], opts: CsvOptions = {}): string {
+  const guard = opts.guardFormulas ?? true;
+  const header = columns.map((c) => csvField(c.name, guard)).join(",");
+  const body = rows.map((row) => row.map((v) => csvField(v, guard)).join(","));
+  return `${opts.bom ? "\uFEFF" : ""}${[header, ...body].join("\r\n")}`;
 }
 
 /** "executed" = the statement ran, but the driver cannot report a row count. */

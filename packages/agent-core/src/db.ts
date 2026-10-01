@@ -1,6 +1,9 @@
 import { ExasolDriver, type ExaWebsocket } from "@exasol/exasol-driver-ts";
 import { WebSocket } from "ws";
+import type { TLSSocket } from "node:tls";
 import { log } from "./log.ts";
+import { pinMatches, rejectUnauthorized } from "./tls-pin.ts";
+import { classifySql } from "./sql-kind.ts";
 
 /**
  * Registered database connections, held IN MEMORY ONLY. The desktop app's
@@ -16,7 +19,28 @@ export type DbConnectionInfo = {
   password: string;
   encryption?: boolean;
   schema?: string;
+  /** Verify the certificate (the connection's verify modes). */
+  verify?: boolean;
+  /** Pinned certificate, SHA-256 hex: checked on the connection itself. */
+  fingerprint?: string | null;
+  /** A read-only connection (Properties → Safety): the agent only reads. */
+  readOnly?: boolean;
 };
+
+/** The agent's read paths take only reads on a read-only connection: a
+ *  script (EXECUTE SCRIPT) or a batch with a write is refused there too. */
+export function assertReadable(info: DbConnectionInfo | undefined, id: string, sql: string): DbConnectionInfo {
+  if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+  if (info.readOnly && classifySql(sql) !== "read") throw new Error(`"${info.name}" is read-only: the assistant can only read from it.`);
+  return info;
+}
+
+/** The agent's write paths refuse a read-only connection. */
+export function assertWritable(info: DbConnectionInfo | undefined, id: string): DbConnectionInfo {
+  if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+  if (info.readOnly) throw new Error(`"${info.name}" is read-only: the assistant can only read from it.`);
+  return info;
+}
 
 export type QueryOutput = {
   columns: string[];
@@ -71,11 +95,22 @@ export class DbRegistry {
 
   private makeDriver(info: DbConnectionInfo, opts?: { autocommit?: boolean }): ExasolDriver {
     return new ExasolDriver(
-      (url) =>
-        // Local/self-signed deployments (Exasol Personal) need TLS
-        // verification off; the connection never leaves this machine
-        // unless the user pointed it elsewhere on purpose.
-        new WebSocket(url, { rejectUnauthorized: false }) as unknown as ExaWebsocket,
+      (url) => {
+        // The connection's own trust settings (tls-pin.ts): a pin is checked
+        // at the TLS upgrade, before the driver sends the login.
+        const ws = new WebSocket(url, { rejectUnauthorized: rejectUnauthorized(info) });
+        const pin = info.fingerprint;
+        if (pin) {
+          ws.on("upgrade", (res) => {
+            const cert = (res.socket as TLSSocket).getPeerCertificate?.();
+            if (!pinMatches(cert?.fingerprint256, pin)) {
+              ws.emit("error", new Error("The server's certificate does not match the pinned fingerprint."));
+              ws.terminate();
+            }
+          });
+        }
+        return ws as unknown as ExaWebsocket;
+      },
       {
         host: info.host,
         port: info.port,
@@ -98,8 +133,7 @@ export class DbRegistry {
    * connection is closed either way — the shared pool driver is untouched.
    */
   async bulkLoad<T>(id: string, work: (execute: (sql: string) => Promise<number>) => Promise<T>): Promise<T> {
-    const info = this.conns.get(id);
-    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const info = assertWritable(this.conns.get(id), id);
     const driver = this.makeDriver(info, { autocommit: false });
     await driver.connect();
     // Write notifications are held until COMMIT: observers must never see
@@ -137,6 +171,7 @@ export class DbRegistry {
 
   /** Run a read query and shape the result for the model. */
   async query(id: string, sql: string): Promise<QueryOutput> {
+    assertReadable(this.conns.get(id), id, sql);
     const run = async () => {
       const d = await this.driver(id);
       return d.query(sql);
@@ -177,8 +212,7 @@ export class DbRegistry {
    * interleave frames and hang, so every parallel step gets its own session.
    */
   async queryIsolated(id: string, sql: string): Promise<QueryOutput> {
-    const info = this.conns.get(id);
-    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const info = assertReadable(this.conns.get(id), id, sql);
     const driver = this.makeDriver(info);
     try {
       await driver.connect();
@@ -198,8 +232,7 @@ export class DbRegistry {
 
   /** P5 companion to queryIsolated for statements that modify state. */
   async executeIsolated(id: string, sql: string): Promise<number> {
-    const info = this.conns.get(id);
-    if (!info) throw new Error(`No connection "${id}" registered with the agent`);
+    const info = assertWritable(this.conns.get(id), id);
     const driver = this.makeDriver(info);
     try {
       await driver.connect();
@@ -258,6 +291,7 @@ export class DbRegistry {
 
   /** Run DDL/DML; returns affected row count. */
   async execute(id: string, sql: string): Promise<number> {
+    assertWritable(this.conns.get(id), id);
     let affected: number;
     try {
       const d = await this.driver(id);

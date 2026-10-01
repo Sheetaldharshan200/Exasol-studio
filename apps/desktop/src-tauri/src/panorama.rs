@@ -213,13 +213,15 @@ pub fn parse_target(target: &str) -> Option<(bool, String, u16)> {
 /// else whether TLS is on (`disabled` mode is the only plain one) and, when
 /// on, whether the certificate is verified. The frame does not get to pick:
 /// asking for `ws://` where the connection encrypts is refused.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Transport {
     pub tls: bool,
     pub verify: bool,
+    /// A pinned certificate: checked on the upstream connection itself.
+    pub pin: Option<String>,
 }
 
-pub fn known_connection(profiles: &[(String, u16, String)], host: &str, port: u16) -> Option<Transport> {
+pub fn known_connection(profiles: &[(String, u16, String, Option<String>)], host: &str, port: u16) -> Option<Transport> {
     let same_host = |a: &str, b: &str| {
         let norm = |h: &str| match h {
             "localhost" => "127.0.0.1".to_string(),
@@ -227,54 +229,18 @@ pub fn known_connection(profiles: &[(String, u16, String)], host: &str, port: u1
         };
         norm(a) == norm(b)
     };
-    profiles.iter().find(|(h, p, _)| *p == port && same_host(h, host)).map(|(_, _, mode)| Transport {
-        tls: mode != "disabled",
-        verify: mode.starts_with("verify"),
+    profiles.iter().find(|(h, p, _, _)| *p == port && same_host(h, host)).map(|(_, _, mode, pin)| Transport {
+        tls: mode != "disabled" || pin.is_some(),
+        verify: pin.is_none() && mode.starts_with("verify"),
+        pin: pin.clone(),
     })
 }
 
-fn saved_addresses(app: &AppHandle) -> Vec<(String, u16, String)> {
+fn saved_addresses(app: &AppHandle) -> Vec<(String, u16, String, Option<String>)> {
     let state = app.state::<crate::state::AppState>();
     crate::profiles::load_profiles(&state)
-        .map(|list| list.into_iter().map(|p| (p.host, p.port, p.ssl_mode)).collect())
+        .map(|list| list.into_iter().map(|p| (p.host, p.port, p.ssl_mode, p.fingerprint)).collect())
         .unwrap_or_default()
-}
-
-/// A certificate verifier that accepts what it is shown: the browser's refusal
-/// is what this shell exists to replace, for a database the person saved.
-#[derive(Debug)]
-struct AcceptAny(rustls::crypto::CryptoProvider);
-
-impl rustls::client::danger::ServerCertVerifier for AcceptAny {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(message, cert, dss, &self.0.signature_verification_algorithms)
-    }
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(message, cert, dss, &self.0.signature_verification_algorithms)
-    }
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
-    }
 }
 
 fn tls_config(verify: bool) -> Result<Arc<rustls::ClientConfig>, String> {
@@ -289,7 +255,7 @@ fn tls_config(verify: bool) -> Result<Arc<rustls::ClientConfig>, String> {
         }
         builder.with_root_certificates(roots).with_no_client_auth()
     } else {
-        builder.dangerous().with_custom_certificate_verifier(Arc::new(AcceptAny(provider))).with_no_client_auth()
+        builder.dangerous().with_custom_certificate_verifier(Arc::new(crate::tls_trust::AcceptAny(provider))).with_no_client_auth()
     };
     Ok(Arc::new(config))
 }
@@ -298,12 +264,19 @@ type Upstream = async_tungstenite::WebSocketStream<async_tungstenite::tokio::Tok
 trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> AsyncStream for T {}
 
-async fn open_upstream(target: &str, tls: bool, host: &str, port: u16, verify: bool) -> Result<Upstream, String> {
+async fn open_upstream(target: &str, tls: bool, host: &str, port: u16, verify: bool, pin: Option<&str>) -> Result<Upstream, String> {
     let tcp = TcpStream::connect((host, port)).await.map_err(|e| format!("could not reach {host}:{port}: {e}"))?;
     let stream: Box<dyn AsyncStream> = if tls {
         let config = tls_config(verify)?;
         let name = rustls::pki_types::ServerName::try_from(host.to_string()).map_err(|_| format!("{host} is not a valid server name"))?;
         let connected = tokio_rustls::TlsConnector::from(config).connect(name, tcp).await.map_err(|e| format!("TLS to {host}:{port} failed: {e}"))?;
+        // A pin is checked on this very connection, before anything is relayed.
+        if let Some(pin) = pin {
+            let leaf = connected.get_ref().1.peer_certificates().and_then(|c| c.first().map(|d| d.as_ref().to_vec()));
+            if leaf.map(|d| crate::tls_trust::fingerprint_of(&d)).as_deref() != Some(pin) {
+                return Err(format!("{host}:{port} presents a certificate other than the pinned one"));
+            }
+        }
         Box::new(connected)
     } else {
         Box::new(tcp)
@@ -358,7 +331,7 @@ async fn serve_one(app: AppHandle, stream: TcpStream, token: String) {
         close(page, format!("{host}:{port} is reached over {} in Studio; the requested scheme does not match.", if transport.tls { "wss" } else { "ws" })).await;
         return;
     }
-    let upstream = match tokio::time::timeout(HANDSHAKE, open_upstream(&asked.target, tls, &host, port, transport.verify)).await {
+    let upstream = match tokio::time::timeout(HANDSHAKE, open_upstream(&asked.target, tls, &host, port, transport.verify, transport.pin.as_deref())).await {
         Ok(Ok(s)) => s,
         Ok(Err(why)) => {
             close(page, why).await;
@@ -607,13 +580,19 @@ mod tests {
         assert_eq!(parse_target("https://x:1"), None);
         assert_eq!(parse_target("wss://:1"), None);
         let saved = vec![
-            ("127.0.0.1".to_string(), 8563u16, "preferred".to_string()),
-            ("db.internal".to_string(), 8563, "verify_ca".to_string()),
-            ("plain.internal".to_string(), 8563, "disabled".to_string()),
+            ("127.0.0.1".to_string(), 8563u16, "preferred".to_string(), None),
+            ("db.internal".to_string(), 8563, "verify_ca".to_string(), None),
+            ("plain.internal".to_string(), 8563, "disabled".to_string(), None),
+            ("pinned.internal".to_string(), 8563, "verify_identity".to_string(), Some("AB".repeat(32))),
         ];
-        assert_eq!(known_connection(&saved, "localhost", 8563), Some(Transport { tls: true, verify: false }), "localhost is this machine; a preferred mode encrypts without verifying");
-        assert_eq!(known_connection(&saved, "DB.internal", 8563), Some(Transport { tls: true, verify: true }), "a verifying mode verifies");
-        assert_eq!(known_connection(&saved, "plain.internal", 8563), Some(Transport { tls: false, verify: false }), "only a disabled mode is plain — a ws:// request anywhere else is refused");
+        assert_eq!(
+            known_connection(&saved, "pinned.internal", 8563),
+            Some(Transport { tls: true, verify: false, pin: Some("AB".repeat(32)) }),
+            "a pin is checked by fingerprint on the upstream connection"
+        );
+        assert_eq!(known_connection(&saved, "localhost", 8563), Some(Transport { tls: true, verify: false, pin: None }), "localhost is this machine; a preferred mode encrypts without verifying");
+        assert_eq!(known_connection(&saved, "DB.internal", 8563), Some(Transport { tls: true, verify: true, pin: None }), "a verifying mode verifies");
+        assert_eq!(known_connection(&saved, "plain.internal", 8563), Some(Transport { tls: false, verify: false, pin: None }), "only a disabled mode is plain — a ws:// request anywhere else is refused");
         assert_eq!(known_connection(&saved, "127.0.0.1", 8565), None, "another port is another database");
         assert_eq!(known_connection(&saved, "evil.example", 8563), None);
         assert_eq!(percent_decode("/%aé.js"), "/%aé.js", "a stray percent before multibyte text is left alone, never sliced");

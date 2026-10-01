@@ -6,6 +6,7 @@
 import type { ResultKind } from "./result-stats.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { mockInvoke } from "@/lib/ipc-mock";
+import { hookNotice } from "./connect-flow";
 
 export type DriverInfo = {
   id: string;
@@ -32,6 +33,12 @@ export type ConnectionProfile = {
   driverId: string;
   createdAt?: string | null;
   lastUsedAt?: string | null;
+  /** Pinned TLS certificate: SHA-256, 64 upper-case hex digits. */
+  fingerprint?: string | null;
+  /** A CA certificate file to verify the server against. */
+  sslCa?: string | null;
+  /** password | access_token | refresh_token; a token sits in `password`. */
+  authMethod?: string;
 };
 
 export type PingResult = {
@@ -47,6 +54,8 @@ export type ServerInfo = {
   currentSchema: string | null;
   sessionId: string;
   nodes: number | null;
+  /** Connect hook statements that failed; the connection still works. */
+  hookErrors?: string[];
 };
 
 export type SchemaSummary = {
@@ -390,6 +399,19 @@ export type ScriptPlan = { version: string; files: string[]; statements: { head:
 export type SlcChoice = { alias: string; installed: boolean };
 /** dash-server as Studio sees it: installed? answering? for which connection? */
 export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
+/** A SQL tab's own database session: its id, schema, mode and uncommitted work. */
+export type SessionInfo = {
+  sessionId: string | null;
+  schema: string | null;
+  autocommit: boolean;
+  changes: number;
+  recent: string[];
+  idleSeconds: number;
+  /** Whether the tab has a session at all yet. */
+  open: boolean;
+  /** Version of the uncommitted changes; a close names the one it showed. */
+  changeSeq: number;
+};
 /** One file picked through the OS dialog and copied into the attachments folder. */
 export type PickedAttachment = { name: string; path: string; size: number; mime: string; inline?: string };
 export type AttachmentPicks = {
@@ -609,6 +631,30 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   return mockInvoke(command, args) as Promise<T>;
 }
 
+type RunGuard = (req: { profileId: string; connectionName: string; sql: string; split: boolean }) => Promise<void>;
+let runGuard: RunGuard | null = null;
+/** Production safety before every executeSql (lib/run-guard.ts): throws to refuse. */
+export function setRunGuard(fn: RunGuard | null) {
+  runGuard = fn;
+}
+
+export type SecretAnswer = { secret: string; remember: boolean };
+type SecretPrompt = (req: { profileId: string }) => Promise<SecretAnswer | null>;
+let secretPrompt: SecretPrompt | null = null;
+/** The dialog that asks for a missing password or token (ConnectPasswordDialog). */
+export function setSecretPrompt(fn: SecretPrompt | null) {
+  secretPrompt = fn;
+}
+
+/** Failed connection hooks are told to the person wherever a connect or
+ *  disconnect started (the shell shows `studio:notice`). */
+function reportHooks(errors: string[] | undefined, phase: "connect" | "disconnect") {
+  const n = hookNotice(errors, phase);
+  if (n && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "warning", ...n } }));
+  }
+}
+
 export function errorMessage(err: unknown): string {
   if (typeof err === "string") return err;
   if (err && typeof err === "object" && "message" in err) {
@@ -622,14 +668,42 @@ export const ipc = {
   listConnectionProfiles: () => call<ConnectionProfile[]>("list_connection_profiles"),
   saveConnectionProfile: (profile: Omit<ConnectionProfile, "id"> & { id?: string }) =>
     call<ConnectionProfile>("save_connection_profile", { profile: { id: "", ...profile } }),
+  /** Copy a connection with its secret and settings under a free name. */
+  duplicateConnectionProfile: (profileId: string) => call<ConnectionProfile>("duplicate_profile", { profileId }),
+  /** Save every connection to a JSON file (no passwords); its path, or null when cancelled. */
+  exportConnections: () => call<string | null>("export_connections"),
+  /** Import a connections file; null when cancelled. */
+  importConnections: () => call<{ added: string[]; skipped: string[]; failed: string[] } | null>("import_connections"),
   deleteConnectionProfile: (profileId: string) =>
     call<void>("delete_connection_profile", { profileId }),
+  /** The SHA-256 fingerprint of the certificate the server presents now. */
+  serverCertificate: (host: string, port: number) => call<string>("server_certificate", { host, port }),
+  /** Choose a CA certificate file; its full path, or null when cancelled. */
+  pickCaFile: () => call<string | null>("pick_ca_file"),
+  /** Whether a connected profile still runs a query (not just an open port). */
+  connectionAlive: (profileId: string) => call<boolean>("connection_alive", { profileId }),
   pingServer: (host: string, port: number) =>
     call<PingResult>("ping_server", { host, port }),
   testConnection: (profile: Omit<ConnectionProfile, "id"> & { id?: string }) =>
     call<ServerInfo>("test_connection", { profile: { id: "", ...profile } }),
-  connect: (profileId: string) => call<ServerInfo>("connect", { profileId }),
-  disconnect: (profileId: string) => call<void>("disconnect", { profileId }),
+  connect: async (profileId: string) => {
+    // No secret stored (session-only, cleared, lost): ask first.
+    if (secretPrompt && (await call<boolean>("profile_secret_missing", { profileId }).catch(() => false))) {
+      const answer = await secretPrompt({ profileId });
+      if (!answer) throw { kind: "invalid-settings", message: "Sign-in cancelled." };
+      if (answer.remember) {
+        const p = (await call<ConnectionProfile[]>("list_connection_profiles")).find((x) => x.id === profileId);
+        if (p) await call("save_connection_profile", { profile: { ...p, password: answer.secret } });
+      } else {
+        await call("set_session_password", { profileId, password: answer.secret });
+      }
+    }
+    const info = await call<ServerInfo>("connect", { profileId });
+    reportHooks(info.hookErrors, "connect");
+    return info;
+  },
+  disconnect: (profileId: string) =>
+    call<string[] | null>("disconnect", { profileId }).then((errors) => reportHooks(errors ?? undefined, "disconnect")),
   listOpenConnections: () => call<string[]>("list_open_connections"),
   getDatabaseOverview: (profileId: string) =>
     call<DatabaseOverview>("get_database_overview", { profileId }),
@@ -800,6 +874,11 @@ export const ipc = {
   openExternal: (url: string) => call<null>("open_external", { url }),
   /** System Settings → Privacy & Security → Local Network (macOS). */
   openLocalNetworkSettings: () => call<null>("open_local_network_settings"),
+  /** Keep a password for this run only; removes any saved copy. Empty forgets it. */
+  setSessionPassword: (profileId: string, password: string) => call<null>("set_session_password", { profileId, password }),
+  /** Staged grid edits in one transaction; each must touch exactly one row, or nothing is saved. */
+  applyRowEdits: (profileId: string, connectionName: string, statements: string[], tabId?: string) =>
+    call<{ ok: boolean; failedIndex: number | null; error: string | null }>("apply_row_edits", { profileId, connectionName, statements, tabId }),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
   gitCommit: (message: string, stageAll?: boolean) => call<string>("git_commit", { message, stageAll }),
@@ -839,6 +918,11 @@ export const ipc = {
   revealPath: (path: string) => call<void>("reveal_path", { path }),
   writeTextFile: (path: string, contents: string) =>
     call<void>("write_text_file", { path, contents }),
+  /** Native save dialog, then write: the backend only writes where the person picked. Null when cancelled. */
+  saveTextAs: (defaultName: string, extensions: string[], contents: string) =>
+    call<string | null>("save_text_as", { defaultName, extensions, contents }),
+  /** Native open dialog for a .sql/.txt file: [path, text], or null when cancelled. The file may then be saved back. */
+  openTextFile: () => call<[string, string] | null>("open_text_file"),
   /** Open `html` in a print window and run the system print dialog on it;
    *  false when the window opened but the dialog did not. */
   printHtml: (title: string, html: string) => call<boolean>("print_html", { title, html }),
@@ -859,13 +943,11 @@ export const ipc = {
     call<FsEntry[]>("fs_search", { root, query, limit }),
   fsDelete: (path: string) => call<void>("fs_delete", { path }),
   exapumpAvailable: () => call<boolean>("exapump_available"),
+  /** Load a file with ExaPump into a saved connection (credentials and
+   *  certificate trust are resolved in Rust from the profile). */
   exapumpUpload: (args: {
-    host: string;
-    port: number;
-    user: string;
-    password: string;
+    profileId: string;
     schema?: string;
-    tls: boolean;
     file: string;
     table: string;
     delimiter?: string;
@@ -879,7 +961,38 @@ export const ipc = {
     split = true,
     addHistory = true,
     progressId?: string,
-  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId }),
+    /** Run on this SQL tab's own database session (session state carries over). */
+    tabId?: string,
+    /** Execution options; the backend stops on errors and goes on after empty results by default. */
+    stop?: { onError?: boolean; onNoRows?: boolean },
+  ) =>
+    (runGuard ? runGuard({ profileId, connectionName, sql, split }) : Promise.resolve()).then(() => call<ExecuteResponse>("execute_sql", {
+      profileId,
+      connectionName,
+      sql,
+      maxRows,
+      split,
+      addHistory,
+      progressId,
+      tabId,
+      stopOnError: stop?.onError,
+      stopOnNoRows: stop?.onNoRows,
+    })),
+  // ── The SQL tab's own session (session.rs) ──
+  /** Never opens a session: looking at a tab does not connect it. */
+  sessionInfo: (tabId: string, profileId?: string) => call<SessionInfo>("session_info", { tabId, profileId }),
+  sessionSetAutocommit: (profileId: string, tabId: string, on: boolean) => call<SessionInfo>("session_set_autocommit", { profileId, tabId, on }),
+  sessionCommit: (profileId: string, tabId: string) => call<SessionInfo>("session_commit", { profileId, tabId }),
+  sessionRollback: (profileId: string, tabId: string) => call<SessionInfo>("session_rollback", { profileId, tabId }),
+  sessionSetSchema: (profileId: string, tabId: string, schema: string) => call<SessionInfo>("session_set_schema", { profileId, tabId, schema }),
+  /** `seen`: the `changeSeq` the person was shown (none if shown nothing);
+   *  any other uncommitted changes → refused, the session stays. */
+  sessionClose: (tabId: string, commit: boolean, seen?: number) => call<null>("session_close", { tabId, commit, seen }),
+  sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number; recent: string[]; changeSeq: number }[]>("sessions_with_changes", { profileId }),
+  /** The page has a quit request and is asking the person (stops the watchdog). */
+  quitAck: () => call<null>("quit_ack"),
+  /** Quit for real, after open transactions were settled. */
+  quitApp: () => call<null>("quit_app"),
   /** Cancel the running query registered under `progressId` (Stop). Returns
    *  true when a kill was issued, false when nothing was running. */
   cancelQuery: (progressId: string) => call<boolean>("cancel_query", { progressId }),

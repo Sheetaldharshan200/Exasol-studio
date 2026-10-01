@@ -201,6 +201,67 @@ export function pickRunSql(scope: RunScope, full: string, selection: string, cur
 
 /** Strip line (--) and block comments, preserving string literals. */
 export function stripSqlComments(sql: string): string {
+  // A `--/` line opens an Exasol script block that runs to a line holding only
+  // `/`. Its body is script code (Lua, Python, …) where comments are code, and
+  // the `--/` marker itself is what keeps the server from splitting the body
+  // on its `;` — so blocks pass through untouched and only the SQL around them
+  // loses its comments.
+  const lines = sql.split("\n");
+  const out: string[] = [];
+  let plain: string[] = [];
+  let i = 0;
+  const flush = () => {
+    if (plain.length) out.push(stripCommentsOutsideBlocks(plain.join("\n")));
+    plain = [];
+  };
+  while (i < lines.length) {
+    // A `--/` line inside a still-open string or block comment is not a script.
+    if (lines[i].trimStart().startsWith("--/") && !endsInsideLiteral(plain.join("\n"))) {
+      flush();
+      const block: string[] = [];
+      while (i < lines.length) {
+        block.push(lines[i]);
+        if (block.length > 1 && lines[i].trim() === "/") {
+          i++;
+          break;
+        }
+        i++;
+      }
+      out.push(block.join("\n"));
+    } else {
+      plain.push(lines[i]);
+      i++;
+    }
+  }
+  flush();
+  return out.join("\n");
+}
+
+/** Whether `sql` ends inside an unterminated '…', "…" or block comment. */
+function endsInsideLiteral(sql: string): boolean {
+  let quote: string | null = null;
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i];
+    if (quote) {
+      if (c === quote) {
+        if (sql[i + 1] === quote) i++;
+        else quote = null;
+      }
+    } else if (c === "'" || c === '"') quote = c;
+    else if (c === "-" && sql[i + 1] === "-") {
+      const nl = sql.indexOf("\n", i);
+      if (nl < 0) return false;
+      i = nl;
+    } else if (c === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      if (end < 0) return true;
+      i = end + 1;
+    }
+  }
+  return quote !== null;
+}
+
+function stripCommentsOutsideBlocks(sql: string): string {
   let out = "";
   let inSingle = false;
   let inDouble = false;
