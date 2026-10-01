@@ -42,6 +42,21 @@ pub struct ConnectionProfile {
     pub created_at: Option<String>,
     #[serde(default)]
     pub last_used_at: Option<String>,
+    /// Pinned TLS certificate (SHA-256, 64 upper-case hex). When set, the
+    /// server must present exactly this certificate (tls_trust.rs).
+    #[serde(default)]
+    pub fingerprint: Option<String>,
+    /// A CA certificate file to verify the server against (verify modes).
+    #[serde(default)]
+    pub ssl_ca: Option<String>,
+    /// password | access_token | refresh_token. For a token the secret sits
+    /// where the password does (keychain / vault), and no user is sent.
+    #[serde(default = "default_auth_method")]
+    pub auth_method: String,
+}
+
+fn default_auth_method() -> String {
+    "password".to_string()
 }
 
 fn default_port() -> u16 {
@@ -272,12 +287,7 @@ pub fn save_profile(
     state: &AppState,
     mut profile: ConnectionProfile,
 ) -> AppResult<ConnectionProfile> {
-    if profile.host.trim().is_empty() {
-        return Err(AppError::InvalidSettings("host is required".into()));
-    }
-    if profile.username.trim().is_empty() {
-        return Err(AppError::InvalidSettings("username is required".into()));
-    }
+    crate::profile_check::validate_profile(&mut profile)?;
     if profile.name.trim().is_empty() {
         profile.name = format!("{}@{}", profile.username, profile.host);
     }
@@ -458,6 +468,9 @@ pub fn import_shared_connections(state: &AppState) -> AppResult<usize> {
             driver_id: default_driver(),
             created_at: entry.created_at.clone(),
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
         };
         if save_profile(state, profile).is_ok() {
             imported += 1;
@@ -519,6 +532,9 @@ pub fn ensure_local_profile(
             driver_id: default_driver(),
             created_at: None,
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
         },
     )
 }

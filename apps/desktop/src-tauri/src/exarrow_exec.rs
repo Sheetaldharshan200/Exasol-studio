@@ -214,8 +214,7 @@ fn failed(statement: &str, elapsed: Duration, message: String) -> StatementResul
 /// have to survive percent-encoding, so a password containing `@`, `/` or `?`
 /// cannot silently produce a different connection.
 pub(crate) fn connection_params(profile: &ConnectionProfile) -> AppResult<ConnectionParams> {
-    let tls = profile.ssl_mode != "disabled";
-    let verify = profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity";
+    let (tls, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode, profile.fingerprint.is_some());
     let mut builder = ConnectionBuilder::new()
         .host(&profile.host)
         .port(profile.port)
@@ -565,6 +564,9 @@ mod tests {
             driver_id: "exarrow-rs".into(),
             created_at: None,
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
         }
     }
 

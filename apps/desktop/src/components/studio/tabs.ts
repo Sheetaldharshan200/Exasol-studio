@@ -57,7 +57,7 @@ export type SqlTab = {
   resultView?: ResultView;
   /** For "connect" tabs — pre-fill the new-connection form (e.g. the bundled
    *  Exasol Personal profile when a direct connect fell back to the form). */
-  connectDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
+  connectDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint: string; sslCa: string; authMethod: string }>;
   sql: string;
   response: ExecuteResponse | null;
   execError: string | null;

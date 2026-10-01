@@ -45,6 +45,7 @@ mod market;
 mod metadata;
 mod print;
 mod process;
+mod profile_check;
 mod profile_secret;
 mod profiles;
 mod shared_registry;
@@ -55,6 +56,7 @@ mod session_cmd;
 mod settings;
 mod state;
 mod storage;
+mod tls_trust;
 
 use tauri::{Emitter, Manager};
 
@@ -206,6 +208,8 @@ pub fn run() {
             files::open_text_file,
             session_cmd::session_info,
             connection::connection_alive,
+            connection::server_certificate,
+            connection::pick_ca_file,
             session_cmd::session_set_autocommit,
             session_cmd::session_commit,
             session_cmd::session_rollback,

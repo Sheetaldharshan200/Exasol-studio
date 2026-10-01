@@ -1199,6 +1199,9 @@ export function ExasolStudio({
         compression: p.compression,
         driverId: p.driverId,
         notes: p.notes ?? "",
+        fingerprint: p.fingerprint ?? "",
+        sslCa: p.sslCa ?? "",
+        authMethod: p.authMethod ?? "password",
       });
     }
   }
@@ -1231,7 +1234,9 @@ export function ExasolStudio({
       password: final.password,
       schema: final.schema,
       notes: final.notes,
-      sslMode: existing?.sslMode ?? "preferred",
+      // The agent cannot answer "Trust this certificate?", so a connection it
+      // creates encrypts without verifying; a person can pin it in the form.
+      sslMode: existing?.sslMode ?? "required",
       compression: existing?.compression ?? false,
       driverId: existing?.driverId ?? "sqlx-exasol",
     });

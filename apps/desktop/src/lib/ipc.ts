@@ -32,6 +32,12 @@ export type ConnectionProfile = {
   driverId: string;
   createdAt?: string | null;
   lastUsedAt?: string | null;
+  /** Pinned TLS certificate: SHA-256, 64 upper-case hex digits. */
+  fingerprint?: string | null;
+  /** A CA certificate file to verify the server against. */
+  sslCa?: string | null;
+  /** password | access_token | refresh_token; a token sits in `password`. */
+  authMethod?: string;
 };
 
 export type PingResult = {
@@ -637,6 +643,10 @@ export const ipc = {
     call<ConnectionProfile>("save_connection_profile", { profile: { id: "", ...profile } }),
   deleteConnectionProfile: (profileId: string) =>
     call<void>("delete_connection_profile", { profileId }),
+  /** The SHA-256 fingerprint of the certificate the server presents now. */
+  serverCertificate: (host: string, port: number) => call<string>("server_certificate", { host, port }),
+  /** Choose a CA certificate file; its full path, or null when cancelled. */
+  pickCaFile: () => call<string | null>("pick_ca_file"),
   /** Whether a connected profile still runs a query (not just an open port). */
   connectionAlive: (profileId: string) => call<boolean>("connection_alive", { profileId }),
   pingServer: (host: string, port: number) =>
