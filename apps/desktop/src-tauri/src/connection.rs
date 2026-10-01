@@ -144,7 +144,7 @@ pub(crate) fn connect_url(profile: &ConnectionProfile) -> String {
     };
 
     let mut params: Vec<String> = Vec::new();
-    let ssl_mode = crate::tls_trust::effective_ssl_mode(&profile.ssl_mode, profile.fingerprint.is_some());
+    let ssl_mode = crate::tls_trust::effective_ssl_mode(&profile.ssl_mode);
     if ssl_mode != "preferred" {
         params.push(format!("ssl-mode={ssl_mode}"));
     }
@@ -293,28 +293,41 @@ pub async fn server_certificate(state: State<'_, AppState>, host: String, port: 
     crate::tls_trust::server_fingerprint(&host, port, connect_timeout(&state)).await.map_err(AppError::Database)
 }
 
+/// A pool, the server's info, and — for a pinned connection — the tunnel
+/// that carries it, which must live as long as the pool.
+pub(crate) type Opened = (ExaPool, ServerInfo, Option<crate::pin_tunnel::PinTunnel>);
+
 /// Open a pool and read the server's info, with the TLS trust rules: a pinned
-/// certificate is checked first; a certificate that fails verification while
-/// nothing is pinned comes back as `UntrustedCertificate` with its
-/// fingerprint, so the person can choose to trust it.
-async fn open_checked(data_dir: &std::path::Path, profile: &ConnectionProfile, size: u32, hooks: Vec<String>, timeout: Duration) -> AppResult<(ExaPool, ServerInfo)> {
-    // A pinned certificate becomes the CA of the connection itself.
-    let pinned;
-    let profile = match profile.fingerprint.as_deref() {
+/// connection goes through a pin tunnel (only the pinned certificate
+/// completes its TLS); a certificate that fails verification while nothing
+/// is pinned comes back as `UntrustedCertificate` with its fingerprint, so
+/// the person can choose to trust it.
+async fn open_checked(profile: &ConnectionProfile, size: u32, hooks: Vec<String>, timeout: Duration) -> AppResult<Opened> {
+    let mut tunnel = None;
+    let tunnelled;
+    let target = match profile.fingerprint.as_deref() {
         Some(pin) => {
+            // A clear "certificate changed" before anything else.
+            crate::tls_trust::check_pin(&profile.host, profile.port, pin, timeout).await?;
+            let t = crate::pin_tunnel::open(crate::tls_trust::expand_hosts(profile.host.trim()), profile.port, pin, timeout).await?;
             let mut p = profile.clone();
-            p.ssl_ca = Some(crate::tls_trust::pin_file(data_dir, &profile.host, profile.port, pin, timeout).await?.to_string_lossy().into_owned());
-            pinned = p;
-            &pinned
+            p.host = t.addr.ip().to_string();
+            p.port = t.addr.port();
+            p.ssl_mode = crate::tls_trust::LOOPBACK_TUNNEL.into();
+            p.ssl_ca = None;
+            p.fingerprint = None;
+            tunnel = Some(t);
+            tunnelled = p;
+            &tunnelled
         }
         None => profile,
     };
     let log = HookLog::default();
-    let opened = match open_pool_sized(profile, size, hooks, timeout, &log).await {
+    let opened = match open_pool_sized(target, size, hooks, timeout, &log).await {
         Ok(pool) => match read_server_info(&pool).await {
             Ok(mut info) => {
                 info.hook_errors = log.take();
-                Ok((pool, info))
+                Ok((pool, info, tunnel))
             }
             Err(e) => {
                 pool.close().await;
@@ -351,16 +364,16 @@ pub async fn test_connection(app: tauri::AppHandle, state: State<'_, AppState>, 
     }
     crate::profile_check::validate_profile(&mut profile)?;
     if crate::exarrow_exec::is_exarrow(&profile.driver_id) || crate::driver_exec::is_bridge_driver(&profile.driver_id) {
-        return test_with_driver(app, &state, profile).await;
+        return test_with_driver(app, profile).await;
     }
-    let (pool, info) = open_checked(&state.data_dir, &profile, 4, Vec::new(), connect_timeout(&state)).await?;
+    let (pool, info, _tunnel) = open_checked(&profile, 4, Vec::new(), connect_timeout(&state)).await?;
     pool.close().await;
     Ok(info)
 }
 
 /// Test with the connection's own driver (exarrow, or a bridge runtime): the
 /// same two reads the native path does, through that driver.
-async fn test_with_driver(app: tauri::AppHandle, state: &AppState, profile: ConnectionProfile) -> AppResult<ServerInfo> {
+async fn test_with_driver(app: tauri::AppHandle, profile: ConnectionProfile) -> AppResult<ServerInfo> {
     if let Some(why) = crate::tls_trust::bridge_unsupported(profile.ssl_ca.as_deref(), &profile.auth_method, profile.fingerprint.is_some()) {
         return Err(AppError::InvalidSettings(why));
     }
@@ -414,7 +427,7 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
             Vec::new()
         };
 
-    let (pool, info) = open_checked(&state.data_dir, &profile, pool_size, connect_hooks, connect_timeout(&state)).await?;
+    let (pool, info, tunnel) = open_checked(&profile, pool_size, connect_hooks, connect_timeout(&state)).await?;
 
     // Connection Keep-Alive: validate on an interval while the pool lives.
     // The task holds only a pool clone; pool.close() (disconnect) ends it.
@@ -450,6 +463,10 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
         }
         pools.insert(profile_id.clone(), pool.clone());
     }
+    // A pinned connection's tunnel lives as long as its pool.
+    if let (Some(t), Ok(mut tunnels)) = (tunnel, state.pin_tunnels.lock()) {
+        tunnels.insert(profile_id.clone(), t);
+    }
     touch_profile(&state, &profile_id)?;
     Ok(info)
 }
@@ -471,7 +488,10 @@ pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppRe
     // The tabs' own sessions go first. The UI has already asked Commit / Roll
     // back for any with uncommitted changes; what is still open rolls back.
     state.sessions.close_profile(&profile_id).await;
-    if let Some(pool) = state.pools.write().await.remove(&profile_id) {
+    let removed = state.pools.write().await.remove(&profile_id);
+    // The pool is closed below; then its tunnel (if pinned) stops.
+    let tunnel = state.pin_tunnels.lock().ok().and_then(|mut t| t.remove(&profile_id));
+    if let Some(pool) = removed {
         let settings = crate::connection_settings::read_settings(&state, &profile_id);
         // Run SQL at Disconnect (Connection Hooks) while the pool still lives.
         if crate::connection_settings::bool_at(&settings, &["hooks", "disconnectEnabled"]).unwrap_or(false) {
@@ -486,6 +506,7 @@ pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppRe
             let _ = crate::profiles::clear_profile_password(&state, &profile_id);
         }
     }
+    drop(tunnel);
     Ok(hook_errors)
 }
 
@@ -601,11 +622,14 @@ mod tests {
         let mut ca = draft("password", "verify_ca");
         ca.ssl_ca = Some("/etc/ssl/exa ca.pem".into());
         assert!(super::connect_url(&ca).contains("ssl-ca=%2Fetc%2Fssl%2Fexa%20ca.pem"));
-        let mut pinned = ca.clone();
-        pinned.fingerprint = Some("AB".repeat(32));
-        let u = super::connect_url(&pinned);
-        assert!(u.contains("ssl-mode=verify_identity"), "a pin is verified with the host name: {u}");
-        assert!(super::build_connect_options(&pinned).is_ok());
+        // A pinned connection's driver URL points at its tunnel, which
+        // carries the (pinned) TLS itself.
+        let mut tunnelled = draft("password", crate::tls_trust::LOOPBACK_TUNNEL);
+        tunnelled.host = "127.0.0.1".into();
+        tunnelled.port = 50123;
+        let u = super::connect_url(&tunnelled);
+        assert!(u.contains("@127.0.0.1:50123?ssl-mode=disabled"), "{u}");
+        assert!(super::build_connect_options(&tunnelled).is_ok());
         assert!(super::build_connect_options(&t).is_ok());
     }
 
@@ -716,9 +740,8 @@ mod live_trust {
             auth_method: "password".into(),
         };
         let t = Duration::from_secs(15);
-        let dir = std::env::temp_dir().join(format!("studio-pins-{}", std::process::id()));
         // Verify, nothing pinned: a self-signed local database is offered for trust.
-        let fp = match super::open_checked(&dir, &p, 1, Vec::new(), t).await {
+        let fp = match super::open_checked(&p, 1, Vec::new(), t).await {
             Err(AppError::UntrustedCertificate { fingerprint }) => fingerprint,
             other => panic!("expected an untrusted certificate, got {:?}", other.map(|_| ())),
         };
@@ -726,12 +749,13 @@ mod live_trust {
         assert_eq!(crate::tls_trust::server_fingerprint("127.0.0.1", port, t).await.unwrap(), fp, "stable");
         // Trusted: pinned, it connects.
         p.fingerprint = Some(fp.clone());
-        let (pool, info) = super::open_checked(&dir, &p, 1, Vec::new(), t).await.expect("pinned connect");
+        let (pool, info, tunnel) = super::open_checked(&p, 1, Vec::new(), t).await.expect("pinned connect");
+        assert!(tunnel.is_some(), "a pinned connection goes through the pin tunnel");
         assert!(info.version.is_some());
         pool.close().await;
         // A different pin: the change is reported, nothing connects.
         p.fingerprint = Some("00".repeat(32));
-        match super::open_checked(&dir, &p, 1, Vec::new(), t).await {
+        match super::open_checked(&p, 1, Vec::new(), t).await {
             Err(AppError::CertificateChanged { actual, .. }) => assert_eq!(actual, fp),
             other => panic!("expected a changed certificate, got {:?}", other.map(|_| ())),
         }
