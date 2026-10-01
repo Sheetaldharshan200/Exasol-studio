@@ -398,6 +398,8 @@ export type SessionInfo = {
   changes: number;
   recent: string[];
   idleSeconds: number;
+  /** Whether the tab has a session at all yet. */
+  open: boolean;
 };
 /** One file picked through the OS dialog and copied into the attachments folder. */
 export type PickedAttachment = { name: string; path: string; size: number; mime: string; inline?: string };
@@ -902,13 +904,14 @@ export const ipc = {
     tabId?: string,
   ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId, tabId }),
   // ── The SQL tab's own session (session.rs) ──
-  sessionInfo: (profileId: string, tabId: string) => call<SessionInfo>("session_info", { profileId, tabId }),
+  /** Never opens a session: looking at a tab does not connect it. */
+  sessionInfo: (tabId: string) => call<SessionInfo>("session_info", { tabId }),
   sessionSetAutocommit: (profileId: string, tabId: string, on: boolean) => call<SessionInfo>("session_set_autocommit", { profileId, tabId, on }),
   sessionCommit: (profileId: string, tabId: string) => call<SessionInfo>("session_commit", { profileId, tabId }),
   sessionRollback: (profileId: string, tabId: string) => call<SessionInfo>("session_rollback", { profileId, tabId }),
   sessionSetSchema: (profileId: string, tabId: string, schema: string) => call<SessionInfo>("session_set_schema", { profileId, tabId, schema }),
   sessionClose: (tabId: string, commit: boolean) => call<null>("session_close", { tabId, commit }),
-  sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number }[]>("sessions_with_changes", { profileId }),
+  sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number; recent: string[] }[]>("sessions_with_changes", { profileId }),
   /** The page has a quit request and is asking the person (stops the watchdog). */
   quitAck: () => call<null>("quit_ack"),
   /** Quit for real, after open transactions were settled. */

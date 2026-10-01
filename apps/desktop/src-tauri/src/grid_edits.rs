@@ -99,6 +99,20 @@ async fn apply_in_open_transaction(s: &mut crate::session::TabSession, statement
     for (i, sql) in statements.iter().enumerate() {
         let problem = match s.conn.execute(AssertSqlSafe(sql.as_str())).await {
             Ok(done) => affected_problem(i, done.rows_affected()),
+            Err(e) if crate::session::is_connection_lost(&e.to_string()) => {
+                // The connection died: the server rolled the whole open
+                // transaction back — earlier changes and these edits alike.
+                let lost = s.changes.len() + i;
+                s.changes.clear();
+                return EditOutcome {
+                    ok: false,
+                    failed_index: Some(i),
+                    error: Some(format!(
+                        "The connection was lost ({e}). The server rolled back this tab's open transaction{} — nothing from it was saved.",
+                        if lost > 0 { format!(", including {lost} uncommitted change{}", if lost == 1 { "" } else { "s" }) } else { String::new() }
+                    )),
+                };
+            }
             Err(e) => Some(format!("Change {} failed: {e}.", i + 1)),
         };
         if let Some(error) = problem {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { IDLE_WARNING_MINUTES, idleWarning, pendingSummary, uncommittedLabel } from "./txn-state.ts";
 
-const info = (over: Partial<Parameters<typeof uncommittedLabel>[0] & object>) => ({ sessionId: "1", schema: null, autocommit: false, changes: 0, recent: [], idleSeconds: 0, ...over });
+const info = (over: Partial<Parameters<typeof uncommittedLabel>[0] & object>) => ({ sessionId: "1", schema: null, autocommit: false, changes: 0, recent: [], idleSeconds: 0, open: true, ...over });
 
 test("the badge shows only in manual mode with changes", () => {
   assert.equal(uncommittedLabel(info({ changes: 0 })), null);

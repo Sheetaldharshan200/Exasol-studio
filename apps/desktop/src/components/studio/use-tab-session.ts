@@ -29,10 +29,9 @@ export function useTabSession(opts: {
 
   const refresh = useCallback(
     async (tabId = ctx.current.activeTabId) => {
-      const conn = ctx.current.connection;
-      if (!conn || !tabId) return;
+      if (!tabId) return;
       try {
-        store(tabId, await ipc.sessionInfo(conn.profile.id, tabId));
+        store(tabId, await ipc.sessionInfo(tabId));
       } catch {
         /* no session yet, or disconnected */
       }
@@ -86,34 +85,53 @@ export function useTabSession(opts: {
    */
   const settleRef = useRef<(tabs: readonly { id: string; title: string }[], title?: string) => Promise<boolean>>(() => Promise.resolve(true));
   const settleBeforeClose = useCallback(
-    (tabs: readonly { id: string; title: string }[], title = "Close with uncommitted changes?"): Promise<boolean> => {
-      const dirty = tabs.map((t) => ({ ...t, info: infos[t.id] })).filter((t) => t.info && !t.info.autocommit && t.info.changes > 0);
-      const end = (commit: boolean) => Promise.all(tabs.map((t) => ipc.sessionClose(t.id, commit).catch(() => null)));
-      if (!dirty.length) {
-        void end(false);
-        return Promise.resolve(true);
+    async (tabs: readonly { id: string; title: string }[], title = "Close with uncommitted changes?"): Promise<boolean> => {
+      if (!tabs.length) return true;
+      // Ask the backend, not the cache: a tab's last run may have changed
+      // rows since its state was last fetched.
+      let open: { tabId: string; changes: number; recent: string[] }[];
+      try {
+        open = await ipc.sessionsWithChanges();
+      } catch (e) {
+        notify("warning", "Could not check for uncommitted changes", errorMessage(e));
+        return false;
       }
-      return new Promise((resolve) => {
+      const byId = new Map(open.map((p) => [p.tabId, p]));
+      const dirty = tabs.flatMap((t) => {
+        const p = byId.get(t.id);
+        return p && p.changes > 0 ? [{ title: t.title, changes: p.changes, recent: p.recent }] : [];
+      });
+      const forget = () =>
+        setInfos((m) => {
+          const next = { ...m };
+          for (const t of tabs) delete next[t.id];
+          return next;
+        });
+      // A failed commit is reported and the tabs stay open, so the person
+      // can check what reached the database before redoing anything.
+      const end = async (commit: boolean) => {
+        const results = await Promise.allSettled(tabs.map((t) => ipc.sessionClose(t.id, commit)));
+        forget();
+        const failed = results.flatMap((r) => (r.status === "rejected" ? [errorMessage(r.reason)] : []));
+        if (failed.length) notify("warning", commit ? "Commit failed" : "Could not end the session", failed.join("\n"));
+        return failed.length === 0;
+      };
+      if (!dirty.length) return end(false);
+      const choice = await new Promise<"commit" | "rollback" | "cancel">((resolve) =>
         setPending({
           title,
-          question: pendingSummary(dirty.map((t) => ({ title: t.title, changes: t.info!.changes }))),
-          recent: dirty.flatMap((t) => t.info!.recent).slice(0, 10),
-          onChoose: (choice) => {
+          question: pendingSummary(dirty),
+          recent: dirty.flatMap((t) => t.recent).slice(0, 10),
+          onChoose: (c) => {
             setPending(null);
-            if (choice === "cancel") return resolve(false);
-            void end(choice === "commit").then(() => {
-              setInfos((m) => {
-                const next = { ...m };
-                for (const t of tabs) delete next[t.id];
-                return next;
-              });
-              resolve(true);
-            });
+            resolve(c);
           },
-        });
-      });
+        }),
+      );
+      if (choice === "cancel") return false;
+      return end(choice === "commit");
     },
-    [infos],
+    [notify],
   );
   settleRef.current = settleBeforeClose;
 
