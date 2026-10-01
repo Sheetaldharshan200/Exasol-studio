@@ -11,8 +11,7 @@ use std::time::Duration;
 
 use tokio::net::{TcpListener, TcpStream};
 
-/// A running tunnel; dropping it stops accepting (open relays end when the
-/// driver closes its side).
+/// A running tunnel; dropping it stops it, and every relay with it.
 pub struct PinTunnel {
     pub addr: SocketAddr,
     task: tokio::task::JoinHandle<()>,
@@ -24,6 +23,9 @@ impl Drop for PinTunnel {
     }
 }
 
+/// More relays than a pool and its tab sessions ever need at once.
+const MAX_RELAYS: usize = 256;
+
 /// Listen on a free loopback port and relay every connection to the first
 /// node of `hosts` that completes a pinned TLS handshake.
 pub async fn open(hosts: Vec<String>, port: u16, pin: &str, timeout: Duration) -> std::io::Result<PinTunnel> {
@@ -32,11 +34,25 @@ pub async fn open(hosts: Vec<String>, port: u16, pin: &str, timeout: Duration) -
     let addr = listener.local_addr()?;
     let hosts = Arc::new(hosts);
     let task = tokio::spawn(async move {
-        while let Ok((local, _)) = listener.accept().await {
-            let (hosts, config) = (Arc::clone(&hosts), Arc::clone(&config));
-            tokio::spawn(async move {
-                let _ = relay(local, &hosts, port, config, timeout).await;
-            });
+        // Relays belong to this task: aborting it drops the set, which ends
+        // them all. Bounded, so a local process cannot open unlimited
+        // connections to the server through it.
+        let mut relays = tokio::task::JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let Ok((local, _)) = accepted else { break };
+                    if relays.len() >= MAX_RELAYS {
+                        drop(local);
+                        continue;
+                    }
+                    let (hosts, config) = (Arc::clone(&hosts), Arc::clone(&config));
+                    relays.spawn(async move {
+                        let _ = relay(local, &hosts, port, config, timeout).await;
+                    });
+                }
+                Some(_) = relays.join_next(), if !relays.is_empty() => {}
+            }
         }
     });
     Ok(PinTunnel { addr, task })
@@ -134,5 +150,20 @@ mod tests {
         c.read_exact(&mut back).await.unwrap();
         assert_eq!(&back, b"hello");
         let _ = dead_port;
+    }
+
+    #[tokio::test]
+    async fn closing_the_tunnel_ends_its_open_relays() {
+        let (port, fp) = echo_server().await;
+        let tunnel = open(vec!["127.0.0.1".into()], port, &fp, Duration::from_secs(5)).await.unwrap();
+        let mut c = TcpStream::connect(tunnel.addr).await.unwrap();
+        // The relay is up (a round trip works) before the tunnel goes.
+        c.write_all(b"hello").await.unwrap();
+        let mut back = [0u8; 5];
+        c.read_exact(&mut back).await.unwrap();
+        drop(tunnel);
+        let mut rest = Vec::new();
+        let n = tokio::time::timeout(Duration::from_secs(2), c.read_to_end(&mut rest)).await.expect("the relay ends").unwrap_or(0);
+        assert_eq!(n, 0, "closed, nothing more relayed");
     }
 }

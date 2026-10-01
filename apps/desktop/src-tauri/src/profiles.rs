@@ -577,10 +577,8 @@ pub async fn delete_connection_profile(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> AppResult<()> {
-    // Close the pool if this profile is currently connected.
-    if let Some(pool) = state.pools.write().await.remove(&profile_id) {
-        pool.close().await;
-    }
+    // End the connection if it is open — sessions, pool and tunnel alike.
+    let _ = crate::connection::close_connection(&state, &profile_id).await;
     let mut profiles = load_profiles(&state)?;
     // Unpublish from the shared registry too — every list re-imports registry
     // entries that are "missing locally", so a delete that only touched
