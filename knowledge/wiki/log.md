@@ -266,4 +266,4 @@ Gotchas worth keeping:
 - **The backend is the source of truth** for "what would be lost": close/disconnect/quit call `sessions_with_changes`, never a cached snapshot. `session_info` only peeks, so looking at a tab never connects it.
 - **Empty result headers** are described on the tab's own connection: a table created in an uncommitted transaction is invisible to the pool.
 - Removed the unwired "Ask when auto-commit is off" and "Commit batch size" settings: Studio always asks, grid edits are atomic.
-- Two Codex passes (12 + 9 findings). One "critical" (mid-batch COMMIT drops manual mode) was disproved by the driver source and a live test; the rest were fixed.
+- Three Codex passes (12 + 9 + 2 findings). The third: close must remove the map entry while still holding the slot lock, and the fence is a monotonic `change_seq`, not a count (COMMIT; INSERT keeps the count the same). One "critical" (mid-batch COMMIT drops manual mode) was disproved by the driver source and a live test; the rest were fixed.

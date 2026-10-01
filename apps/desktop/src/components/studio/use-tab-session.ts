@@ -89,7 +89,7 @@ export function useTabSession(opts: {
       if (!tabs.length) return true;
       // Ask the backend, not the cache: a tab's last run may have changed
       // rows since its state was last fetched.
-      let open: { tabId: string; changes: number; recent: string[] }[];
+      let open: { tabId: string; changes: number; recent: string[]; changeSeq: number }[];
       try {
         open = await ipc.sessionsWithChanges();
       } catch (e) {
@@ -109,10 +109,10 @@ export function useTabSession(opts: {
         });
       // A failed commit, or changes that arrived after the question, are
       // reported and the tabs stay open with their sessions.
-      // Each close carries the count the person was shown: the backend
-      // refuses if more changes arrived meanwhile.
+      // Each close names the version of the changes the person was shown:
+      // the backend refuses if they changed meanwhile.
       const end = async (commit: boolean) => {
-        const results = await Promise.allSettled(tabs.map((t) => ipc.sessionClose(t.id, commit, byId.get(t.id)?.changes ?? 0)));
+        const results = await Promise.allSettled(tabs.map((t) => ipc.sessionClose(t.id, commit, byId.get(t.id)?.changeSeq)));
         forget(tabs.filter((_, i) => results[i].status === "fulfilled").map((t) => t.id));
         tabs.forEach((t, i) => results[i].status === "rejected" && void refresh(t.id));
         const failed = results.flatMap((r) => (r.status === "rejected" ? [errorMessage(r.reason)] : []));

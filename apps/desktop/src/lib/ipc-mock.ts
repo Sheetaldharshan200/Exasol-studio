@@ -724,7 +724,7 @@ export async function mockInvoke(
 
     // The mock has no tab sessions: every tab is autocommit, nothing is open.
     case "session_info":
-      return { sessionId: null, schema: null, autocommit: true, changes: 0, recent: [], idleSeconds: 0, open: false };
+      return { sessionId: null, schema: null, autocommit: true, changes: 0, recent: [], idleSeconds: 0, open: false, changeSeq: 0 };
     case "sessions_with_changes":
       return [];
     case "session_close":
