@@ -84,6 +84,9 @@ import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalS
 import type { ActiveConnection } from "@/state/useConnections";
 import { sqlBehindGrid } from "@/lib/run-meta";
 import { closeQuestion } from "@/lib/tab-close";
+import { useTabSession } from "./use-tab-session";
+import { UncommittedDialog } from "./UncommittedDialog";
+import { onlyReads, sessionWasLost, uncommittedLabel } from "@/lib/txn-state";
 
 export function ExasolStudio({
   connection,
@@ -668,7 +671,7 @@ export function ExasolStudio({
       const prof = name ? profiles.find((p) => p.name.toLowerCase() === name.toLowerCase()) : profiles[0];
       if (prof) void connectSaved(prof.id);
     };
-    const onDisconnectEv = () => onDisconnect(connection?.profile.id);
+    const onDisconnectEv = () => disconnectSafely(connection?.profile.id);
     window.addEventListener("studio:open-marketplace", onMkt);
     window.addEventListener("studio:open-visualizer", onVis);
     window.addEventListener("studio:open-git", onGit);
@@ -824,12 +827,13 @@ export function ExasolStudio({
   async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
     if (!connection || !statements.length) return { ok: false, error: "No active connection." };
     try {
-      const out = await ipc.applyRowEdits(connection.profile.id, connection.profile.name, statements);
+      const out = await ipc.applyRowEdits(connection.profile.id, connection.profile.name, statements, activeTab.id);
+      void tabSession.refresh(activeTab.id);
       loadHistory();
       if (!out.ok) {
         return { ok: false, error: out.error ?? "Nothing was saved.", failedSql: out.failedIndex != null ? statements[out.failedIndex] : undefined };
       }
-      const res = await execSql(connection.profile.id, connection.profile.name, sqlBehindGrid(activeTab), maxRows, false);
+      const res = await execSql(connection.profile.id, connection.profile.name, sqlBehindGrid(activeTab), maxRows, false, true, undefined, activeTab.id);
       patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
       void refreshSqlCatalog();
@@ -1485,6 +1489,11 @@ export function ExasolStudio({
     const list = tabsFor(connKey);
     const q = closeQuestion(list.filter((t) => t.id === id));
     if (q && !window.confirm(q)) return;
+    const closing = list.filter((t) => t.id === id);
+    void tabSession.settleBeforeClose(closing).then((ok) => ok && closeTabNow(id));
+  }
+  function closeTabNow(id: string) {
+    const list = tabsFor(connKey);
     const next = list.filter((t) => t.id !== id);
     updateTabs(connKey, () => next);
     // Closing the last tab is allowed — the workspace falls back to Welcome.
@@ -1502,6 +1511,9 @@ export function ExasolStudio({
   function closeAllTabs() {
     const q = closeQuestion(tabsFor(connKey).filter((t) => !t.pinned));
     if (q && !window.confirm(q)) return;
+    void tabSession.settleBeforeClose(tabsFor(connKey).filter((t) => !t.pinned)).then((ok) => ok && closeAllTabsNow());
+  }
+  function closeAllTabsNow() {
     const kept = tabsFor(connKey).filter((t) => t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(kept[kept.length - 1]?.id ?? "");
@@ -1511,6 +1523,11 @@ export function ExasolStudio({
   function closeOtherTabs(keepId: string) {
     const q = closeQuestion(tabsFor(connKey).filter((t) => t.id !== keepId && !t.pinned));
     if (q && !window.confirm(q)) return;
+    void tabSession
+      .settleBeforeClose(tabsFor(connKey).filter((t) => t.id !== keepId && !t.pinned))
+      .then((ok) => ok && closeOtherTabsNow(keepId));
+  }
+  function closeOtherTabsNow(keepId: string) {
     const kept = tabsFor(connKey).filter((t) => t.id === keepId || t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(keepId);
@@ -2295,7 +2312,21 @@ export function ExasolStudio({
           split,
           true,
           progressId,
+          tabId,
         );
+        void tabSession.refresh(tabId);
+        // The session died under the run. "Reconnect and re-execute" re-runs it
+        // once on the fresh session — but only a script that only reads: a
+        // write whose reply was lost may already have happened.
+        const lostErr = result.results.find((r) => r.error)?.error;
+        if (!result.success && sessionWasLost(lostErr)) {
+          const settings = (await ipc.connectionSettingsGet(connection.profile.id).catch(() => null)) as { sqlEditor?: { lossHandling?: string } } | null;
+          const mode = settings?.sqlEditor?.lossHandling ?? "reexecute";
+          if (mode === "reexecute" && onlyReads(splitStatements(sqlToRun).map((x) => x.text))) {
+            const again = await execSql(connection.profile.id, connection.profile.name, sqlToRun, maxRows, split, true, progressId, tabId);
+            Object.assign(result, again);
+          }
+        }
         if (!result.success) {
           const failed = result.results.find((r) => r.error);
           patchTab(activeTab.id, {
@@ -2560,6 +2591,22 @@ export function ExasolStudio({
   //      part durations overlap under parallel execution, so the sum of parts
   //      is NOT the runtime; both are shown, labeled.
   const [profiling, setProfiling] = useState(false);
+  // The active SQL tab's own database session (autocommit, schema, open
+  // transaction) — see use-tab-session.ts.
+  const tabSession = useTabSession({
+    connection,
+    activeTabId: activeTab.id,
+    isSqlTab: activeTab.view === "sql",
+    notify: (kind, title, body) => pushNotification(kind, title, body),
+    allSqlTabs: () => Object.values(tabsByConn).flat().filter((t) => t.view === "sql"),
+  });
+  // Disconnecting ends every tab session of that connection: tabs with
+  // uncommitted changes ask Commit / Roll back / Cancel first.
+  function disconnectSafely(profileId?: string) {
+    const id = profileId ?? connection?.profile.id;
+    if (!id) return onDisconnect(profileId);
+    void tabSession.settleBeforeClose(tabsFor(id).filter((t) => t.view === "sql"), "Disconnect with uncommitted changes?").then((ok) => ok && onDisconnect(profileId));
+  }
   const pushNotification = (kind: "info" | "warning" | "success", title: string, body: string) =>
     window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
   // Rows of a result set as column-keyed records (column names upper-cased to
@@ -2771,15 +2818,12 @@ export function ExasolStudio({
   }
 
   // Commit / rollback the connection's pending work (runs the SQL command).
+  // Commit / Roll back act on THIS tab's session — the one that ran the work.
   async function txn(action: "COMMIT" | "ROLLBACK") {
     if (!connection) return;
-    try {
-      await execSql(connection.profile.id, connection.profile.name, action, maxRows, false);
-      loadHistory();
-      void refreshSqlCatalog();
-    } catch {
-      /* ignore */
-    }
+    await (action === "COMMIT" ? tabSession.commit() : tabSession.rollback());
+    loadHistory();
+    void refreshSqlCatalog();
   }
 
   // Opening a database object launches it in its own new query tab, scoped to
@@ -2861,10 +2905,11 @@ export function ExasolStudio({
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
+      <UncommittedDialog pending={tabSession.pending} />
       <TitleBar
         connection={connection}
         onConnect={() => openConnect()}
-        onDisconnect={onDisconnect}
+        onDisconnect={disconnectSafely}
         hideConnect={activeTab.view === "connect"}
       />
 
@@ -2953,7 +2998,7 @@ export function ExasolStudio({
               onConnectProfile={(id) => void connectSaved(id)}
               onInstallLocal={() => void ipc.personalLocalBootstrap().catch(() => undefined)}
               onFocusConnection={onFocusConnection}
-              onDisconnect={onDisconnect}
+              onDisconnect={disconnectSafely}
               onRemoveConnection={(id) => void removeConnection(id)}
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
@@ -3221,10 +3266,10 @@ export function ExasolStudio({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuCheckboxItem
-                      checked={autoCommit}
-                      onCheckedChange={(v) => setAutoCommit(v === true)}
+                      checked={tabSession.info ? tabSession.info.autocommit : autoCommit}
+                      onCheckedChange={(v) => void tabSession.setAutocommit(v === true)}
                     >
-                      Auto-commit
+                      Auto-commit (this tab)
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => txn("COMMIT")}>
@@ -3235,6 +3280,13 @@ export function ExasolStudio({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                {uncommittedLabel(tabSession.info) ? (
+                  <span className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-1.5 text-[11px] font-medium text-warning" title={(tabSession.info?.recent ?? []).join("\n")}>
+                    {uncommittedLabel(tabSession.info)}
+                    <button onClick={() => void txn("COMMIT")} className="rounded px-1 text-foreground hover:bg-secondary">Commit</button>
+                    <button onClick={() => void txn("ROLLBACK")} className="rounded px-1 text-foreground hover:bg-secondary">Roll back</button>
+                  </span>
+                ) : null}
 
                 <div className="mx-1 h-5 w-px shrink-0 bg-border" />
 
@@ -3355,7 +3407,10 @@ export function ExasolStudio({
                 <Selector
                   value={schema || "schema"}
                   options={schemas}
-                  onChange={setSchema}
+                  onChange={(s) => {
+                    setSchema(s);
+                    void tabSession.setSchema(s);
+                  }}
                   disabled={!connected || schemas.length === 0}
                   label="Schema"
                 />
@@ -3919,7 +3974,7 @@ export function ExasolStudio({
         <div className="flex items-center gap-3">
           <Database className={cn("h-3 w-3", connected && "text-primary")} />
           <span className="font-mono">
-            {connected ? `session ${connection!.server.sessionId}` : "no active session"}
+            {connected ? `session ${tabSession.info?.sessionId ?? connection!.server.sessionId}` : "no active session"}
           </span>
         </div>
         <div className="flex items-center gap-3">

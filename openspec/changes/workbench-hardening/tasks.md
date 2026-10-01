@@ -38,20 +38,20 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 
 ## Phase 2 — One session per editor tab
 
-- [ ] 2.1 `AppState.sessions`: tab id → detached connection; open on first run, close on tab close / disconnect (`session.rs` new; test: `session.rs`).
-- [ ] 2.2 `execute_sql` takes an optional tab id and runs on that session (`query.rs`; test: `query.rs`).
-- [ ] 2.3 Autocommit per tab applied to the session (`session.rs`; wire the toolbar toggle and the per-connection default; test: `session.rs`).
-- [ ] 2.4 COMMIT / ROLLBACK run on the tab's session (`ExasolStudio.tsx::txn`).
-- [ ] 2.5 Schema selector sends `OPEN SCHEMA` on the tab's session; the selector shows the session's real schema (`ExasolStudio.tsx`; test: `lib/sql-text.test.ts` quoting).
-- [ ] 2.6 Stop uses a separate short-lived connection, so it never waits on the busy session; works for single-connection mode (`query.rs::cancel_query`; test: `query.rs`).
-- [ ] 2.7 Query timeout applied with `ALTER SESSION SET QUERY_TIMEOUT` on the tab's session; timed-out statements say so (`session.rs`; test: `session.rs`).
-- [ ] 2.8 Open-transaction tracking: DML since last COMMIT/ROLLBACK → tab badge (`lib/txn-state.ts`; test: `txn-state.test.ts`).
-- [ ] 2.9 Confirm on tab close / disconnect / app quit with uncommitted work, honouring `askWhenUncommitted` / `askAlways` (`lib/tab-close.ts`, `lib.rs` `CloseRequested`; test: `tab-close.test.ts`).
-- [ ] 2.10 Lost session detected on use; `lossHandling` = reconnect / reconnect and re-execute (`session.rs`; test: `session.rs`).
-- [ ] 2.11 `connect` idempotent under concurrency; the losing pool is closed (`connection.rs`; test: `connection.rs`).
-- [ ] 2.12 Keep-alive pings every tab session; failures surface as "connection lost" (`connection.rs`).
+- [x] 2.1 `AppState.sessions`: tab id → detached connection; open on first run, close on tab close / disconnect (`session.rs`; test: `session.rs` rules + live test).
+- [x] 2.2 `execute_sql` takes an optional tab id and runs on that session (`query.rs`; test: `query.rs`).
+- [x] 2.3 Autocommit per tab applied to the session (`session.rs`; wire the toolbar toggle and the per-connection default; test: `session.rs`).
+- [x] 2.4 COMMIT / ROLLBACK run on the tab's session (`ExasolStudio.tsx::txn`).
+- [x] 2.5 Schema selector sends `OPEN SCHEMA` on the tab's session; the selector shows the session's real schema (`ExasolStudio.tsx`; test: `lib/sql-text.test.ts` quoting).
+- [x] 2.6 Stop uses a pooled connection while the tab runs on its detached session, so it never waits on it — also in single-connection mode (the session leaves the pool's count).
+- [x] 2.7 Query timeout applied with `ALTER SESSION SET QUERY_TIMEOUT` on the tab's session; timed-out statements say so (`session.rs`; test: `session.rs`).
+- [x] 2.8 Open-transaction tracking: DML since last COMMIT/ROLLBACK → tab badge (`lib/txn-state.ts`; test: `txn-state.test.ts`).
+- [x] 2.9 Confirm on tab close / disconnect / app quit with uncommitted work, honouring `askWhenUncommitted` / `askAlways` (`lib/tab-close.ts`, `lib.rs` `CloseRequested`; test: `tab-close.test.ts`).
+- [x] 2.10 Lost session detected on use and reported as rolled back; `lossHandling` re-executes only scripts that only read (`session.rs`, `lib/txn-state.ts`; test: both).
+- [x] 2.11 `connect` idempotent under concurrency; the losing pool is closed (`connection.rs`; test: `connection.rs`).
+- [ ] 2.12 Keep-alive pings every tab session; failures surface as "connection lost" (`connection.rs`). PARTIAL: a dead tab session is detected on its next use and reported; idle tab sessions are not pinged yet.
 - [ ] 2.13 Health dot reflects session liveness, not just TCP reachability (`Sidebar.tsx`, `TitleBar.tsx`).
-- [ ] 2.14 Session id shown is the tab's session (`ExasolStudio.tsx` status bar).
+- [x] 2.14 Session id shown is the tab's session (`ExasolStudio.tsx` status bar).
 
 ## Phase 3 — Every setting applied or removed
 

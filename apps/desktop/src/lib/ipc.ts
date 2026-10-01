@@ -390,6 +390,15 @@ export type ScriptPlan = { version: string; files: string[]; statements: { head:
 export type SlcChoice = { alias: string; installed: boolean };
 /** dash-server as Studio sees it: installed? answering? for which connection? */
 export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
+/** A SQL tab's own database session: its id, schema, mode and uncommitted work. */
+export type SessionInfo = {
+  sessionId: string | null;
+  schema: string | null;
+  autocommit: boolean;
+  changes: number;
+  recent: string[];
+  idleSeconds: number;
+};
 /** One file picked through the OS dialog and copied into the attachments folder. */
 export type PickedAttachment = { name: string; path: string; size: number; mime: string; inline?: string };
 export type AttachmentPicks = {
@@ -803,8 +812,8 @@ export const ipc = {
   /** Keep a password for this run only; removes any saved copy. Empty forgets it. */
   setSessionPassword: (profileId: string, password: string) => call<null>("set_session_password", { profileId, password }),
   /** Staged grid edits in one transaction; each must touch exactly one row, or nothing is saved. */
-  applyRowEdits: (profileId: string, connectionName: string, statements: string[]) =>
-    call<{ ok: boolean; failedIndex: number | null; error: string | null }>("apply_row_edits", { profileId, connectionName, statements }),
+  applyRowEdits: (profileId: string, connectionName: string, statements: string[], tabId?: string) =>
+    call<{ ok: boolean; failedIndex: number | null; error: string | null }>("apply_row_edits", { profileId, connectionName, statements, tabId }),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
   gitCommit: (message: string, stageAll?: boolean) => call<string>("git_commit", { message, stageAll }),
@@ -889,7 +898,21 @@ export const ipc = {
     split = true,
     addHistory = true,
     progressId?: string,
-  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId }),
+    /** Run on this SQL tab's own database session (session state carries over). */
+    tabId?: string,
+  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId, tabId }),
+  // ── The SQL tab's own session (session.rs) ──
+  sessionInfo: (profileId: string, tabId: string) => call<SessionInfo>("session_info", { profileId, tabId }),
+  sessionSetAutocommit: (profileId: string, tabId: string, on: boolean) => call<SessionInfo>("session_set_autocommit", { profileId, tabId, on }),
+  sessionCommit: (profileId: string, tabId: string) => call<SessionInfo>("session_commit", { profileId, tabId }),
+  sessionRollback: (profileId: string, tabId: string) => call<SessionInfo>("session_rollback", { profileId, tabId }),
+  sessionSetSchema: (profileId: string, tabId: string, schema: string) => call<SessionInfo>("session_set_schema", { profileId, tabId, schema }),
+  sessionClose: (tabId: string, commit: boolean) => call<null>("session_close", { tabId, commit }),
+  sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number }[]>("sessions_with_changes", { profileId }),
+  /** The page has a quit request and is asking the person (stops the watchdog). */
+  quitAck: () => call<null>("quit_ack"),
+  /** Quit for real, after open transactions were settled. */
+  quitApp: () => call<null>("quit_app"),
   /** Cancel the running query registered under `progressId` (Stop). Returns
    *  true when a kill was issued, false when nothing was running. */
   cancelQuery: (progressId: string) => call<boolean>("cancel_query", { progressId }),

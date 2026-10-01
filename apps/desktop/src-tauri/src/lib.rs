@@ -50,11 +50,12 @@ mod profiles;
 mod shared_registry;
 mod query;
 mod security;
+mod session;
 mod settings;
 mod state;
 mod storage;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::state::AppState;
 
@@ -199,6 +200,15 @@ pub fn run() {
             grid_edits::apply_row_edits,
             files::save_text_as,
             files::open_text_file,
+            session::session_info,
+            session::session_set_autocommit,
+            session::session_commit,
+            session::session_rollback,
+            session::session_set_schema,
+            session::session_close,
+            session::sessions_with_changes,
+            session::quit_ack,
+            session::quit_app,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,
@@ -278,6 +288,28 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")
         .run(|app, event| {
+            // Closing the main window with uncommitted changes in a tab's
+            // session asks first (Commit / Roll back / Cancel in the page).
+            if let tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } = &event {
+                use std::sync::atomic::Ordering;
+                if label == "main"
+                    && !crate::session::QUIT_CONFIRMED.load(Ordering::SeqCst)
+                    && app.state::<AppState>().sessions.might_have_changes_now()
+                {
+                    api.prevent_close();
+                    crate::session::QUIT_ACKED.store(false, Ordering::SeqCst);
+                    let _ = app.emit("studio:quit-requested", ());
+                    // A page that cannot answer must not keep the app open.
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(4));
+                        if !crate::session::QUIT_ACKED.load(Ordering::SeqCst) {
+                            crate::session::QUIT_CONFIRMED.store(true, Ordering::SeqCst);
+                            handle.exit(0);
+                        }
+                    });
+                }
+            }
             if let tauri::RunEvent::Exit = event {
                 app.state::<crate::local_llm::LlmEngine>().kill();
                 app.state::<crate::dash_server::DashServer>().kill();
