@@ -346,9 +346,9 @@ pub(crate) fn is_result_set_statement(statement: &str) -> bool {
 
 /// Column metadata for a statement without reading any rows (used when a query
 /// returns zero rows, so the results grid can still show the header).
-async fn describe_columns(pool: &ExaPool, statement: &str) -> Vec<ColumnMeta> {
+async fn describe_columns(conn: &mut sqlx_exasol::ExaConnection, statement: &str) -> Vec<ColumnMeta> {
     use sqlx_exasol::{Executor, SqlSafeStr};
-    match pool.describe(AssertSqlSafe(statement.to_string()).into_sql_str()).await {
+    match conn.describe(AssertSqlSafe(statement.to_string()).into_sql_str()).await {
         Ok(desc) => desc
             .columns()
             .iter()
@@ -362,7 +362,6 @@ async fn describe_columns(pool: &ExaPool, statement: &str) -> Vec<ColumnMeta> {
 }
 
 async fn run_statement(
-    pool: &ExaPool,
     conn: &mut sqlx_exasol::ExaConnection,
     statement: &str,
     max_rows: usize,
@@ -405,8 +404,11 @@ async fn run_statement(
 
         // A result set with zero rows has no row to read column metadata from —
         // ask the server to describe the statement so the header still shows.
+        // On the same connection: a table this session created but has not
+        // committed is invisible to any other.
+        drop(stream);
         if columns.is_empty() && error.is_none() {
-            columns = describe_columns(pool, statement).await;
+            columns = describe_columns(conn, statement).await;
         }
 
         let row_count = rows.len() as u64;
@@ -515,6 +517,7 @@ pub async fn execute_sql(
             Some(t) => Some(state.sessions.checkout(&state, &profile_id, t).await?),
             None => None,
         };
+        let manual = session_guard.as_ref().is_some_and(|g| g.manual);
         let mut pooled = match session_guard {
             Some(_) => None,
             None => Some(pool.acquire().await.map_err(|e| crate::error::AppError::Storage(e.to_string()))?),
@@ -613,7 +616,15 @@ pub async fn execute_sql(
         let mut success = true;
         for (i, statement) in statements.iter().enumerate() {
             stmt_idx.store(i, std::sync::atomic::Ordering::Relaxed);
-            let result = run_statement(&pool, conn, statement, max_rows).await;
+            let mut result = run_statement(conn, statement, max_rows).await;
+            // A COMMIT or ROLLBACK typed in a manual-commit tab ends the
+            // transaction; the next one starts before the next statement runs,
+            // or that statement would commit on its own.
+            if manual && result.error.is_none() && crate::session::is_txn_end(statement) {
+                if let Err(e) = crate::session::restart_manual(conn).await {
+                    result.error = Some(format!("Could not restart manual commit ({e}); the remaining statements were not run."));
+                }
+            }
             let failed = result.error.is_some();
             results.push(result);
             if failed {
@@ -629,12 +640,14 @@ pub async fn execute_sql(
             if lost {
                 // What the server rolled back: earlier uncommitted changes AND
                 // the ones this script made before the connection died.
-                let this_run = if g.manual {
-                    results.iter().filter(|r| r.error.is_none() && crate::session::counts_as_change(&r.statement)).count()
+                let had = if g.manual {
+                    let mut lost_changes = g.changes.clone();
+                    let ran: Vec<(String, bool)> = results.iter().map(|r| (r.statement.clone(), r.error.is_none())).collect();
+                    crate::session::record_changes(&mut lost_changes, &ran);
+                    lost_changes.len()
                 } else {
                     0
                 };
-                let had = g.changes.len() + this_run;
                 if let Some(co) = session_guard.take() {
                     state.sessions.forget_lost(t, co).await;
                 }
@@ -648,7 +661,7 @@ pub async fn execute_sql(
                 }
             } else {
                 let ran: Vec<(String, bool)> = results.iter().map(|r| (r.statement.clone(), r.error.is_none())).collect();
-                crate::session::after_run(g, &ran).await;
+                crate::session::after_run(g, &ran);
             }
         }
         if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {

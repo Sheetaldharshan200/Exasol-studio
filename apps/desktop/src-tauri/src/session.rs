@@ -17,8 +17,8 @@ use std::time::Instant;
 
 use serde::Serialize;
 use sqlx_core::transaction::TransactionManager;
-use sqlx_exasol::{AssertSqlSafe, ExaConnection, ExaTransactionManager, Executor, Row};
-use tauri::State;
+use sqlx_exasol::{ExaConnection, ExaTransactionManager, Row};
+
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::connection::require_pool;
@@ -103,7 +103,7 @@ pub fn open_schema_sql(schema: &str) -> String {
     format!("OPEN SCHEMA \"{}\"", schema.replace('"', "\"\""))
 }
 
-fn info_of(s: &TabSession) -> SessionInfo {
+pub(crate) fn info_of(s: &TabSession) -> SessionInfo {
     SessionInfo {
         session_id: s.session_id.clone(),
         schema: s.conn.attributes().current_schema().map(str::to_string),
@@ -168,15 +168,20 @@ impl TabSessions {
         }
     }
 
-    /// End a tab's session: commit or roll back what is open, then close. A
-    /// commit that fails is an error — the person chose Commit and must hear
-    /// that it may not have happened.
-    pub async fn close(&self, tab_id: &str, commit: bool) -> AppResult<()> {
-        let slot = self.0.lock().await.remove(tab_id);
+    /// End a tab's session: commit or roll back what is open, then close.
+    /// `seen` is how many changes the person was shown when they chose; if
+    /// more arrived since, nothing happens and the session stays (None skips
+    /// the check — for ends nobody is asked about). A commit that fails keeps
+    /// the session too: the person chose Commit and must hear that it may not
+    /// have happened. The slot lock waits for a statement still running.
+    pub async fn close(&self, tab_id: &str, commit: bool, seen: Option<usize>) -> AppResult<()> {
+        let slot = self.0.lock().await.get(tab_id).cloned();
         let Some(slot) = slot else { return Ok(()) };
         let mut guard = slot.lock().await;
-        let Some(mut s) = guard.take() else { return Ok(()) };
-        if s.manual {
+        if let Some(s) = guard.as_mut().filter(|s| s.manual) {
+            if let Some(why) = seen.and_then(|n| close_refusal(s.changes.len(), n)) {
+                return Err(AppError::InvalidSettings(why));
+            }
             if commit {
                 if let Err(e) = ExaTransactionManager::commit(&mut s.conn).await {
                     return Err(AppError::Storage(format!(
@@ -186,6 +191,12 @@ impl TabSessions {
             } else {
                 let _ = ExaTransactionManager::rollback(&mut s.conn).await;
             }
+        }
+        *guard = None;
+        drop(guard);
+        let mut map = self.0.lock().await;
+        if map.get(tab_id).is_some_and(|cur| Arc::ptr_eq(cur, &slot)) {
+            map.remove(tab_id);
         }
         Ok(())
     }
@@ -236,7 +247,7 @@ impl TabSessions {
         for (tab, slot) in slots {
             let belongs = slot.lock().await.as_ref().is_some_and(|s| s.profile_id == profile_id);
             if belongs {
-                let _ = self.close(&tab, false).await;
+                let _ = self.close(&tab, false, None).await;
             }
         }
     }
@@ -245,7 +256,7 @@ impl TabSessions {
     pub async fn close_all(&self) {
         let tabs: Vec<String> = self.0.lock().await.keys().cloned().collect();
         for t in tabs {
-            let _ = self.close(&t, false).await;
+            let _ = self.close(&t, false, None).await;
         }
     }
 }
@@ -270,25 +281,49 @@ async fn open_session(state: &AppState, profile_id: &str) -> AppResult<TabSessio
 }
 
 /// After a run on the session: count what changed, keep manual mode open.
-pub async fn after_run(s: &mut TabSession, ran: &[(String, bool)]) {
+pub fn after_run(s: &mut TabSession, ran: &[(String, bool)]) {
     s.last_used = Instant::now();
     if !s.manual {
         return;
     }
-    for (stmt, ok) in ran {
-        if *ok && counts_as_change(stmt) {
-            s.changes.push(stmt.chars().take(300).collect());
+    record_changes(&mut s.changes, ran);
+}
+
+/// Count a run's changes in order: a COMMIT or ROLLBACK typed as SQL settles
+/// everything before it (the next transaction was started by the run itself).
+pub fn record_changes(changes: &mut Vec<String>, ran: &[(String, bool)]) {
+    for (stmt, _) in ran.iter().filter(|(_, ok)| *ok) {
+        if is_txn_end(stmt) {
+            changes.clear();
+        } else if counts_as_change(stmt) {
+            changes.push(stmt.chars().take(300).collect());
         }
-    }
-    // A COMMIT or ROLLBACK typed as SQL ends the transaction on the server;
-    // start the next one so the tab stays in manual mode.
-    if ran.iter().any(|(st, ok)| *ok && is_txn_end(st)) {
-        s.changes.clear();
-        let _ = ExaTransactionManager::begin(&mut s.conn, None).await;
     }
 }
 
-fn is_txn_end(statement: &str) -> bool {
+/// Make sure the tab is still in manual mode after a COMMIT or ROLLBACK typed
+/// as SQL. Those leave the session's autocommit off, so the server already
+/// runs the next statement in a new transaction (the driver tracks that as
+/// "open"); only if autocommit was somehow switched on is a new one begun.
+pub async fn restart_manual(conn: &mut ExaConnection) -> Result<(), String> {
+    if conn.attributes().open_transaction() {
+        return Ok(());
+    }
+    ExaTransactionManager::begin(conn, None).await.map_err(|e| e.to_string())
+}
+
+/// Why a close must not go ahead: changes the person was not shown.
+pub fn close_refusal(changes: usize, seen: usize) -> Option<String> {
+    (changes > seen).then(|| {
+        let new = changes - seen;
+        format!(
+            "{new} more uncommitted change{} arrived after you were asked. Nothing was committed or rolled back — review the tab and choose again.",
+            if new == 1 { "" } else { "s" }
+        )
+    })
+}
+
+pub fn is_txn_end(statement: &str) -> bool {
     let head = crate::query::strip_leading_comments(statement).trim_start().to_ascii_uppercase();
     head.starts_with("COMMIT") || head.starts_with("ROLLBACK")
 }
@@ -303,132 +338,11 @@ fn query_timeout_seconds(state: &AppState, profile_id: &str) -> Option<u64> {
     crate::connection_settings::num_at(&settings, &["driver", "queryTimeoutSeconds"]).filter(|n| *n > 0)
 }
 
-// ── Commands ────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn session_info(state: State<'_, AppState>, tab_id: String) -> AppResult<SessionInfo> {
-    // Never opens a session: looking at a tab must not move it anywhere.
-    Ok(state.sessions.peek(&tab_id).await)
-}
-
-/// Switch a tab between autocommit and manual commit. Leaving manual mode
-/// with uncommitted changes is refused: the person decides first.
-#[tauri::command]
-pub async fn session_set_autocommit(state: State<'_, AppState>, profile_id: String, tab_id: String, on: bool) -> AppResult<SessionInfo> {
-    let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
-    if on == !s.manual {
-        return Ok(info_of(&s));
-    }
-    if on {
-        if !s.changes.is_empty() {
-            return Err(AppError::InvalidSettings(format!(
-                "{} uncommitted change{} — commit or roll back before switching autocommit on.",
-                s.changes.len(),
-                if s.changes.len() == 1 { "" } else { "s" }
-            )));
-        }
-        ExaTransactionManager::rollback(&mut s.conn).await.map_err(|e| AppError::Storage(e.to_string()))?;
-        s.manual = false;
-    } else {
-        ExaTransactionManager::begin(&mut s.conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
-        s.manual = true;
-        s.changes.clear();
-    }
-    Ok(info_of(&s))
-}
-
-#[tauri::command]
-pub async fn session_commit(state: State<'_, AppState>, profile_id: String, tab_id: String) -> AppResult<SessionInfo> {
-    let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
-    if s.manual {
-        ExaTransactionManager::commit(&mut s.conn).await.map_err(|e| AppError::Storage(format!("Commit failed: {e}")))?;
-        s.changes.clear();
-        ExaTransactionManager::begin(&mut s.conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
-    }
-    Ok(info_of(&s))
-}
-
-#[tauri::command]
-pub async fn session_rollback(state: State<'_, AppState>, profile_id: String, tab_id: String) -> AppResult<SessionInfo> {
-    let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
-    if s.manual {
-        ExaTransactionManager::rollback(&mut s.conn).await.map_err(|e| AppError::Storage(format!("Rollback failed: {e}")))?;
-        s.changes.clear();
-        ExaTransactionManager::begin(&mut s.conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
-    }
-    Ok(info_of(&s))
-}
-
-/// The schema selector: OPEN SCHEMA on the tab's own session.
-#[tauri::command]
-pub async fn session_set_schema(state: State<'_, AppState>, profile_id: String, tab_id: String, schema: String) -> AppResult<SessionInfo> {
-    let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
-    s.conn.execute(AssertSqlSafe(open_schema_sql(&schema))).await.map_err(|e| AppError::Storage(e.to_string()))?;
-    s.last_used = Instant::now();
-    Ok(info_of(&s))
-}
-
-/// Close a tab's session; `commit` decides what happens to open changes.
-#[tauri::command]
-pub async fn session_close(state: State<'_, AppState>, tab_id: String, commit: bool) -> AppResult<()> {
-    state.sessions.close(&tab_id, commit).await
-}
-
-/// Set once the person has settled open transactions and asked to quit.
-pub static QUIT_CONFIRMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Set when the page has picked up a quit request (it shows the dialog).
-pub static QUIT_ACKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// The page has the quit request and is asking the person.
-#[tauri::command]
-pub fn quit_ack() {
-    QUIT_ACKED.store(true, std::sync::atomic::Ordering::SeqCst);
-}
-
-/// Roll back every tab's open work and quit — the native fallback dialog's
-/// choice when the page cannot answer.
-pub fn rollback_all_and_quit(app: &tauri::AppHandle) {
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        use tauri::Manager;
-        handle.state::<AppState>().sessions.close_all().await;
-        QUIT_CONFIRMED.store(true, std::sync::atomic::Ordering::SeqCst);
-        handle.exit(0);
-    });
-}
-
-/// Quit for real: open transactions were committed or rolled back.
-#[tauri::command]
-pub fn quit_app(app: tauri::AppHandle) {
-    QUIT_CONFIRMED.store(true, std::sync::atomic::Ordering::SeqCst);
-    app.exit(0);
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingTab {
-    pub tab_id: String,
-    pub changes: usize,
-    pub recent: Vec<String>,
-}
-
-/// Tabs with uncommitted changes — for disconnect and quit.
-#[tauri::command]
-pub async fn sessions_with_changes(state: State<'_, AppState>, profile_id: Option<String>) -> AppResult<Vec<PendingTab>> {
-    Ok(state
-        .sessions
-        .with_changes(profile_id.as_deref())
-        .await
-        .into_iter()
-        .map(|(tab_id, changes, recent)| PendingTab { tab_id, changes, recent })
-        .collect())
-}
-
 #[cfg(test)]
 mod live {
     //! EXASOL_LIVE_PORT=8565 EXASOL_LIVE_PASSWORD=… cargo test --lib session::live -- --ignored
     use super::*;
-    use sqlx_exasol::Executor;
+    use sqlx_exasol::{AssertSqlSafe, Executor};
 
     async fn scalar(s: &mut TabSession, sql: &str) -> String {
         sqlx_exasol::query(AssertSqlSafe(sql.to_string())).fetch_one(&mut s.conn).await.unwrap().try_get::<String, _>(0).unwrap()
@@ -475,7 +389,7 @@ mod live {
             ExaTransactionManager::begin(&mut s.conn, None).await.unwrap();
             s.manual = true;
             s.conn.execute("INSERT INTO T VALUES (1)").await.unwrap();
-            after_run(&mut s, &[("INSERT INTO T VALUES (1)".into(), true)]).await;
+            after_run(&mut s, &[("INSERT INTO T VALUES (1)".into(), true)]);
             assert_eq!(info_of(&s).changes, 1);
             ExaTransactionManager::rollback(&mut s.conn).await.unwrap();
             ExaTransactionManager::begin(&mut s.conn, None).await.unwrap();
@@ -492,7 +406,29 @@ mod live {
         }
         assert_eq!(crate::query::fetch_all_rows(&pool, "SELECT COUNT(*) FROM STUDIO_SESSION_PROBE.T").await.unwrap()[0][0], serde_json::json!(1));
 
-        state.sessions.close("tab-1", false).await.unwrap();
+        // A COMMIT typed as SQL: the next transaction starts before the next
+        // statement, so that statement stays uncommitted.
+        {
+            let mut s = state.sessions.checkout(&state, "live", "tab-1").await.unwrap();
+            s.conn.execute("INSERT INTO T VALUES (3)").await.unwrap();
+            s.conn.execute("COMMIT").await.unwrap();
+            restart_manual(&mut s.conn).await.unwrap();
+            s.conn.execute("INSERT INTO T VALUES (4)").await.unwrap();
+            let ran = [("INSERT INTO T VALUES (3)".to_string(), true), ("COMMIT".into(), true), ("INSERT INTO T VALUES (4)".into(), true)];
+            after_run(&mut s, &ran);
+            assert_eq!(s.changes.len(), 1);
+        }
+        assert_eq!(crate::query::fetch_all_rows(&pool, "SELECT COUNT(*) FROM STUDIO_SESSION_PROBE.T").await.unwrap()[0][0], serde_json::json!(2));
+
+        // Closing after being shown fewer changes than there are is refused
+        // and the session stays; with the right count it rolls back.
+        assert!(state.sessions.close("tab-1", false, Some(0)).await.is_err());
+        assert!(state.sessions.peek("tab-1").await.open);
+        state.sessions.close("tab-1", false, Some(1)).await.unwrap();
+        assert!(!state.sessions.peek("tab-1").await.open);
+        assert_eq!(crate::query::fetch_all_rows(&pool, "SELECT COUNT(*) FROM STUDIO_SESSION_PROBE.T").await.unwrap()[0][0], serde_json::json!(2));
+
+        state.sessions.close("tab-1", false, None).await.unwrap();
         pool.execute("DROP SCHEMA STUDIO_SESSION_PROBE CASCADE").await.ok();
         pool.close().await;
         let _ = std::fs::remove_dir_all(dir);
@@ -519,6 +455,41 @@ mod tests {
         assert!(is_connection_lost("WebSocket protocol error: Connection closed normally"));
         assert!(!is_connection_lost("[42000] object TABLE_X not found [line 1, column 15]"));
         assert!(!is_connection_lost("[22002] data exception - numeric value out of range"));
+    }
+
+    #[test]
+    fn a_commit_in_the_script_settles_only_what_came_before_it() {
+        let ran = |v: &[(&str, bool)]| v.iter().map(|(s, ok)| (s.to_string(), *ok)).collect::<Vec<_>>();
+        let mut changes = vec!["UPDATE OLD".to_string()];
+        record_changes(&mut changes, &ran(&[("INSERT INTO T VALUES (1)", true), ("COMMIT", true), ("INSERT INTO T VALUES (2)", true)]));
+        assert_eq!(changes, vec!["INSERT INTO T VALUES (2)"]);
+        // A ROLLBACK, in lower case after a comment, settles too.
+        record_changes(&mut changes, &ran(&[("-- undo\nrollback", true)]));
+        assert!(changes.is_empty());
+        // A failed COMMIT settles nothing; a failed change is not counted.
+        let mut changes = vec!["DELETE FROM T".to_string()];
+        record_changes(&mut changes, &ran(&[("COMMIT", false), ("INSERT INTO T VALUES (3)", false), ("SELECT 1", true)]));
+        assert_eq!(changes, vec!["DELETE FROM T"]);
+        record_changes(&mut changes, &[]);
+        assert_eq!(changes.len(), 1);
+    }
+
+    #[test]
+    fn a_close_is_refused_only_when_changes_arrived_after_the_question() {
+        assert!(close_refusal(0, 0).is_none());
+        assert!(close_refusal(3, 3).is_none());
+        assert!(close_refusal(2, 5).is_none(), "fewer than shown (a COMMIT ran) is safe");
+        assert!(close_refusal(1, 0).unwrap().starts_with("1 more uncommitted change arrived"));
+        assert!(close_refusal(4, 1).unwrap().starts_with("3 more uncommitted changes arrived"));
+    }
+
+    #[test]
+    fn transaction_ends_are_recognised() {
+        assert!(is_txn_end("COMMIT"));
+        assert!(is_txn_end("  rollback work"));
+        assert!(is_txn_end("/* x */ COMMIT"));
+        assert!(!is_txn_end("SELECT 'COMMIT'"));
+        assert!(!is_txn_end(""));
     }
 
     #[test]

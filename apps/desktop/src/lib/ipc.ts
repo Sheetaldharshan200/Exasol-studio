@@ -910,7 +910,8 @@ export const ipc = {
   sessionCommit: (profileId: string, tabId: string) => call<SessionInfo>("session_commit", { profileId, tabId }),
   sessionRollback: (profileId: string, tabId: string) => call<SessionInfo>("session_rollback", { profileId, tabId }),
   sessionSetSchema: (profileId: string, tabId: string, schema: string) => call<SessionInfo>("session_set_schema", { profileId, tabId, schema }),
-  sessionClose: (tabId: string, commit: boolean) => call<null>("session_close", { tabId, commit }),
+  /** `seen`: the uncommitted changes the person was shown; more → refused. */
+  sessionClose: (tabId: string, commit: boolean, seen?: number) => call<null>("session_close", { tabId, commit, seen }),
   sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number; recent: string[] }[]>("sessions_with_changes", { profileId }),
   /** The page has a quit request and is asking the person (stops the watchdog). */
   quitAck: () => call<null>("quit_ack"),
