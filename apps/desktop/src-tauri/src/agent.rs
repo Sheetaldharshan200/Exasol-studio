@@ -291,9 +291,10 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
             let _ = crate::process::command(&exapump)
                 .args(["profile", "remove", "studio"])
                 .output();
-            let port = profile.port.to_string();
+            // The same route as the agent: through the tunnel when routed.
+            let port = port.to_string();
             let mut args: Vec<&str> = vec![
-                "profile", "add", "studio", "--host", &profile.host, "--port", &port, "--user", &profile.username,
+                "profile", "add", "studio", "--host", &host, "--port", &port, "--user", &profile.username,
                 "--password", &profile.password, "--tls", "true",
             ];
             // The same trust as the connection: its pin, else its verify mode.

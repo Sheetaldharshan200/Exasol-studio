@@ -122,7 +122,7 @@ pub fn validate(n: &mut NetworkSettings) -> AppResult<()> {
 /// Whether a blank secret on edit may keep the stored one: same server and
 /// user. Like the database password, it never follows a changed host.
 pub fn may_keep_ssh_secret(old: &SshSettings, new: &SshSettings) -> bool {
-    old.host == new.host && old.user == new.user && old.auth == new.auth && old.jump == new.jump
+    old.host == new.host && old.port == new.port && old.user == new.user && old.auth == new.auth && old.jump == new.jump && old.key_path == new.key_path
 }
 
 pub fn may_keep_proxy_secret(old: &ProxySettings, new: &ProxySettings) -> bool {
@@ -146,6 +146,20 @@ pub fn seal(dek: Option<&[u8; 32]>, profile_id: &str, n: &mut NetworkSettings, p
         } else {
             previous.and_then(|x| x.proxy.as_ref()).filter(|old| may_keep_proxy_secret(old, p)).map(|old| old.secret.clone()).unwrap_or_default()
         };
+    }
+    forget_dropped(profile_id, Some(n), previous);
+}
+
+/// A route that is gone, or whose secret is gone, leaves no secret behind.
+pub fn forget_dropped(profile_id: &str, now: Option<&NetworkSettings>, previous: Option<&NetworkSettings>) {
+    let had = |f: fn(&NetworkSettings) -> bool| previous.is_some_and(f);
+    let has_ssh = now.and_then(|n| n.ssh.as_ref()).is_some_and(|s| !s.secret.is_empty());
+    let has_proxy = now.and_then(|n| n.proxy.as_ref()).is_some_and(|p| !p.secret.is_empty());
+    if had(|p| p.ssh.is_some()) && !has_ssh {
+        crate::shared_registry::delete_credential(&crate::profile_secret::keychain_account(&secret_id(profile_id, "ssh")));
+    }
+    if had(|p| p.proxy.is_some()) && !has_proxy {
+        crate::shared_registry::delete_credential(&crate::profile_secret::keychain_account(&secret_id(profile_id, "proxy")));
     }
 }
 
@@ -228,6 +242,8 @@ mod tests {
         assert!(may_keep_ssh_secret(&ssh(), &ssh()));
         assert!(!may_keep_ssh_secret(&ssh(), &SshSettings { host: "other".into(), ..ssh() }));
         assert!(!may_keep_ssh_secret(&ssh(), &SshSettings { user: Some("root".into()), ..ssh() }));
+        assert!(!may_keep_ssh_secret(&ssh(), &SshSettings { port: Some(2222), ..ssh() }), "another port is another service");
+        assert!(!may_keep_ssh_secret(&ssh(), &SshSettings { key_path: Some("/other".into()), ..ssh() }), "a passphrase belongs to its key");
         let p = ProxySettings { kind: "http".into(), host: "p".into(), port: 3128, user: None, secret: String::new() };
         assert!(may_keep_proxy_secret(&p, &p));
         assert!(!may_keep_proxy_secret(&p, &ProxySettings { port: 8080, ..p.clone() }));

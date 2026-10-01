@@ -117,7 +117,7 @@ export function ConnectionNetworkFields({ network, isNew, onChange }: { network:
           />
           <Field label="Keep-alive (seconds)" value={String(ssh.keepaliveSecs)} placeholder="0 = off" onChange={(v) => setSsh({ keepaliveSecs: Math.max(0, Number(v) || 0) })} />
           <p className={HINT}>
-            The database host and port above are as the SSH server sees them. Studio runs your system's ssh, so ~/.ssh/config, the agent and known_hosts apply. The tunnel is shared by all tabs of this connection.
+            The database host and port above are as the SSH server sees them. Studio runs your system's ssh, so ~/.ssh/config (including any ProxyCommand), the agent and known_hosts apply. The tunnel is shared by all tabs of this connection; while connected, it listens on this machine only.
           </p>
         </>
       ) : null}
@@ -136,7 +136,9 @@ export function ConnectionNetworkFields({ network, isNew, onChange }: { network:
           <Field label="Proxy port" value={proxy.port ? String(proxy.port) : ""} placeholder={proxy.kind === "http" ? "3128" : "1080"} onChange={(v) => setProxy({ port: Number(v) || 0 })} />
           <Field label="Proxy user" value={proxy.user ?? ""} placeholder="Optional" onChange={(v) => setProxy({ user: v || null })} />
           {proxy.user ? <Field label="Proxy password" type="password" value={proxy.secret} placeholder={keep ?? "Password"} onChange={(v) => setProxy({ secret: v })} /> : null}
-          <p className={HINT}>TLS to the database is end to end: the proxy only relays encrypted bytes.</p>
+          <p className={HINT}>
+            TLS to the database is end to end: the proxy only relays encrypted bytes. A proxy user and password are sent to the proxy unencrypted, as SOCKS5 and HTTP CONNECT do — use them only on a network you trust.
+          </p>
         </>
       ) : null}
     </>

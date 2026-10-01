@@ -1,27 +1,30 @@
 //! An SSH tunnel to a database the machine cannot reach directly, run by the
-//! system's OpenSSH client (`ssh -N -L`): so ~/.ssh/config aliases, ProxyJump,
-//! the agent and known_hosts behave exactly as in a terminal. A password or
-//! key passphrase is handed over by an askpass helper through the child's
-//! environment — never on the command line.
+//! system's OpenSSH client: so ~/.ssh/config aliases, ProxyJump, the agent and
+//! known_hosts behave exactly as in a terminal. Studio holds the loopback
+//! port itself, and every database connection to it gets its own
+//! `ssh -W host:port` (stdin/stdout relay) — no port is ever handed to ssh,
+//! so no other process can slip in between choosing and binding one. A
+//! password or key passphrase is handed over by an askpass helper through
+//! the child's environment — never on the command line.
 
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Stdio};
+use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::error::{AppError, AppResult};
 use crate::network::SshSettings;
 
-/// A running tunnel: the database is at 127.0.0.1:`port`. Dropping it ends ssh.
+/// A running tunnel: the database is at 127.0.0.1:`port`. Dropping it stops
+/// accepting and ends every ssh it started.
 pub struct SshTunnel {
-    child: Child,
     pub port: u16,
+    task: tokio::task::JoinHandle<()>,
 }
 
 impl Drop for SshTunnel {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        self.task.abort();
     }
 }
 
@@ -34,16 +37,17 @@ fn quote(p: &Path) -> String {
     format!("\"{}\"", p.to_string_lossy().replace('"', ""))
 }
 
-/// The ssh command line for a tunnel (without the program name).
-pub fn ssh_args(s: &SshSettings, local_port: u16, target_host: &str, target_port: u16, timeout_secs: u64, known_hosts: &Path, has_secret: bool) -> Vec<String> {
+/// The ssh command line for one relayed connection (without the program
+/// name): stdin/stdout become the database connection (`-W`).
+pub fn ssh_args(s: &SshSettings, target_host: &str, target_port: u16, timeout_secs: u64, known_hosts: &Path, has_secret: bool) -> Vec<String> {
     let target = if target_host.contains(':') { format!("[{target_host}]") } else { target_host.to_string() };
     let mut a: Vec<String> = vec![
-        "-N".into(),
         "-T".into(),
-        "-L".into(),
-        format!("127.0.0.1:{local_port}:{target}:{target_port}"),
+        "-W".into(),
+        format!("{target}:{target_port}"),
+        // "Authenticated to …" tells when the session is up.
         "-o".into(),
-        "ExitOnForwardFailure=yes".into(),
+        "LogLevel=VERBOSE".into(),
         "-o".into(),
         format!("ConnectTimeout={}", timeout_secs.max(1)),
         "-o".into(),
@@ -136,88 +140,141 @@ fn askpass_helper(data_dir: &Path) -> std::io::Result<PathBuf> {
     }
 }
 
-fn free_port() -> std::io::Result<u16> {
-    Ok(std::net::TcpListener::bind(("127.0.0.1", 0))?.local_addr()?.port())
+/// How to start one ssh for this tunnel: its arguments and environment.
+struct Plan {
+    args: Vec<String>,
+    env: Vec<(&'static str, std::ffi::OsString)>,
 }
 
-/// Start the tunnel and wait until it forwards (or say why it cannot).
+fn spawn(plan: &Plan) -> std::io::Result<tokio::process::Child> {
+    let mut cmd = tokio::process::Command::from(crate::process::command("ssh"));
+    cmd.args(&plan.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    for (k, v) in &plan.env {
+        cmd.env(k, v);
+    }
+    cmd.spawn()
+}
+
+/// Start one ssh and wait until it signed in and opened the channel — or
+/// say why not. The first connection's check; nothing is relayed through it.
+async fn probe(plan: &Plan, host: &str, timeout: Duration) -> AppResult<()> {
+    use tokio::io::AsyncBufReadExt;
+    let mut child = spawn(plan).map_err(|e| AppError::Database(format!("Could not run ssh ({e}). Install the OpenSSH client.")))?;
+    let mut lines = tokio::io::BufReader::new(child.stderr.take().expect("stderr piped")).lines();
+    let mut said = String::new();
+    let deadline = tokio::time::Instant::now() + timeout + Duration::from_secs(2);
+    let mut authed_at: Option<tokio::time::Instant> = None;
+    loop {
+        // After sign-in, a moment for a refused channel to show.
+        let until = authed_at.map(|t| t + Duration::from_millis(700)).unwrap_or(deadline).min(deadline);
+        match tokio::time::timeout_at(until, lines.next_line()).await {
+            Ok(Ok(Some(line))) => {
+                said.push_str(&line);
+                said.push('\n');
+                let l = line.to_ascii_lowercase();
+                if l.contains("open failed") || l.contains("administratively prohibited") {
+                    return Err(AppError::Database(humanize_ssh_error(&said, host)));
+                }
+                if l.contains("authenticated to") {
+                    authed_at.get_or_insert_with(tokio::time::Instant::now);
+                }
+            }
+            // ssh ended (stderr closed) before or after signing in.
+            Ok(_) => {
+                let _ = child.wait().await;
+                return Err(AppError::Database(if said.trim().is_empty() { "ssh ended without a message.".into() } else { humanize_ssh_error(&said, host) }));
+            }
+            Err(_) if authed_at.is_some() => return Ok(()),
+            Err(_) => return Err(AppError::Database(format!("The SSH server {host} did not answer in time."))),
+        }
+    }
+}
+
+async fn relay(mut local: tokio::net::TcpStream, plan: Arc<Plan>) {
+    let Ok(mut child) = spawn(&plan) else { return };
+    let (Some(mut stdin), Some(mut stdout), Some(mut stderr)) = (child.stdin.take(), child.stdout.take(), child.stderr.take()) else { return };
+    // ssh's messages are drained so it never blocks writing them.
+    tokio::spawn(async move {
+        let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
+    });
+    let (mut rd, mut wr) = local.split();
+    let up = async {
+        let _ = tokio::io::copy(&mut rd, &mut stdin).await;
+        drop(stdin);
+    };
+    let down = async {
+        let _ = tokio::io::copy(&mut stdout, &mut wr).await;
+    };
+    tokio::join!(up, down);
+    let _ = child.kill().await;
+}
+
+/// Start the tunnel: sign in once to check, then serve a loopback port whose
+/// every connection runs through its own `ssh -W`.
 pub async fn open(s: &SshSettings, secret: &str, target_host: &str, target_port: u16, timeout: Duration, data_dir: &Path) -> AppResult<SshTunnel> {
-    let port = free_port()?;
     let known = known_hosts_file(data_dir);
     std::fs::create_dir_all(known.parent().expect("ssh dir"))?;
     let has_secret = !secret.is_empty() && s.auth != "agent";
-    let args = ssh_args(s, port, target_host, target_port, timeout.as_secs(), &known, has_secret);
-    let mut cmd = crate::process::command("ssh");
-    cmd.args(&args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    let mut env: Vec<(&'static str, std::ffi::OsString)> = Vec::new();
     if has_secret {
-        cmd.env("SSH_ASKPASS", askpass_helper(data_dir)?)
-            .env("SSH_ASKPASS_REQUIRE", "force")
-            .env("DISPLAY", ":0")
-            .env("STUDIO_SSH_SECRET", secret);
+        env.push(("SSH_ASKPASS", askpass_helper(data_dir)?.into_os_string()));
+        env.push(("SSH_ASKPASS_REQUIRE", "force".into()));
+        env.push(("DISPLAY", ":0".into()));
+        env.push(("STUDIO_SSH_SECRET", secret.into()));
     }
-    let mut child = cmd.spawn().map_err(|e| AppError::Database(format!("Could not run ssh ({e}). Install the OpenSSH client.")))?;
-    // ssh's messages, collected as they come: a refused forward shows here
-    // only when the first connection is tried, while ssh keeps running.
-    let said = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
-    if let Some(mut err) = child.stderr.take() {
-        let said = std::sync::Arc::clone(&said);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 1024];
-            while let Ok(n) = err.read(&mut buf) {
-                if n == 0 {
-                    break;
+    let plan = Arc::new(Plan { args: ssh_args(s, target_host, target_port, timeout.as_secs(), &known, has_secret), env });
+    probe(&plan, &s.host, timeout).await?;
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+    let port = listener.local_addr()?.port();
+    let task = tokio::spawn(async move {
+        let mut relays = tokio::task::JoinSet::new();
+        loop {
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let Ok((local, _)) = accepted else { break };
+                    if relays.len() >= 256 { continue; }
+                    relays.spawn(relay(local, Arc::clone(&plan)));
                 }
-                if let Ok(mut s) = said.lock() {
-                    s.push_str(&String::from_utf8_lossy(&buf[..n]));
-                }
-            }
-        });
-    }
-    let said_now = |said: &std::sync::Arc<std::sync::Mutex<String>>| said.lock().map(|s| s.clone()).unwrap_or_default();
-    let mut tunnel = SshTunnel { child, port };
-    let started = std::time::Instant::now();
-    loop {
-        if let Some(status) = tunnel.child.try_wait()? {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            let err = said_now(&said);
-            return Err(AppError::Database(if err.trim().is_empty() { format!("ssh ended ({status}).") } else { humanize_ssh_error(&err, &s.host) }));
-        }
-        if let Ok(mut probe) = tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
-            // The database waits for the client to speak: a working forward
-            // stays silent; one the server refuses closes at once.
-            use tokio::io::AsyncReadExt;
-            let mut b = [0u8; 1];
-            match tokio::time::timeout(Duration::from_millis(800), probe.read(&mut b)).await {
-                Ok(Ok(0)) | Ok(Err(_)) => {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    let err = said_now(&said);
-                    return Err(AppError::Database(if err.trim().is_empty() { "The SSH tunnel closed the connection to the database.".into() } else { humanize_ssh_error(&err, &s.host) }));
-                }
-                _ => return Ok(tunnel),
+                Some(_) = relays.join_next(), if !relays.is_empty() => {}
             }
         }
-        if started.elapsed() > timeout + Duration::from_secs(2) {
-            return Err(AppError::Database(format!("The SSH tunnel through {} did not open in time.", s.host)));
-        }
-        tokio::time::sleep(Duration::from_millis(150)).await;
-    }
+    });
+    Ok(SshTunnel { port, task })
 }
 
 // ── Host keys ("ask") ───────────────────────────────────────────────────────
 
-/// `hostname` and `port` from `ssh -G` output (the effective config).
-pub fn effective_target(ssh_g: &str) -> Option<(String, u16)> {
+/// What `ssh -G` (the effective config) says about the server: where to
+/// scan it, and the name its key is checked under in known_hosts.
+#[derive(Debug, PartialEq)]
+pub struct Target {
+    pub host: String,
+    pub port: u16,
+    /// `HostKeyAlias` when set: ssh checks the key under this name.
+    pub alias: Option<String>,
+}
+
+pub fn effective_target(ssh_g: &str) -> Option<Target> {
     let mut host = None;
     let mut port = None;
+    let mut alias = None;
     for line in ssh_g.lines() {
         let mut parts = line.splitn(2, ' ');
         match (parts.next(), parts.next()) {
             (Some("hostname"), Some(h)) => host = Some(h.trim().to_string()),
             (Some("port"), Some(p)) => port = p.trim().parse().ok(),
+            (Some("hostkeyalias"), Some(a)) if !a.trim().is_empty() && a.trim() != "none" => alias = Some(a.trim().to_string()),
             _ => {}
         }
     }
-    Some((host?, port.unwrap_or(22)))
+    Some(Target { host: host?, port: port.unwrap_or(22), alias })
+}
+
+impl Target {
+    /// The known_hosts name ssh looks the key up by.
+    pub fn known_name(&self) -> String {
+        self.alias.clone().unwrap_or_else(|| known_hosts_name(&self.host, self.port))
+    }
 }
 
 /// The known_hosts name of a host: `host`, or `[host]:port` off port 22.
@@ -236,7 +293,7 @@ fn run(program: &str, args: &[String], input: Option<&str>) -> std::io::Result<s
     child.wait_with_output()
 }
 
-fn resolve(s: &SshSettings) -> AppResult<(String, u16)> {
+fn resolve(s: &SshSettings) -> AppResult<Target> {
     let mut args: Vec<String> = vec!["-G".into()];
     if let Some(p) = s.port {
         args.extend(["-p".into(), p.to_string()]);
@@ -287,8 +344,9 @@ pub fn check_host_key(s: &SshSettings, data_dir: &Path, timeout: Duration) -> Ap
     if s.host_key != "ask" {
         return Ok(());
     }
-    let (host, port) = resolve(s)?;
-    if is_known(&known_hosts_name(&host, port), data_dir) {
+    let target = resolve(s)?;
+    let (host, port) = (target.host.clone(), target.port);
+    if is_known(&target.known_name(), data_dir) {
         return Ok(());
     }
     if s.jump.is_some() {
@@ -303,12 +361,12 @@ pub fn check_host_key(s: &SshSettings, data_dir: &Path, timeout: Duration) -> Ap
 /// Trust the host key the person was shown: scanned again, and stored only
 /// if it still has exactly the fingerprints they saw.
 pub fn trust_host_key(s: &SshSettings, data_dir: &Path, shown: &str, timeout: Duration) -> AppResult<()> {
-    let (host, port) = resolve(s)?;
-    let (lines, fingerprint) = scan(&host, port, timeout)?;
+    let target = resolve(s)?;
+    let (lines, fingerprint) = scan(&target.host, target.port, timeout)?;
     if fingerprint != shown {
         return Err(AppError::InvalidSettings("The SSH host key changed while you were deciding. Nothing was trusted; try again.".into()));
     }
-    let name = known_hosts_name(&host, port);
+    let name = target.known_name();
     let entries: String = lines
         .lines()
         .filter(|l| !l.starts_with('#') && !l.trim().is_empty())
@@ -356,9 +414,9 @@ mod tests {
 
     #[test]
     fn the_command_line_forwards_only_to_the_database_and_checks_host_keys() {
-        let a = ssh_args(&s(), 50001, "db.internal", 8563, 15, Path::new("/data/ssh/known hosts"), false);
+        let a = ssh_args(&s(), "db.internal", 8563, 15, Path::new("/data/ssh/known hosts"), false);
         let j = a.join(" ");
-        assert!(j.starts_with("-N -T -L 127.0.0.1:50001:db.internal:8563 "), "{j}");
+        assert!(j.starts_with("-T -W db.internal:8563 "), "only a channel to the database: {j}");
         assert!(j.contains("StrictHostKeyChecking=accept-new"));
         assert!(j.contains("UserKnownHostsFile=\"/data/ssh/known hosts\" ~/.ssh/known_hosts"), "spaces quoted: {j}");
         assert!(j.contains("ConnectTimeout=15") && j.contains("ServerAliveInterval=20"));
@@ -370,17 +428,17 @@ mod tests {
     #[test]
     fn strict_and_ask_never_accept_an_unknown_key_by_themselves() {
         for mode in ["strict", "ask"] {
-            let a = ssh_args(&SshSettings { host_key: mode.into(), ..s() }, 1, "d", 8563, 5, Path::new("/k"), false).join(" ");
+            let a = ssh_args(&SshSettings { host_key: mode.into(), ..s() }, "d", 8563, 5, Path::new("/k"), false).join(" ");
             assert!(a.contains("StrictHostKeyChecking=yes"), "{mode}");
         }
     }
 
     #[test]
     fn a_password_turns_off_keys_and_batch_mode() {
-        let a = ssh_args(&SshSettings { auth: "password".into(), key_path: None, ..s() }, 1, "::1", 8563, 5, Path::new("/k"), true).join(" ");
+        let a = ssh_args(&SshSettings { auth: "password".into(), key_path: None, ..s() }, "::1", 8563, 5, Path::new("/k"), true).join(" ");
         assert!(a.contains("PubkeyAuthentication=no") && a.contains("BatchMode=no"));
-        assert!(a.contains("127.0.0.1:1:[::1]:8563"), "an IPv6 target in brackets");
-        let agent = ssh_args(&SshSettings { auth: "agent".into(), key_path: None, keepalive_secs: 0, port: None, user: None, jump: None, ..s() }, 1, "d", 1, 5, Path::new("/k"), false).join(" ");
+        assert!(a.contains("-W [::1]:8563"), "an IPv6 target in brackets");
+        let agent = ssh_args(&SshSettings { auth: "agent".into(), key_path: None, keepalive_secs: 0, port: None, user: None, jump: None, ..s() }, "d", 1, 5, Path::new("/k"), false).join(" ");
         assert!(!agent.contains("-i ") && !agent.contains("ServerAlive") && !agent.contains("-p ") && agent.ends_with("-- bastion"));
     }
 
@@ -397,8 +455,10 @@ mod tests {
 
     #[test]
     fn the_effective_target_and_known_hosts_name() {
-        assert_eq!(effective_target("user ops\nhostname 10.0.0.5\nport 2222\n"), Some(("10.0.0.5".into(), 2222)));
-        assert_eq!(effective_target("hostname bastion\n"), Some(("bastion".into(), 22)));
+        let t = effective_target("user ops\nhostname 10.0.0.5\nport 2222\n").unwrap();
+        assert_eq!((t.host.as_str(), t.port, t.known_name()), ("10.0.0.5", 2222, "[10.0.0.5]:2222".to_string()));
+        assert_eq!(effective_target("hostname bastion\n").unwrap().known_name(), "bastion");
+        assert_eq!(effective_target("hostname 10.0.0.5\nport 2222\nhostkeyalias prod-bastion\n").unwrap().known_name(), "prod-bastion", "checked under the alias, as ssh does");
         assert_eq!(effective_target("port 22\n"), None);
         assert_eq!(known_hosts_name("h", 22), "h");
         assert_eq!(known_hosts_name("h", 2222), "[h]:2222");

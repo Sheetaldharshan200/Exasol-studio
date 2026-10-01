@@ -45,6 +45,7 @@ mod market;
 mod metadata;
 mod print;
 mod process;
+mod carrier;
 mod network;
 mod profile_check;
 mod profile_io;

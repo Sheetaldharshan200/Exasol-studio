@@ -310,29 +310,8 @@ pub async fn server_certificate(state: State<'_, AppState>, host: String, port: 
     crate::tls_trust::server_fingerprint(&host, port, connect_timeout(&state)).await.map_err(AppError::Database)
 }
 
-/// What carries a connection beyond the driver: an SSH tunnel or a proxy
-/// relay to reach the database, and the pin tunnel over it. They live as
-/// long as the pool; fields drop in order (pin first, then the route).
-#[derive(Default)]
-pub struct Carrier {
-    pin: Option<crate::pin_tunnel::PinTunnel>,
-    ssh: Option<crate::ssh_tunnel::SshTunnel>,
-    proxy: Option<crate::proxy_tunnel::ProxyTunnel>,
-}
-
-impl Carrier {
-    /// The loopback port of the SSH tunnel or proxy relay, if routed.
-    pub fn route_port(&self) -> Option<u16> {
-        self.ssh.as_ref().map(|t| t.port).or(self.proxy.as_ref().map(|t| t.addr.port()))
-    }
-
-    fn is_empty(&self) -> bool {
-        self.pin.is_none() && self.ssh.is_none() && self.proxy.is_none()
-    }
-}
-
 /// A pool, the server's info, and what carries it.
-pub(crate) type Opened = (ExaPool, ServerInfo, Carrier);
+pub(crate) type Opened = (ExaPool, ServerInfo, crate::carrier::Carrier);
 
 /// Open a pool and read the server's info, with the TLS trust rules: a pinned
 /// connection goes through a pin tunnel (only the pinned certificate
@@ -340,43 +319,7 @@ pub(crate) type Opened = (ExaPool, ServerInfo, Carrier);
 /// is pinned comes back as `UntrustedCertificate` with its fingerprint, so
 /// the person can choose to trust it.
 async fn open_checked(data_dir: &std::path::Path, profile: &ConnectionProfile, size: u32, hooks: Vec<String>, timeout: Duration) -> AppResult<Opened> {
-    let mut carrier = Carrier::default();
-    // How the database is reached: directly, or through an SSH tunnel or a
-    // proxy relay on a loopback port (one node of a range: the first).
-    let (reach_host, reach_port) = match profile.network.as_ref() {
-        Some(crate::network::NetworkSettings { ssh: Some(s), .. }) => {
-            crate::ssh_tunnel::check_host_key(s, data_dir, timeout)?;
-            let t = crate::ssh_tunnel::open(s, &s.secret, &crate::tls_trust::first_host(profile.host.trim()), profile.port, timeout, data_dir).await?;
-            let port = t.port;
-            carrier.ssh = Some(t);
-            ("127.0.0.1".to_string(), port)
-        }
-        Some(crate::network::NetworkSettings { proxy: Some(p), .. }) => {
-            let t = crate::proxy_tunnel::open(p.clone(), p.secret.clone(), crate::tls_trust::first_host(profile.host.trim()), profile.port, timeout).await?;
-            let port = t.addr.port();
-            carrier.proxy = Some(t);
-            ("127.0.0.1".to_string(), port)
-        }
-        _ => (profile.host.trim().to_string(), profile.port),
-    };
-    let routed = carrier.ssh.is_some() || carrier.proxy.is_some();
-    let mut target = profile.clone();
-    target.network = None;
-    if let Some(pin) = profile.fingerprint.as_deref() {
-        // A clear "certificate changed" before anything else.
-        crate::tls_trust::check_pin(&reach_host, reach_port, pin, timeout).await?;
-        let hosts = if routed { vec![reach_host.clone()] } else { crate::tls_trust::expand_hosts(&reach_host) };
-        let t = crate::pin_tunnel::open(hosts, reach_port, pin, timeout).await?;
-        target.host = t.addr.ip().to_string();
-        target.port = t.addr.port();
-        target.ssl_mode = crate::tls_trust::LOOPBACK_TUNNEL.into();
-        target.ssl_ca = None;
-        target.fingerprint = None;
-        carrier.pin = Some(t);
-    } else if routed {
-        target.host = reach_host.clone();
-        target.port = reach_port;
-    }
+    let (carrier, target, reach_host, reach_port) = crate::carrier::prepare(data_dir, profile, timeout).await?;
     let target = &target;
     let log = HookLog::default();
     let opened = match open_pool_sized(target, size, hooks, timeout, &log).await {
@@ -412,11 +355,23 @@ async fn open_checked(data_dir: &std::path::Path, profile: &ConnectionProfile, s
 pub async fn test_connection(app: tauri::AppHandle, state: State<'_, AppState>, mut profile: ConnectionProfile) -> AppResult<ServerInfo> {
     // Editing a saved connection leaves the secret blank (the stored one is
     // kept on save); test with the stored one too.
-    if profile.password.is_empty() && !profile.id.is_empty() {
+    if !profile.id.is_empty() {
         if let Ok(saved) = find_profile(&state, &profile.id) {
-            // Only to where it was saved for — never to a changed server.
-            if crate::profile_check::may_reuse_secret(&saved, &profile) {
-                profile.password = saved.password;
+            // Only to where they were saved for — never to a changed server.
+            if profile.password.is_empty() && crate::profile_check::may_reuse_secret(&saved, &profile) {
+                profile.password = saved.password.clone();
+            }
+            if let (Some(old), Some(new)) = (saved.network.as_ref(), profile.network.as_mut()) {
+                if let (Some(o), Some(n)) = (&old.ssh, &mut new.ssh) {
+                    if n.secret.is_empty() && crate::network::may_keep_ssh_secret(o, n) {
+                        n.secret = o.secret.clone();
+                    }
+                }
+                if let (Some(o), Some(n)) = (&old.proxy, &mut new.proxy) {
+                    if n.secret.is_empty() && crate::network::may_keep_proxy_secret(o, n) {
+                        n.secret = o.secret.clone();
+                    }
+                }
             }
         }
     }
@@ -790,158 +745,5 @@ mod tests {
 }
 
 #[cfg(test)]
-mod live_trust {
-    //! EXASOL_LIVE_PORT=8565 EXASOL_LIVE_PASSWORD=… cargo test --lib connection::live_trust -- --ignored
-    use crate::error::AppError;
-    use std::time::Duration;
-
-    #[tokio::test]
-    #[ignore = "needs a live database (EXASOL_LIVE_* env)"]
-    async fn a_self_signed_server_is_offered_for_trust_then_pinned() {
-        let port: u16 = std::env::var("EXASOL_LIVE_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8563);
-        let mut p = crate::profiles::ConnectionProfile {
-            id: "live".into(),
-            name: "live".into(),
-            host: "127.0.0.1".into(),
-            port,
-            username: "sys".into(),
-            password: std::env::var("EXASOL_LIVE_PASSWORD").expect("EXASOL_LIVE_PASSWORD"),
-            schema: None,
-            notes: None,
-            ssl_mode: "verify_identity".into(),
-            compression: false,
-            driver_id: "sqlx-exasol".into(),
-            created_at: None,
-            last_used_at: None,
-            fingerprint: None,
-            ssl_ca: None,
-            auth_method: "password".into(),
-            network: None,
-        };
-        let t = Duration::from_secs(15);
-        // Verify, nothing pinned: a self-signed local database is offered for trust.
-        let fp = match super::open_checked(&std::env::temp_dir(), &p, 1, Vec::new(), t).await {
-            Err(AppError::UntrustedCertificate { fingerprint }) => fingerprint,
-            other => panic!("expected an untrusted certificate, got {:?}", other.map(|_| ())),
-        };
-        assert_eq!(fp.len(), 64);
-        assert_eq!(crate::tls_trust::server_fingerprint("127.0.0.1", port, t).await.unwrap(), fp, "stable");
-        // Trusted: pinned, it connects.
-        p.fingerprint = Some(fp.clone());
-        let (pool, info, tunnel) = super::open_checked(&std::env::temp_dir(), &p, 1, Vec::new(), t).await.expect("pinned connect");
-        assert!(tunnel.pin.is_some(), "a pinned connection goes through the pin tunnel");
-        assert!(info.version.is_some());
-        pool.close().await;
-        // A different pin: the change is reported, nothing connects.
-        p.fingerprint = Some("00".repeat(32));
-        match super::open_checked(&std::env::temp_dir(), &p, 1, Vec::new(), t).await {
-            Err(AppError::CertificateChanged { actual, .. }) => assert_eq!(actual, fp),
-            other => panic!("expected a changed certificate, got {:?}", other.map(|_| ())),
-        }
-    }
-}
-
-#[cfg(test)]
-mod live_ssh {
-    //! A real SSH server forwarding to a real Exasol:
-    //! STUDIO_LIVE_SSH_PORT=2299 STUDIO_LIVE_SSH_PASSWORD=… STUDIO_LIVE_DB_HOST=host.docker.internal \
-    //! EXASOL_LIVE_PORT=8565 EXASOL_LIVE_PASSWORD=… cargo test --lib connection::live_ssh -- --ignored
-    use crate::error::AppError;
-    use std::time::Duration;
-
-    #[tokio::test]
-    #[ignore = "needs an SSH server and a live database (STUDIO_LIVE_SSH_* / EXASOL_LIVE_* env)"]
-    async fn a_database_behind_ssh_is_trusted_pinned_and_queried() {
-        let env = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
-        let dir = std::env::temp_dir().join(format!("studio-live-ssh-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut p = crate::profiles::ConnectionProfile {
-            id: "ssh-live".into(),
-            name: "behind ssh".into(),
-            host: env("STUDIO_LIVE_DB_HOST"),
-            port: env("EXASOL_LIVE_PORT").parse().unwrap(),
-            username: "sys".into(),
-            password: env("EXASOL_LIVE_PASSWORD"),
-            schema: None,
-            notes: None,
-            ssl_mode: "verify_identity".into(),
-            compression: false,
-            driver_id: "sqlx-exasol".into(),
-            created_at: None,
-            last_used_at: None,
-            fingerprint: None,
-            ssl_ca: None,
-            auth_method: "password".into(),
-            network: Some(crate::network::NetworkSettings {
-                ssh: Some(crate::network::SshSettings {
-                    host: "127.0.0.1".into(),
-                    port: Some(env("STUDIO_LIVE_SSH_PORT").parse().unwrap()),
-                    user: Some("root".into()),
-                    auth: "password".into(),
-                    key_path: None,
-                    jump: None,
-                    host_key: "accept_new".into(),
-                    keepalive_secs: 15,
-                    secret: env("STUDIO_LIVE_SSH_PASSWORD"),
-                }),
-                proxy: None,
-            }),
-        };
-        let t = Duration::from_secs(20);
-        // Through the tunnel the certificate does not name 127.0.0.1: trust is offered.
-        let fp = match super::open_checked(&dir, &p, 1, Vec::new(), t).await {
-            Err(AppError::UntrustedCertificate { fingerprint }) => fingerprint,
-            Err(e) => panic!("expected a trust offer, got {e}"),
-            Ok(_) => panic!("connected without a trust decision"),
-        };
-        assert!(dir.join("ssh").join("known_hosts").exists(), "accept-new stored the host key in Studio's own file");
-        p.fingerprint = Some(fp);
-        let (pool, info, carrier) = super::open_checked(&dir, &p, 1, Vec::new(), t).await.expect("pinned connect through ssh");
-        assert!(carrier.ssh.is_some() && carrier.pin.is_some());
-        assert_eq!(info.current_user, "SYS");
-        let rows = crate::query::fetch_all_rows(&pool, "SELECT 1 FROM DUAL").await.unwrap();
-        assert_eq!(rows.len(), 1);
-        pool.close().await;
-        drop(carrier);
-        // A wrong password is refused with a readable reason.
-        p.network.as_mut().unwrap().ssh.as_mut().unwrap().secret = "wrong".into();
-        match super::open_checked(&dir, &p, 1, Vec::new(), t).await {
-            Err(e) => assert!(e.to_string().contains("refused"), "{e}"),
-            Ok(_) => panic!("signed in with a wrong password"),
-        }
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[tokio::test]
-    #[ignore = "needs an SSH server and a live database (STUDIO_LIVE_SSH_* / EXASOL_LIVE_* env)"]
-    async fn ask_mode_shows_an_unknown_host_key_and_trusts_only_what_was_shown() {
-        let env = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
-        let dir = std::env::temp_dir().join(format!("studio-live-ssh-ask-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let ssh = crate::network::SshSettings {
-            host: "127.0.0.1".into(),
-            port: Some(env("STUDIO_LIVE_SSH_PORT").parse().unwrap()),
-            user: Some("root".into()),
-            auth: "password".into(),
-            key_path: None,
-            jump: None,
-            host_key: "ask".into(),
-            keepalive_secs: 0,
-            secret: env("STUDIO_LIVE_SSH_PASSWORD"),
-        };
-        let t = Duration::from_secs(10);
-        let shown = match crate::ssh_tunnel::check_host_key(&ssh, &dir, t) {
-            Err(AppError::UnknownHostKey { fingerprint, .. }) => fingerprint,
-            other => panic!("expected an unknown host key, got {:?}", other.err().map(|e| e.to_string())),
-        };
-        assert!(shown.contains("SHA256:"), "{shown}");
-        assert!(crate::ssh_tunnel::trust_host_key(&ssh, &dir, "ED25519 SHA256:not-it", t).is_err(), "a different fingerprint is not trusted");
-        crate::ssh_tunnel::trust_host_key(&ssh, &dir, &shown, t).expect("trust what was shown");
-        crate::ssh_tunnel::check_host_key(&ssh, &dir, t).expect("now known");
-        let tunnel = crate::ssh_tunnel::open(&ssh, &ssh.secret, &env("STUDIO_LIVE_DB_HOST"), env("EXASOL_LIVE_PORT").parse().unwrap(), t, &dir).await.expect("strict mode with the trusted key");
-        drop(tunnel);
-        let _ = std::fs::remove_dir_all(dir);
-    }
-}
+#[path = "connection_live.rs"]
+mod live;
