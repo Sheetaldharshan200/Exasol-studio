@@ -76,11 +76,22 @@ fn decode_cell(row: &ExaRow, idx: usize) -> Value {
         Ok(_) => {}
     }
 
+    // Exact first: DECIMAL and TIMESTAMP take the text Exasol sent, as sent.
+    // Through f64 or rust_decimal a DECIMAL(36,15) loses digits, and chrono
+    // formatting cut TIMESTAMP(6)/(9) to milliseconds, so an edit keyed on it
+    // matched no row.
+    let declared = row.columns().get(idx).map(|c| c.type_info().name().to_ascii_uppercase()).unwrap_or_default();
+    if exact_text_type(&declared) {
+        if let Ok(Some(v)) = row.try_get_unchecked::<Option<String>, _>(idx) {
+            return Value::String(v);
+        }
+    }
+
     if let Ok(Some(v)) = row.try_get::<Option<bool>, _>(idx) {
         return Value::from(v);
     }
     if let Ok(Some(v)) = row.try_get::<Option<i64>, _>(idx) {
-        return Value::from(v);
+        return integer_json(v);
     }
     if let Ok(Some(v)) = row.try_get::<Option<f64>, _>(idx) {
         return json!(v);
@@ -116,6 +127,31 @@ fn decode_cell(row: &ExaRow, idx: usize) -> Value {
             .map(|c| c.type_info().name().to_string())
             .unwrap_or_else(|| "value".into())
     ))
+}
+
+/// Rows a run touched, for its history entry: rows returned plus rows a write
+/// affected. A driver that cannot count ("executed") adds nothing.
+pub(crate) fn history_row_total<'a>(results: impl Iterator<Item = (&'a str, u64)>) -> u64 {
+    results.filter(|(kind, _)| *kind == "resultSet" || *kind == "rowCount").map(|(_, n)| n).sum()
+}
+
+/// Types whose wire text is the exact value and must not pass through a
+/// lossy native type on the way to the grid.
+pub(crate) fn exact_text_type(declared_upper: &str) -> bool {
+    declared_upper.starts_with("DECIMAL") || declared_upper.starts_with("TIMESTAMP")
+}
+
+/// The largest integer a JavaScript number holds exactly.
+const JS_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+
+/// An integer as JSON: a number while the page can hold it exactly, else its
+/// digits as a string — `JSON.parse` would round 9007199254740993 to …992.
+pub(crate) fn integer_json(v: i64) -> Value {
+    if (-JS_SAFE_INTEGER..=JS_SAFE_INTEGER).contains(&v) {
+        Value::from(v)
+    } else {
+        Value::String(v.to_string())
+    }
 }
 
 pub fn row_to_json(row: &ExaRow) -> Vec<Value> {
@@ -310,9 +346,9 @@ pub(crate) fn is_result_set_statement(statement: &str) -> bool {
 
 /// Column metadata for a statement without reading any rows (used when a query
 /// returns zero rows, so the results grid can still show the header).
-async fn describe_columns(pool: &ExaPool, statement: &str) -> Vec<ColumnMeta> {
+async fn describe_columns(conn: &mut sqlx_exasol::ExaConnection, statement: &str) -> Vec<ColumnMeta> {
     use sqlx_exasol::{Executor, SqlSafeStr};
-    match pool.describe(AssertSqlSafe(statement.to_string()).into_sql_str()).await {
+    match conn.describe(AssertSqlSafe(statement.to_string()).into_sql_str()).await {
         Ok(desc) => desc
             .columns()
             .iter()
@@ -326,7 +362,6 @@ async fn describe_columns(pool: &ExaPool, statement: &str) -> Vec<ColumnMeta> {
 }
 
 async fn run_statement(
-    pool: &ExaPool,
     conn: &mut sqlx_exasol::ExaConnection,
     statement: &str,
     max_rows: usize,
@@ -369,8 +404,11 @@ async fn run_statement(
 
         // A result set with zero rows has no row to read column metadata from —
         // ask the server to describe the statement so the header still shows.
+        // On the same connection: a table this session created but has not
+        // committed is invisible to any other.
+        drop(stream);
         if columns.is_empty() && error.is_none() {
-            columns = describe_columns(pool, statement).await;
+            columns = describe_columns(conn, statement).await;
         }
 
         let row_count = rows.len() as u64;
@@ -421,6 +459,46 @@ async fn run_statement(
     }
 }
 
+/// When a script stops early (the run's execution options).
+#[derive(Clone, Copy, Debug)]
+pub struct StopPolicy {
+    pub on_error: bool,
+    /// After a query that returns no rows, or a DML statement that touches none.
+    pub on_no_rows: bool,
+}
+
+impl Default for StopPolicy {
+    fn default() -> Self {
+        Self { on_error: true, on_no_rows: false }
+    }
+}
+
+impl StopPolicy {
+    pub fn halts_after(&self, r: &StatementResult) -> bool {
+        if r.error.is_some() {
+            // A lost connection ends the script whatever the setting says.
+            return self.on_error || r.error.as_deref().is_some_and(crate::session::is_connection_lost);
+        }
+        r.row_count == 0 && (r.kind == "resultSet" || r.kind == "rowCount") && self.empty_halts(&r.statement)
+    }
+
+    /// Whether an empty result of this statement ends the script — a query,
+    /// or a DML statement (DDL touches no rows by nature).
+    pub fn empty_halts(&self, statement: &str) -> bool {
+        self.on_no_rows && (is_result_set_statement(statement) || is_dml(statement))
+    }
+
+    /// The same rule, per statement, for a bridge driver's own loop.
+    pub fn stop_if_empty(&self, statements: &[String]) -> Vec<bool> {
+        statements.iter().map(|s| self.empty_halts(s)).collect()
+    }
+}
+
+fn is_dml(statement: &str) -> bool {
+    let head = strip_leading_comments(statement).trim_start().to_ascii_uppercase();
+    matches!(head.split_whitespace().next(), Some("INSERT" | "UPDATE" | "DELETE" | "MERGE"))
+}
+
 #[tauri::command]
 pub async fn execute_sql(
     app: tauri::AppHandle,
@@ -432,7 +510,11 @@ pub async fn execute_sql(
     split: Option<bool>,
     add_history: Option<bool>,
     progress_id: Option<String>,
+    tab_id: Option<String>,
+    stop_on_error: Option<bool>,
+    stop_on_no_rows: Option<bool>,
 ) -> AppResult<ExecuteResponse> {
+    let stop = StopPolicy { on_error: stop_on_error.unwrap_or(true), on_no_rows: stop_on_no_rows.unwrap_or(false) };
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
     let statements = if split.unwrap_or(true) {
@@ -454,13 +536,13 @@ pub async fn execute_sql(
     let (results, success, profile_session, profile_base_stmt) = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
         // exarrow is compiled in, so it runs on this runtime — no child
         // process, no spawn_blocking, and no sqlx pool standing in for it.
-        let resp = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows).await?;
+        let resp = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows, stop).await?;
         (resp.results, resp.success, None, None)
     } else if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         let stmts = statements.clone();
         let app_for_driver = app.clone();
         let resp = tokio::task::spawn_blocking(move || {
-            crate::driver_exec::execute_via_driver(&app_for_driver, &profile, &stmts, max_rows)
+            crate::driver_exec::execute_via_driver(&app_for_driver, &profile, &stmts, max_rows, stop)
         })
         .await
         .map_err(|e| crate::error::AppError::Storage(e.to_string()))??;
@@ -470,11 +552,24 @@ pub async fn execute_sql(
         // ONE connection for the whole batch: statements from a script share a
         // session, so ALTER SESSION (e.g. PROFILE), transactions, and session
         // functions like CURRENT_SESSION behave like they do in any SQL client.
-        // Round-robining the pool per statement broke the query profiler.
-        let mut conn = pool
-            .acquire()
-            .await
-            .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+        // A SQL tab runs on ITS OWN session (session.rs), so state set by one
+        // run — OPEN SCHEMA, ALTER SESSION, an open transaction — is there for
+        // the next; other callers borrow a pooled connection for the batch.
+        let tab = tab_id.as_deref().filter(|t| !t.is_empty());
+        let mut session_guard = match tab {
+            Some(t) => Some(state.sessions.checkout(&state, &profile_id, t).await?),
+            None => None,
+        };
+        let manual = session_guard.as_ref().is_some_and(|g| g.manual);
+        let mut pooled = match session_guard {
+            Some(_) => None,
+            None => Some(pool.acquire().await.map_err(|e| crate::error::AppError::Storage(e.to_string()))?),
+        };
+        let conn: &mut sqlx_exasol::ExaConnection = match (session_guard.as_mut(), pooled.as_mut()) {
+            (Some(g), _) => &mut g.conn,
+            (None, Some(p)) => &mut **p,
+            (None, None) => unreachable!("one of the two connections is always set"),
+        };
 
         // Baseline for the Query Performance view: the session + the statement
         // id BEFORE the user's statements run. Since profiling is on per session
@@ -564,15 +659,57 @@ pub async fn execute_sql(
         let mut success = true;
         for (i, statement) in statements.iter().enumerate() {
             stmt_idx.store(i, std::sync::atomic::Ordering::Relaxed);
-            let result = run_statement(&pool, &mut conn, statement, max_rows).await;
-            let failed = result.error.is_some();
-            results.push(result);
-            if failed {
+            let mut result = run_statement(conn, statement, max_rows).await;
+            // A COMMIT or ROLLBACK typed in a manual-commit tab ends the
+            // transaction; the next one starts before the next statement runs,
+            // or that statement would commit on its own.
+            if manual && result.error.is_none() && crate::session::is_txn_end(statement) {
+                if let Err(e) = crate::session::restart_manual(conn).await {
+                    result.error = Some(format!("Could not restart manual commit ({e}); the remaining statements were not run."));
+                }
+            }
+            if result.error.is_some() {
                 success = false;
-                break; // stop the script at the first failing statement
+            }
+            let halt = stop.halts_after(&result);
+            results.push(result);
+            if halt {
+                break;
             }
         }
         done.store(true, std::sync::atomic::Ordering::Relaxed);
+        // The tab's session: count what is now uncommitted; a session whose
+        // connection died is forgotten — the server rolled its work back.
+        if let (Some(g), Some(t)) = (session_guard.as_mut(), tab) {
+            let lost = results.iter().filter_map(|r| r.error.as_deref()).any(crate::session::is_connection_lost);
+            if lost {
+                // What the server rolled back: earlier uncommitted changes AND
+                // the ones this script made before the connection died.
+                let had = if g.manual {
+                    let mut lost_changes = g.changes.clone();
+                    let ran: Vec<(String, bool)> = results.iter().map(|r| (r.statement.clone(), r.error.is_none())).collect();
+                    crate::session::record_changes(&mut lost_changes, &ran);
+                    lost_changes.len()
+                } else {
+                    0
+                };
+                if let Some(co) = session_guard.take() {
+                    state.sessions.forget_lost(t, co).await;
+                }
+                if let Some(r) = results.iter_mut().rev().find(|r| r.error.is_some()) {
+                    let note = if had > 0 {
+                        format!(" The session was lost; its {had} uncommitted change{} were rolled back by the server. The next run opens a new session.", if had == 1 { "" } else { "s" })
+                    } else {
+                        " The session was lost; the next run opens a new session.".to_string()
+                    };
+                    r.error = r.error.take().map(|e| format!("{e}{note}"));
+                }
+            } else {
+                let ran: Vec<(String, bool)> = results.iter().map(|r| (r.statement.clone(), r.error.is_none())).collect();
+                crate::session::after_run(g, &ran);
+                crate::session::note_schema(&state, g);
+            }
+        }
         if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {
             // No longer cancellable — the batch has finished.
             if let Ok(mut m) = state.running_queries.lock() {
@@ -587,11 +724,7 @@ pub async fn execute_sql(
     };
 
     let total_elapsed_ms = started.elapsed().as_millis() as u64;
-    let row_total: u64 = results
-        .iter()
-        .filter(|r| r.kind == "resultSet")
-        .map(|r| r.row_count)
-        .sum();
+    let row_total = history_row_total(results.iter().map(|r| (r.kind.as_str(), r.row_count)));
 
     // Millis alone collide when runs land in the same millisecond (notebook
     // Run-All, fast statements) — duplicate ids duplicate React rows on sort.
@@ -686,8 +819,125 @@ pub async fn cancel_query(state: State<'_, AppState>, progress_id: String) -> Ap
 
 
 #[cfg(test)]
+mod live_decode {
+    //! Run by hand against a live database:
+    //! EXASOL_LIVE_PORT=8565 EXASOL_LIVE_PASSWORD=… cargo test --lib live_decode -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "needs a live database (EXASOL_LIVE_* env)"]
+    async fn live_values_decode_exactly() {
+        let profile = crate::profiles::ConnectionProfile {
+            id: "live".into(),
+            name: "live".into(),
+            host: std::env::var("EXASOL_LIVE_HOST").unwrap_or_else(|_| "127.0.0.1".into()),
+            port: std::env::var("EXASOL_LIVE_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8563),
+            username: std::env::var("EXASOL_LIVE_USER").unwrap_or_else(|_| "sys".into()),
+            password: std::env::var("EXASOL_LIVE_PASSWORD").expect("EXASOL_LIVE_PASSWORD"),
+            schema: None,
+            notes: None,
+            ssl_mode: "preferred".into(),
+            compression: false,
+            driver_id: "sqlx-exasol".into(),
+            created_at: None,
+            last_used_at: None,
+        };
+        let pool = crate::connection::open_pool(&profile).await.unwrap();
+        let rows = super::fetch_all_rows(&pool,
+                "SELECT CAST(9007199254740993 AS DECIMAL(18,0)) AS big18, \
+                 CAST(-9007199254740993 AS DECIMAL(18,0)) AS negbig18, \
+                 CAST(42 AS DECIMAL(18,0)) AS small18, \
+                 CAST('123456789012345678901234567890123456' AS DECIMAL(36,0)) AS huge36, \
+                 CAST('12345678901234567890.123456789012345' AS DECIMAL(36,15)) AS wide_scale, \
+                 CAST(1.5 AS DOUBLE) AS dbl, \
+                 CAST('2026-01-02 03:04:05.123456' AS TIMESTAMP(6)) AS ts6, \
+                 CAST('2026-01-02 03:04:05.123456789' AS TIMESTAMP(9)) AS ts9, \
+                 CAST('2026-01-02 03:04:05' AS TIMESTAMP) AS ts3",
+        )
+        .await
+        .unwrap();
+        eprintln!("{}", serde_json::to_string(&rows[0]).unwrap());
+        pool.close().await;
+    }
+}
+
+#[cfg(test)]
 mod tests {
+    fn result(statement: &str, kind: &str, rows: u64, error: Option<&str>) -> super::StatementResult {
+        super::StatementResult {
+            statement: statement.into(),
+            kind: kind.into(),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            row_count: rows,
+            truncated: false,
+            elapsed_ms: 0,
+            exec_ms: 0,
+            fetch_ms: 0,
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn a_script_stops_where_the_execution_options_say() {
+        use super::StopPolicy;
+        let default = StopPolicy { on_error: true, on_no_rows: false };
+        let keep_going = StopPolicy { on_error: false, on_no_rows: false };
+        let no_rows = StopPolicy { on_error: true, on_no_rows: true };
+        let err = result("SELECT * FROM NOPE", "resultSet", 0, Some("[42000] object NOPE not found"));
+        assert!(default.halts_after(&err));
+        assert!(!keep_going.halts_after(&err), "stop on error off: go on");
+        let lost = result("SELECT 1", "resultSet", 0, Some("WebSocket protocol error: Connection closed normally"));
+        assert!(keep_going.halts_after(&lost), "a lost connection always ends the script");
+        let empty = result("SELECT * FROM T WHERE 1=0", "resultSet", 0, None);
+        assert!(!default.halts_after(&empty));
+        assert!(no_rows.halts_after(&empty));
+        assert!(no_rows.halts_after(&result("-- fix\nUPDATE T SET A = 1 WHERE 1=0", "rowCount", 0, None)));
+        assert!(!no_rows.halts_after(&result("CREATE TABLE X (A INT)", "rowCount", 0, None)), "DDL touches no rows by nature");
+        assert!(!no_rows.halts_after(&result("SELECT 1", "resultSet", 1, None)));
+        assert!(!no_rows.halts_after(&result("DELETE FROM T", "rowCount", 3, None)));
+        assert!(!no_rows.halts_after(&result("INSERT INTO T SELECT 1", "executed", 0, None)), "no count is not zero rows");
+    }
+
+    #[test]
+    fn bridges_get_the_empty_result_rule_per_statement() {
+        use super::StopPolicy;
+        let stmts: Vec<String> = ["SELECT 1", "CREATE TABLE X (A INT)", "UPDATE T SET A = 1", "WITH q AS (SELECT 1) SELECT * FROM q"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(StopPolicy { on_error: true, on_no_rows: true }.stop_if_empty(&stmts), vec![true, false, true, true]);
+        assert_eq!(StopPolicy::default().stop_if_empty(&stmts), vec![false; 4]);
+        assert!(StopPolicy::default().on_error);
+    }
+
     use super::{is_result_set_statement, parse_activity_percent, split_statements};
+    use super::{exact_text_type, history_row_total, integer_json};
+
+    #[test]
+    fn history_counts_rows_returned_and_rows_written() {
+        let run = [("resultSet", 10u64), ("rowCount", 3), ("executed", 0), ("rowCount", 0)];
+        assert_eq!(history_row_total(run.iter().copied()), 13);
+        assert_eq!(history_row_total([("rowCount", 5u64)].iter().copied()), 5, "an INSERT alone is not 0");
+        assert_eq!(history_row_total(std::iter::empty()), 0);
+    }
+
+    #[test]
+    fn integers_the_page_cannot_hold_exactly_travel_as_text() {
+        assert_eq!(integer_json(42), serde_json::json!(42));
+        assert_eq!(integer_json(9_007_199_254_740_991), serde_json::json!(9_007_199_254_740_991_i64));
+        assert_eq!(integer_json(9_007_199_254_740_992), serde_json::json!("9007199254740992"));
+        assert_eq!(integer_json(-9_007_199_254_740_993), serde_json::json!("-9007199254740993"));
+        assert_eq!(integer_json(i64::MIN), serde_json::json!(i64::MIN.to_string()));
+    }
+
+    #[test]
+    fn decimal_and_timestamp_columns_keep_their_wire_text() {
+        for t in ["DECIMAL(18,0)", "DECIMAL(36,15)", "TIMESTAMP", "TIMESTAMP(9)", "TIMESTAMP WITH LOCAL TIME ZONE"] {
+            assert!(exact_text_type(t), "{t}");
+        }
+        for t in ["DOUBLE", "VARCHAR(10) UTF8", "DATE", "BOOLEAN", "HASHTYPE(16 BYTE)"] {
+            assert!(!exact_text_type(t), "{t}");
+        }
+    }
 
     #[test]
     fn execute_script_is_a_result_set_statement() {

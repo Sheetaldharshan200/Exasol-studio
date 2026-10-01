@@ -23,7 +23,8 @@ pub struct PingResult {
 /// This is the first step Test/Connect run so we can tell "server unreachable"
 /// apart from "credentials rejected".
 #[tauri::command]
-pub async fn ping_server(host: String, port: u16) -> AppResult<PingResult> {
+pub async fn ping_server(state: State<'_, AppState>, host: String, port: u16) -> AppResult<PingResult> {
+    let timeout = connect_timeout(&state);
     let target = format!("{}:{}", host.trim(), port);
     let started = Instant::now();
 
@@ -34,7 +35,7 @@ pub async fn ping_server(host: String, port: u16) -> AppResult<PingResult> {
         let addr = addrs
             .next()
             .ok_or_else(|| "could not resolve host".to_string())?;
-        std::net::TcpStream::connect_timeout(&addr, Duration::from_secs(6))
+        std::net::TcpStream::connect_timeout(&addr, timeout)
             .map(|_| ())
             .map_err(|e| e.to_string())
     })
@@ -113,20 +114,32 @@ pub fn build_connect_options(profile: &ConnectionProfile) -> AppResult<ExaConnec
         .map_err(|err| AppError::InvalidSettings(err.to_string()))
 }
 
-async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
-    open_pool_sized(profile, 4, Vec::new()).await
+pub(crate) async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
+    open_pool_sized(profile, 4, Vec::new(), connect_timeout_from(None)).await
+}
+
+/// Settings → Database → Connect timeout: how long reaching the server and
+/// logging in may take. 15 s unless set; kept within 1–120 s.
+pub(crate) fn connect_timeout_from(ms: Option<serde_json::Value>) -> Duration {
+    let ms = ms.and_then(|v| v.as_f64()).filter(|n| n.is_finite()).unwrap_or(15_000.0);
+    Duration::from_millis(ms.clamp(1_000.0, 120_000.0) as u64)
+}
+
+pub(crate) fn connect_timeout(state: &AppState) -> Duration {
+    connect_timeout_from(crate::settings::app_setting(state, "connectTimeoutMs"))
 }
 
 async fn open_pool_sized(
     profile: &ConnectionProfile,
     max_connections: u32,
     connect_hooks: Vec<String>,
+    timeout: Duration,
 ) -> AppResult<ExaPool> {
     let options = build_connect_options(profile)?;
     let mut opts = sqlx_exasol::pool::PoolOptions::<Exasol>::new()
         .min_connections(0)
         .max_connections(max_connections.clamp(1, 16))
-        .acquire_timeout(std::time::Duration::from_secs(20));
+        .acquire_timeout(timeout);
     // Turn query profiling ON for every pooled session so a query the user runs
     // is profiled DURING its normal execution — the Query Performance view then
     // just flushes + reads that profile instead of re-running the query (which
@@ -211,8 +224,8 @@ async fn read_server_info(pool: &ExaPool) -> AppResult<ServerInfo> {
 
 /// Validate settings by opening a short-lived connection and reading server metadata.
 #[tauri::command]
-pub async fn test_connection(profile: ConnectionProfile) -> AppResult<ServerInfo> {
-    let pool = open_pool(&profile).await?;
+pub async fn test_connection(state: State<'_, AppState>, profile: ConnectionProfile) -> AppResult<ServerInfo> {
+    let pool = open_pool_sized(&profile, 4, Vec::new(), connect_timeout(&state)).await?;
     let info = read_server_info(&pool).await;
     pool.close().await;
     info
@@ -252,7 +265,7 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
             Vec::new()
         };
 
-    let pool = open_pool_sized(&profile, pool_size, connect_hooks).await?;
+    let pool = open_pool_sized(&profile, pool_size, connect_hooks, connect_timeout(&state)).await?;
     let info = read_server_info(&pool).await?;
 
     // Connection Keep-Alive: validate on an interval while the pool lives.
@@ -277,7 +290,18 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
         });
     }
 
-    state.pools.write().await.insert(profile_id.clone(), pool);
+    // Two connects can race (a double click, a reload re-adopting while the
+    // person clicks). The first pool in wins; a later one is closed rather
+    // than overwriting it and leaking its connections and keep-alive task.
+    {
+        let mut pools = state.pools.write().await;
+        if let Some(existing) = pools.get(&profile_id).cloned() {
+            drop(pools);
+            pool.close().await;
+            return read_server_info(&existing).await;
+        }
+        pools.insert(profile_id.clone(), pool.clone());
+    }
     touch_profile(&state, &profile_id)?;
     Ok(info)
 }
@@ -296,6 +320,9 @@ async fn run_hook_sql(pool: &ExaPool, sql: &str) {
 
 #[tauri::command]
 pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppResult<()> {
+    // The tabs' own sessions go first. The UI has already asked Commit / Roll
+    // back for any with uncommitted changes; what is still open rolls back.
+    state.sessions.close_profile(&profile_id).await;
     if let Some(pool) = state.pools.write().await.remove(&profile_id) {
         let settings = crate::connection_settings::read_settings(&state, &profile_id);
         // Run SQL at Disconnect (Connection Hooks) while the pool still lives.
@@ -320,6 +347,39 @@ pub async fn list_open_connections(state: State<'_, AppState>) -> AppResult<Vec<
 }
 
 /// Fetch the pool for a connected profile, or a typed error if not connected.
+/// Whether a connected profile's database still answers a query — more
+/// than "the port is open": the session logs in and runs `SELECT 1`. A pool
+/// whose connections are all busy (a long query) counts as alive.
+#[tauri::command]
+pub async fn connection_alive(state: State<'_, AppState>, profile_id: String) -> AppResult<bool> {
+    let pool = require_pool(&state, &profile_id).await?;
+    let wait = std::time::Duration::from_secs(5);
+    let probe = match tokio::time::timeout(wait, pool.acquire()).await {
+        Err(_) => Probe::Busy,
+        Ok(Err(_)) => Probe::CannotConnect,
+        Ok(Ok(mut conn)) => match tokio::time::timeout(wait, sqlx_exasol::query("SELECT 1").execute(&mut *conn)).await {
+            Ok(Ok(_)) => Probe::Answered,
+            _ => Probe::NoAnswer,
+        },
+    };
+    Ok(probe_alive(probe))
+}
+
+/// What the health probe found.
+#[derive(Debug, Clone, Copy)]
+pub enum Probe {
+    /// Every pooled connection is in use (a long query): the database is working.
+    Busy,
+    CannotConnect,
+    Answered,
+    /// Connected, but `SELECT 1` failed or did not answer in time.
+    NoAnswer,
+}
+
+pub fn probe_alive(probe: Probe) -> bool {
+    matches!(probe, Probe::Busy | Probe::Answered)
+}
+
 pub async fn require_pool(state: &AppState, profile_id: &str) -> AppResult<ExaPool> {
     state
         .pools
@@ -332,6 +392,26 @@ pub async fn require_pool(state: &AppState, profile_id: &str) -> AppResult<ExaPo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_connect_timeout_setting_is_used_within_bounds() {
+        use serde_json::json;
+        use std::time::Duration;
+        assert_eq!(super::connect_timeout_from(None), Duration::from_secs(15));
+        assert_eq!(super::connect_timeout_from(Some(json!(5000))), Duration::from_secs(5));
+        assert_eq!(super::connect_timeout_from(Some(json!(10))), Duration::from_secs(1), "clamped up");
+        assert_eq!(super::connect_timeout_from(Some(json!(9_999_999))), Duration::from_secs(120), "clamped down");
+        assert_eq!(super::connect_timeout_from(Some(json!("fast"))), Duration::from_secs(15));
+    }
+
+    #[test]
+    fn the_health_dot_is_green_only_for_a_database_that_works() {
+        use super::{probe_alive, Probe};
+        assert!(probe_alive(Probe::Answered));
+        assert!(probe_alive(Probe::Busy), "all connections busy with a long query is alive");
+        assert!(!probe_alive(Probe::CannotConnect));
+        assert!(!probe_alive(Probe::NoAnswer));
+    }
+
     use super::*;
 
     fn profile(compression: bool) -> ConnectionProfile {

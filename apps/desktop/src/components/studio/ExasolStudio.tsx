@@ -69,19 +69,30 @@ import { installSqlMarkers, type SqlMarkers } from "./sql-markers";
 import { installUdfHints } from "./udf-hints";
 import { installInlineAi } from "./inline-ai";
 import { schemaContextLines } from "@/lib/schema-context";
+import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
+import { nullLabel } from "@/lib/null-label";
+import { NullTextContext } from "./null-text";
+import { markRunError } from "./run-error-markers";
+import { errorMarker, runStartIn } from "@/lib/error-markers";
+import { execDefaults, maxRowsOptions, splitsFor, type ExecDefaults } from "@/lib/exec-settings";
 import { openableSource, sourceQuery, sourceTitle } from "@/lib/script-source";
 import { QueryPlanView } from "./QueryPlanView";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
-import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, newTab, tabHasWork, type SqlTab, type TabGroup } from "./tabs";
+import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, newTab, tabHasWork, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { createSerialQueue } from "@/lib/serial-queue";
 import { useResultPaging } from "./use-result-paging";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
+import { sqlBehindGrid } from "@/lib/run-meta";
+import { closeQuestion } from "@/lib/tab-close";
+import { useTabSession } from "./use-tab-session";
+import { UncommittedDialog } from "./UncommittedDialog";
+import { onlyReads, sessionWasLost, uncommittedLabel } from "@/lib/txn-state";
 
 export function ExasolStudio({
   connection,
@@ -99,7 +110,7 @@ export function ExasolStudio({
   profiles: ConnectionProfile[];
   onConnected: (profile: ConnectionProfile, server: ServerInfo) => void | Promise<void>;
   onFocusConnection: (profileId: string) => void;
-  onDisconnect: (profileId?: string) => void;
+  onDisconnect: (profileId?: string) => void | Promise<void>;
   onSaved: () => void | Promise<void>;
 }) {
   const connected = Boolean(connection);
@@ -237,7 +248,7 @@ export function ExasolStudio({
   }, []);
   // Inline tab rename (double-click a tab title).
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
-  const [maxRows, setMaxRows] = useState(1000);
+  const [maxRows, setMaxRows] = useState(APP_SETTING_DEFAULTS.maxRows as number);
   const [schema, setSchema] = useState<string>("");
   const [schemas, setSchemas] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -246,13 +257,15 @@ export function ExasolStudio({
   // Query-toolbar options.
   const [execSettings, setExecSettings] = useState({
     stripComments: false,
+    splitStatements: true,
     stopOnError: true,
-    stopOnWarning: false,
     stopOnNoRows: false,
     showErrorPos: true,
     showErrorStmt: true,
   });
-  const [autoCommit, setAutoCommit] = useState(true);
+  // The run defaults last read from Settings: the toolbar can override them
+  // for this window, and only a changed stored value overrides it back.
+  const storedExec = useRef<ExecDefaults | null>(null);
   const [mergeResults, setMergeResults] = useState(false);
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   // The visual UDF builder block (opens above the editor).
@@ -494,6 +507,9 @@ export function ExasolStudio({
   const [editorFontFamily, setEditorFontFamily] = useState("JetBrains Mono");
   const [editorWordWrap, setEditorWordWrap] = useState(false);
   const [gridFontSize, setGridFontSize] = useState(12);
+  const [nullText, setNullText] = useState(() => nullLabel(undefined));
+  const [autoComplete, setAutoComplete] = useState(APP_SETTING_DEFAULTS.autoComplete as boolean);
+  const [showSystemSchemas, setShowSystemSchemas] = useState(APP_SETTING_DEFAULTS.showSystemSchemas as boolean);
   const [gridZebra, setGridZebra] = useState(true);
 
   const setActiveTabId = useCallback(
@@ -666,7 +682,7 @@ export function ExasolStudio({
       const prof = name ? profiles.find((p) => p.name.toLowerCase() === name.toLowerCase()) : profiles[0];
       if (prof) void connectSaved(prof.id);
     };
-    const onDisconnectEv = () => onDisconnect(connection?.profile.id);
+    const onDisconnectEv = () => disconnectSafely(connection?.profile.id);
     window.addEventListener("studio:open-marketplace", onMkt);
     window.addEventListener("studio:open-visualizer", onVis);
     window.addEventListener("studio:open-git", onGit);
@@ -736,18 +752,24 @@ export function ExasolStudio({
         setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       // Only accept a persisted value that's one of the offered options, so the
       // dropdown always reflects a real default (never a blank/invalid value).
-      if (typeof s.maxRows === "number" && MAX_ROWS_OPTIONS.includes(s.maxRows)) setMaxRows(s.maxRows);
+      const ex = execDefaults(s);
+      const prev = storedExec.current;
+      storedExec.current = ex;
+      if (!prev || prev.maxRows !== ex.maxRows) setMaxRows(ex.maxRows);
+      setExecSettings((v) => ({
+        ...v,
+        stopOnError: !prev || prev.stopOnError !== ex.stopOnError ? ex.stopOnError : v.stopOnError,
+        stripComments: !prev || prev.stripComments !== ex.stripComments ? ex.stripComments : v.stripComments,
+        splitStatements: !prev || prev.splitStatements !== ex.splitStatements ? ex.splitStatements : v.splitStatements,
+      }));
       if (typeof s.editorFontSize === "number") setEditorFontSize(s.editorFontSize);
       if (typeof s.editorFontFamily === "string" && s.editorFontFamily) setEditorFontFamily(s.editorFontFamily);
       if (typeof s.wordWrap === "boolean") setEditorWordWrap(s.wordWrap);
       if (typeof s.gridFontSize === "number") setGridFontSize(s.gridFontSize);
+      if ("nullText" in s) setNullText(nullLabel(s.nullText));
+      if (typeof s.showSystemSchemas === "boolean") setShowSystemSchemas(s.showSystemSchemas);
+      if (typeof s.autoComplete === "boolean") setAutoComplete(s.autoComplete);
       if (typeof s.zebraStripes === "boolean") setGridZebra(s.zebraStripes);
-      if (typeof s.autoCommit === "boolean") setAutoCommit(s.autoCommit);
-      setExecSettings((v) => ({
-        ...v,
-        stopOnError: typeof s.stopOnError === "boolean" ? s.stopOnError : v.stopOnError,
-        stripComments: typeof s.stripComments === "boolean" ? s.stripComments : v.stripComments,
-      }));
       // Per-token editor colors: re-define the themes so open editors recolor
       // live (Monaco re-applies a re-defined theme that is currently active).
       syntaxOverridesRef.current = syntaxOverridesFromSettings(s);
@@ -789,7 +811,8 @@ export function ExasolStudio({
       setEditTable(null);
       return;
     }
-    const t = parseSingleTable(activeTab.sql);
+    // The table the DISPLAYED rows came from — not whatever the buffer says now.
+    const t = parseSingleTable(sqlBehindGrid(activeTab));
     const schema = t?.schema ?? connection.profile.schema ?? undefined;
     if (!t || !schema) {
       setEditTable(null);
@@ -811,24 +834,23 @@ export function ExasolStudio({
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
+  }, [activeTab.response, activeTab.sql, activeTab.runMeta, activeTab.view, connection]);
 
-  // Apply staged row edits directly ("Confirm & Save"). Exasol returns
-  // statement errors INSIDE the result (not as a JS throw), so we inspect each
-  // one and stop at the first failure, returning it so the grid shows the
-  // inline error and keeps the user's edits.
+  // Apply staged row edits ("Confirm & Save"): one transaction on one
+  // connection, each change required to touch exactly one row — all of it or
+  // none. On failure the grid keeps the edits and names the change that
+  // stopped the batch. On success it refreshes from the statement that
+  // produced it, never the editor buffer.
   async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
     if (!connection || !statements.length) return { ok: false, error: "No active connection." };
     try {
-      for (const st of statements) {
-        const r = await execSql(connection.profile.id, connection.profile.name, st, 1, false);
-        const errored = r.results.find((x) => x.error);
-        if (errored?.error) {
-          loadHistory();
-          return { ok: false, error: errored.error, failedSql: st };
-        }
+      const out = await ipc.applyRowEdits(connection.profile.id, connection.profile.name, statements, activeTab.id);
+      void tabSession.refresh(activeTab.id);
+      loadHistory();
+      if (!out.ok) {
+        return { ok: false, error: out.error ?? "Nothing was saved.", failedSql: out.failedIndex != null ? statements[out.failedIndex] : undefined };
       }
-      const res = await execSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
+      const res = await execSql(connection.profile.id, connection.profile.name, sqlBehindGrid(activeTab), maxRows, false, true, undefined, activeTab.id);
       patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
       void refreshSqlCatalog();
@@ -1111,7 +1133,7 @@ export function ExasolStudio({
       ? `${name} is managed by Exasol Studio and will be re-created automatically while the local database is installed. To remove it permanently, uninstall the local database from the Marketplace. Remove it for now anyway?`
       : `Remove ${name}? The saved connection and its password are deleted. The database itself is not touched.`;
     if (!window.confirm(message)) return;
-    if (connections.some((c) => c.profile.id === profileId)) onDisconnect(profileId);
+    if (connections.some((c) => c.profile.id === profileId) && !(await disconnectSafely(profileId))) return;
     try {
       await ipc.deleteConnectionProfile(profileId);
     } catch (e) {
@@ -1429,14 +1451,14 @@ export function ExasolStudio({
       openFile("scratch.sql", "-- new query\n");
       return;
     }
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ multiple: false, filters: [{ name: "SQL", extensions: ["sql", "txt"] }] });
-    if (typeof picked !== "string") return;
     try {
-      const text = await ipc.fsReadText(picked);
+      // The dialog runs in Rust, which is what lets this file be saved back to.
+      const opened = await ipc.openTextFile();
+      if (!opened) return;
+      const [picked, text] = opened;
       openFile(picked.split("/").pop() ?? "query.sql", text, picked);
-    } catch {
-      /* unreadable */
+    } catch (e) {
+      pushNotification("warning", "Could not open the file", errorMessage(e));
     }
   }
 
@@ -1479,7 +1501,15 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Closing never loses SQL silently: a tab with unsaved changes asks first.
   function closeTab(id: string) {
+    const list = tabsFor(connKey);
+    const q = closeQuestion(list.filter((t) => t.id === id));
+    if (q && !window.confirm(q)) return;
+    const closing = list.filter((t) => t.id === id);
+    void tabSession.settleBeforeClose(closing).then((ok) => ok && closeTabNow(id));
+  }
+  function closeTabNow(id: string) {
     const list = tabsFor(connKey);
     const next = list.filter((t) => t.id !== id);
     updateTabs(connKey, () => next);
@@ -1496,6 +1526,11 @@ export function ExasolStudio({
 
   // Bulk tab actions for the tab-bar overflow menu. Pinned tabs are always kept.
   function closeAllTabs() {
+    const q = closeQuestion(tabsFor(connKey).filter((t) => !t.pinned));
+    if (q && !window.confirm(q)) return;
+    void tabSession.settleBeforeClose(tabsFor(connKey).filter((t) => !t.pinned)).then((ok) => ok && closeAllTabsNow());
+  }
+  function closeAllTabsNow() {
     const kept = tabsFor(connKey).filter((t) => t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(kept[kept.length - 1]?.id ?? "");
@@ -1503,6 +1538,13 @@ export function ExasolStudio({
     setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
   }
   function closeOtherTabs(keepId: string) {
+    const q = closeQuestion(tabsFor(connKey).filter((t) => t.id !== keepId && !t.pinned));
+    if (q && !window.confirm(q)) return;
+    void tabSession
+      .settleBeforeClose(tabsFor(connKey).filter((t) => t.id !== keepId && !t.pinned))
+      .then((ok) => ok && closeOtherTabsNow(keepId));
+  }
+  function closeOtherTabsNow(keepId: string) {
     const kept = tabsFor(connKey).filter((t) => t.id === keepId || t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(keepId);
@@ -1716,7 +1758,19 @@ export function ExasolStudio({
       const scope = "script";
       patchTab(tab.id, { resultView: "results", planData: undefined, runMeta: { startedAt, scope, sql } });
       try {
-        const result = await execSql(connection.profile.id, connection.profile.name, sql, maxRows, true);
+        // On the new tab's own session, with the same execution options as Run.
+        const result = await execSql(
+          connection.profile.id,
+          connection.profile.name,
+          sql,
+          maxRows,
+          splitsFor(scope, execSettings.splitStatements),
+          true,
+          undefined,
+          tab.id,
+          { onError: execSettings.stopOnError, onNoRows: execSettings.stopOnNoRows },
+        );
+        void tabSession.refresh(tab.id);
         updateTabs(key, (list) =>
           list.map((t) =>
             t.id === tab.id
@@ -2242,16 +2296,23 @@ export function ExasolStudio({
       const pos = editor?.getPosition();
       const cursorOffset = model && pos ? model.getOffsetAt(pos) : 0;
       let sqlToRun = pickRunSql(scope, full, selection, cursorOffset);
+      const selectionStart = sel && model && selection.trim() ? model.getOffsetAt(sel.getStartPosition()) : null;
       // Cursor after a trailing ";" (common right after opening an object) yields
       // an empty statement — fall back to running the whole tab so Run always acts.
       if (!sqlToRun.trim()) sqlToRun = full;
+      const unstripped = sqlToRun;
       if (execSettings.stripComments) sqlToRun = stripSqlComments(sqlToRun);
       if (!sqlToRun.trim()) return;
 
-      // "buffer" runs everything as a single statement; others split.
-      const split = scope !== "buffer";
+      // "buffer" runs everything as a single statement; others split unless
+      // splitting is off (Settings → Execution, or the toolbar).
+      const split = splitsFor(scope, execSettings.splitStatements);
+      const stop = { onError: execSettings.stopOnError, onNoRows: execSettings.stopOnNoRows };
 
       if (!acquireRun(connection.profile.id)) return;
+      // The marker belongs to THIS tab's model, even if the tab changes mid-run.
+      const runModel = editor?.getModel();
+      markRunError(runModel, monacoRef.current, null);
       const startedAt = Date.now();
       const tabId = activeTab.id;
       // Clear the previous result immediately so the panel shows THIS run's
@@ -2287,9 +2348,40 @@ export function ExasolStudio({
           split,
           true,
           progressId,
+          tabId,
+          stop,
         );
+        void tabSession.refresh(tabId);
+        // The session died under the run. "Reconnect and re-execute" re-runs it
+        // once on the fresh session — but only a script that only reads: a
+        // write whose reply was lost may already have happened.
+        const lostErr = result.results.find((r) => r.error)?.error;
+        if (!result.success && sessionWasLost(lostErr)) {
+          const settings = (await ipc.connectionSettingsGet(connection.profile.id).catch(() => null)) as { sqlEditor?: { lossHandling?: string } } | null;
+          const mode = settings?.sqlEditor?.lossHandling ?? "reexecute";
+          if (mode === "reexecute" && onlyReads(splitStatements(sqlToRun).map((x) => x.text))) {
+            const again = await execSql(connection.profile.id, connection.profile.name, sqlToRun, maxRows, split, true, progressId, tabId, stop);
+            Object.assign(result, again);
+          }
+        }
         if (!result.success) {
-          const failed = result.results.find((r) => r.error);
+          const failedIndex = result.results.findIndex((r) => r.error);
+          const failed = failedIndex >= 0 ? result.results[failedIndex] : undefined;
+          if (failed?.error && runModel && !runModel.isDisposed()) {
+            const buffer = runModel.getValue();
+            const marker = errorMarker(buffer, failed.statement, failed.error, {
+              position: execSettings.showErrorPos,
+              statement: execSettings.showErrorStmt,
+              place: {
+                runText: unstripped,
+                runStart: runStartIn(buffer, unstripped, selectionStart, cursorOffset),
+                split,
+                index: failedIndex,
+                stripped: unstripped !== sqlToRun,
+              },
+            });
+            markRunError(runModel, monacoRef.current, marker);
+          }
           patchTab(activeTab.id, {
             response: result,
                   resultPage: 0,
@@ -2322,7 +2414,7 @@ export function ExasolStudio({
         releaseRun();
       }
     },
-    [connection, running, activeTab, maxRows, loadHistory, execSettings.stripComments],
+    [connection, running, activeTab, maxRows, loadHistory, execSettings],
   );
 
   // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).
@@ -2355,8 +2447,16 @@ export function ExasolStudio({
           list.map((t) => (t.id === activeTab.id ? { ...t, fileMissing: false, savedSql: t.sql } : t)),
         );
         setFilesRefresh((n) => n + 1);
-      } catch {
-        /* ignore write error */
+      } catch (e) {
+        // A file Studio may not write back to (opened from the file tree, not
+        // picked in a dialog): offer the save dialog rather than failing.
+        try {
+          const name = activeTab.filePath.split("/").pop() ?? "query.sql";
+          const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
+          if (saved) patchTab(activeTab.id, { title: saved.split("/").pop() ?? name, savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+        } catch (e2) {
+          pushNotification("warning", "Could not save", errorMessage(e2 ?? e));
+        }
       }
       return;
     }
@@ -2369,8 +2469,8 @@ export function ExasolStudio({
         await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
         patchTab(activeTab.id, { title: fileName, savedSql: activeTab.sql, filePath: `${wsPath}/${fileName}` });
         setFilesRefresh((n) => n + 1);
-      } catch {
-        /* ignore write error */
+      } catch (e) {
+        pushNotification("warning", "Could not save", errorMessage(e));
       }
       return;
     }
@@ -2393,8 +2493,8 @@ export function ExasolStudio({
       await ipc.writeTextFile(`${wsPath}/${file}`, activeTab.sql);
       patchTab(activeTab.id, { title: file, savedSql: activeTab.sql, filePath: `${wsPath}/${file}` });
       setFilesRefresh((n) => n + 1);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      pushNotification("warning", "Could not save", errorMessage(e));
     }
   }
 
@@ -2544,6 +2644,23 @@ export function ExasolStudio({
   //      part durations overlap under parallel execution, so the sum of parts
   //      is NOT the runtime; both are shown, labeled.
   const [profiling, setProfiling] = useState(false);
+  // The active SQL tab's own database session (autocommit, schema, open
+  // transaction) — see use-tab-session.ts.
+  const tabSession = useTabSession({
+    connection,
+    activeTabId: activeTab.id,
+    isSqlTab: activeTab.view === "sql",
+    notify: (kind, title, body) => pushNotification(kind, title, body),
+    allSqlTabs: () => Object.values(tabsByConn).flat().filter((t) => t.view === "sql"),
+  });
+  // Disconnecting ends every tab session of that connection: tabs with
+  // uncommitted changes ask Commit / Roll back / Cancel first.
+  async function disconnectSafely(profileId?: string): Promise<boolean> {
+    const id = profileId ?? connection?.profile.id;
+    if (id && !(await tabSession.settleBeforeClose(tabsFor(id).filter((t) => t.view === "sql"), "Disconnect with uncommitted changes?"))) return false;
+    await onDisconnect(profileId);
+    return true;
+  }
   const pushNotification = (kind: "info" | "warning" | "success", title: string, body: string) =>
     window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
   // Rows of a result set as column-keyed records (column names upper-cased to
@@ -2720,7 +2837,8 @@ export function ExasolStudio({
     connection,
     activeTab,
     maxRows,
-    execIfCurrent: (gen, pid, name, sql, rows) => execSqlIfCurrent(gen, pid, name, sql, rows, false, false),
+    execIfCurrent: (gen, pid, name, sql, rows, split, addHistory, progressId, tabId) =>
+      execSqlIfCurrent(gen, pid, name, sql, rows, split ?? false, addHistory ?? false, progressId, tabId),
     genOf,
     patchTab,
     onError: (message) => pushNotification("warning", "Page load failed", message),
@@ -2755,15 +2873,12 @@ export function ExasolStudio({
   }
 
   // Commit / rollback the connection's pending work (runs the SQL command).
+  // Commit / Roll back act on THIS tab's session — the one that ran the work.
   async function txn(action: "COMMIT" | "ROLLBACK") {
     if (!connection) return;
-    try {
-      await execSql(connection.profile.id, connection.profile.name, action, maxRows, false);
-      loadHistory();
-      void refreshSqlCatalog();
-    } catch {
-      /* ignore */
-    }
+    await (action === "COMMIT" ? tabSession.commit() : tabSession.rollback());
+    loadHistory();
+    void refreshSqlCatalog();
   }
 
   // Opening a database object launches it in its own new query tab, scoped to
@@ -2845,10 +2960,11 @@ export function ExasolStudio({
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
+      <UncommittedDialog pending={tabSession.pending} />
       <TitleBar
         connection={connection}
         onConnect={() => openConnect()}
-        onDisconnect={onDisconnect}
+        onDisconnect={disconnectSafely}
         hideConnect={activeTab.view === "connect"}
       />
 
@@ -2926,6 +3042,7 @@ export function ExasolStudio({
             className="min-w-0 border-r border-border"
           >
             <Sidebar
+              showSystemSchemas={showSystemSchemas}
               activity={activity}
               connections={connections}
               profiles={profiles}
@@ -2937,7 +3054,7 @@ export function ExasolStudio({
               onConnectProfile={(id) => void connectSaved(id)}
               onInstallLocal={() => void ipc.personalLocalBootstrap().catch(() => undefined)}
               onFocusConnection={onFocusConnection}
-              onDisconnect={onDisconnect}
+              onDisconnect={disconnectSafely}
               onRemoveConnection={(id) => void removeConnection(id)}
               onRefreshConnection={refreshConnection}
               onOpenView={openView}
@@ -3180,7 +3297,7 @@ export function ExasolStudio({
                       <SelectValue placeholder="1,000" />
                     </SelectTrigger>
                     <SelectContent>
-                      {MAX_ROWS_OPTIONS.map((n) => (
+                      {maxRowsOptions(maxRows).map((n) => (
                         <SelectItem key={n} value={String(n)}>
                           {n.toLocaleString()}
                         </SelectItem>
@@ -3205,10 +3322,10 @@ export function ExasolStudio({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuCheckboxItem
-                      checked={autoCommit}
-                      onCheckedChange={(v) => setAutoCommit(v === true)}
+                      checked={tabSession.info ? tabSession.info.autocommit : true}
+                      onCheckedChange={(v) => void tabSession.setAutocommit(v === true)}
                     >
-                      Auto-commit
+                      Auto-commit (this tab)
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => txn("COMMIT")}>
@@ -3219,6 +3336,13 @@ export function ExasolStudio({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                {uncommittedLabel(tabSession.info) ? (
+                  <span className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-warning/50 bg-warning/10 px-1.5 text-[11px] font-medium text-warning" title={(tabSession.info?.recent ?? []).join("\n")}>
+                    {uncommittedLabel(tabSession.info)}
+                    <button onClick={() => void txn("COMMIT")} className="rounded px-1 text-foreground hover:bg-secondary">Commit</button>
+                    <button onClick={() => void txn("ROLLBACK")} className="rounded px-1 text-foreground hover:bg-secondary">Roll back</button>
+                  </span>
+                ) : null}
 
                 <div className="mx-1 h-5 w-px shrink-0 bg-border" />
 
@@ -3272,13 +3396,17 @@ export function ExasolStudio({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-60">
                     <DropdownMenuLabel>SQL processing</DropdownMenuLabel>
-                    <DropdownMenuItem disabled>Preprocess Script</DropdownMenuItem>
-                    <DropdownMenuItem disabled>Parameterized SQL</DropdownMenuItem>
                     <DropdownMenuCheckboxItem
                       checked={execSettings.stripComments}
                       onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stripComments: v === true }))}
                     >
                       Strip Comments when Executing
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.splitStatements}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, splitStatements: v === true }))}
+                    >
+                      Split into Statements
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuCheckboxItem
@@ -3286,12 +3414,6 @@ export function ExasolStudio({
                       onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stopOnError: v === true }))}
                     >
                       Stop on Error
-                    </DropdownMenuCheckboxItem>
-                    <DropdownMenuCheckboxItem
-                      checked={execSettings.stopOnWarning}
-                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stopOnWarning: v === true }))}
-                    >
-                      Stop on SQL Warning
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuCheckboxItem
                       checked={execSettings.stopOnNoRows}
@@ -3337,9 +3459,11 @@ export function ExasolStudio({
             {!isSpecialTab ? (
               <>
                 <Selector
-                  value={schema || "schema"}
+                  value={(tabSession.info?.open ? tabSession.info.schema : schema) || "schema"}
                   options={schemas}
-                  onChange={setSchema}
+                  // The tab's own session decides: the label changes only
+                  // once OPEN SCHEMA succeeded there.
+                  onChange={(s) => void tabSession.setSchema(s)}
                   disabled={!connected || schemas.length === 0}
                   label="Schema"
                 />
@@ -3560,7 +3684,7 @@ export function ExasolStudio({
                   sectionNonce={activeTab.connSectionNonce}
                   onSaved={() => onSaved?.()}
                   onOpenObject={(schema, name) => openObject(connection.profile.id, schema, name)}
-                  onDisconnect={() => onDisconnect(connection.profile.id)}
+                  onDisconnect={() => void disconnectSafely(connection.profile.id)}
                   onConnect={() => void connectSaved(connection.profile.id)}
                   onRefresh={() => refreshConnection(connection.profile.id)}
                 />
@@ -3801,6 +3925,10 @@ export function ExasolStudio({
                     fontFamily: `"${editorFontFamily}", "JetBrains Mono", Menlo, monospace`,
                     fontSize: editorFontSize,
                     wordWrap: editorWordWrap ? "on" : "off",
+                    // Settings → SQL Editor → Auto-completion: off keeps
+                    // suggestions to Ctrl+Space.
+                    quickSuggestions: autoComplete,
+                    suggestOnTriggerCharacters: autoComplete,
                     minimap: { enabled: false },
                     scrollBeyondLastLine: false,
                     padding: { top: 10 },
@@ -3816,6 +3944,7 @@ export function ExasolStudio({
               </ResizablePanel>
               <ResizableHandle groupDirection="vertical" />
               <ResizablePanel defaultSize="45%" minSize="80px" className="min-h-0">
+                <NullTextContext.Provider value={nullText}>
                 <ResultsPanel
                   view={activeTab.resultView ?? "results"}
                   onViewChange={(v) => patchTab(activeTab.id, { resultView: v })}
@@ -3844,6 +3973,7 @@ export function ExasolStudio({
                   onProfile={() => void profileQuery(activeTab.sql)}
                   onOpenPlanTab={openPlanTab}
                 />
+                </NullTextContext.Provider>
               </ResizablePanel>
             </ResizablePanelGroup>
           )}
@@ -3903,7 +4033,7 @@ export function ExasolStudio({
         <div className="flex items-center gap-3">
           <Database className={cn("h-3 w-3", connected && "text-primary")} />
           <span className="font-mono">
-            {connected ? `session ${connection!.server.sessionId}` : "no active session"}
+            {connected ? `session ${tabSession.info?.sessionId ?? connection!.server.sessionId}` : "no active session"}
           </span>
         </div>
         <div className="flex items-center gap-3">

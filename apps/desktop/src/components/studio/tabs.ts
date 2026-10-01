@@ -11,8 +11,6 @@ import type { ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse } from "@/lib/ipc";
 
-export const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
-
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
 export type TabView =

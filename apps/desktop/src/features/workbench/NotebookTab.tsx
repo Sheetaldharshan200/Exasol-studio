@@ -50,7 +50,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { buildNotebookMarkdown, buildNotebookHtml, EXPORT_ALL, filterExportCells, type ExportCell, type ExportInclude } from "@/features/workbench/notebook-export";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +118,8 @@ class MonacoCellBoundary extends React.Component<{ children: React.ReactNode }, 
 // Persistence keys live in notebook-store.ts so other features (the chat's
 // "Create notebook" card) can add notebooks without mounting this tab.
 import { NB_ACTIVE_KEY, NB_KEY, NB_PENDING_RUN_KEY, NBS_KEY } from "./notebook-store";
+import { useAppSettings } from "@/lib/use-app-settings";
+import { clampMaxRows } from "@/lib/app-settings";
 
 type NotebookDoc = { id: string; title: string; cells: { type: CellType; src: string; chart?: string; connProfileId?: string; connName?: string; viz?: CellViz }[]; updatedAt: number };
 
@@ -273,6 +274,10 @@ export function NotebookTab({
     });
   }
   const execCount = useRef(0);
+  // Cells follow the same Settings as the SQL editor.
+  const appSettings = useAppSettings();
+  const maxRows = clampMaxRows(appSettings.maxRows);
+  const autoComplete = appSettings.autoComplete !== false;
   const runningAll = useRef(false);
   const [runQueue, setRunQueue] = useState<Set<string>>(new Set());
 
@@ -353,14 +358,14 @@ export function NotebookTab({
       if (!cell.src.trim()) return;
       patch(id, { running: true, error: null });
       try {
-        const res = await ipc.executeSql(resolved.conn.profileId, resolved.conn.name, cell.src, 1000, false);
+        const res = await ipc.executeSql(resolved.conn.profileId, resolved.conn.name, cell.src, maxRows, false);
         const r = res.results[res.results.length - 1] ?? null;
         patch(id, { running: false, result: r, error: r?.error ?? null, count: ++execCount.current });
       } catch (e) {
         patch(id, { running: false, error: errorMessage(e), result: null, count: ++execCount.current });
       }
     },
-    [profileId, connectionName, connections, patch],
+    [profileId, connectionName, connections, patch, maxRows],
   );
 
   function move(id: string, dir: -1 | 1) {
@@ -462,15 +467,15 @@ export function NotebookTab({
       if (kind === "markdown") {
         const md = buildNotebookMarkdown(title, exportCells);
         if (!isTauri()) { download(`${slug}.md`, md, "text/markdown"); return; }
-        const path = await saveDialog({ defaultPath: `${slug}.md`, filters: [{ name: "Markdown", extensions: ["md"] }] });
-        if (path) { await ipc.writeTextFile(path, md); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
+        const path = await ipc.saveTextAs(`${slug}.md`, ["md"], md);
+        if (path) notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`);
         return;
       }
       const html = await buildNotebookHtml(title, exportCells);
       if (kind === "html") {
         if (!isTauri()) { download(`${slug}.html`, html, "text/html"); return; }
-        const path = await saveDialog({ defaultPath: `${slug}.html`, filters: [{ name: "HTML", extensions: ["html"] }] });
-        if (path) { await ipc.writeTextFile(path, html); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
+        const path = await ipc.saveTextAs(`${slug}.html`, ["html"], html);
+        if (path) notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`);
       } else {
         const dialog = await printHtml(html, title);
         if (dialog) notify("success", "Print dialog opened", "Choose “Save as PDF” in the print dialog.");
@@ -663,6 +668,7 @@ export function NotebookTab({
                 <div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-30 h-0.5 rounded-full bg-primary shadow-[0_0_0_1px_var(--primary)]" />
               ) : null}
             <CellView
+              autoComplete={autoComplete}
               cell={cell}
               first={i === 0}
               last={i === cells.length - 1}
@@ -758,7 +764,10 @@ const CellView = memo(function CellView({
   dragging,
   onGrip,
   index,
+  autoComplete,
 }: {
+  /** Settings → SQL Editor → Auto-completion. */
+  autoComplete: boolean;
   cell: Cell;
   first: boolean;
   last: boolean;
@@ -984,9 +993,9 @@ const CellView = memo(function CellView({
                     scrollbar: { vertical: "auto", horizontalScrollbarSize: 8, verticalScrollbarSize: 8 },
                     padding: { top: 6, bottom: 6 },
                     wordWrap: "on",
-                    // Ensure Exasol autocompletion actually pops in cells.
-                    quickSuggestions: { other: true, comments: false, strings: false },
-                    suggestOnTriggerCharacters: true,
+                    // Settings → SQL Editor → Auto-completion, as in the editor.
+                    quickSuggestions: autoComplete ? { other: true, comments: false, strings: false } : false,
+                    suggestOnTriggerCharacters: autoComplete,
                     tabCompletion: "on",
                     fixedOverflowWidgets: true,
                   }}

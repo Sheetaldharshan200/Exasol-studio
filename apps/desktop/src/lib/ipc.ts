@@ -390,6 +390,19 @@ export type ScriptPlan = { version: string; files: string[]; statements: { head:
 export type SlcChoice = { alias: string; installed: boolean };
 /** dash-server as Studio sees it: installed? answering? for which connection? */
 export type DashServerStatus = { installed: boolean; serving: boolean; url: string; profileId: string | null; profileName: string | null; startedByStudio: boolean };
+/** A SQL tab's own database session: its id, schema, mode and uncommitted work. */
+export type SessionInfo = {
+  sessionId: string | null;
+  schema: string | null;
+  autocommit: boolean;
+  changes: number;
+  recent: string[];
+  idleSeconds: number;
+  /** Whether the tab has a session at all yet. */
+  open: boolean;
+  /** Version of the uncommitted changes; a close names the one it showed. */
+  changeSeq: number;
+};
 /** One file picked through the OS dialog and copied into the attachments folder. */
 export type PickedAttachment = { name: string; path: string; size: number; mime: string; inline?: string };
 export type AttachmentPicks = {
@@ -624,6 +637,8 @@ export const ipc = {
     call<ConnectionProfile>("save_connection_profile", { profile: { id: "", ...profile } }),
   deleteConnectionProfile: (profileId: string) =>
     call<void>("delete_connection_profile", { profileId }),
+  /** Whether a connected profile still runs a query (not just an open port). */
+  connectionAlive: (profileId: string) => call<boolean>("connection_alive", { profileId }),
   pingServer: (host: string, port: number) =>
     call<PingResult>("ping_server", { host, port }),
   testConnection: (profile: Omit<ConnectionProfile, "id"> & { id?: string }) =>
@@ -800,6 +815,11 @@ export const ipc = {
   openExternal: (url: string) => call<null>("open_external", { url }),
   /** System Settings → Privacy & Security → Local Network (macOS). */
   openLocalNetworkSettings: () => call<null>("open_local_network_settings"),
+  /** Keep a password for this run only; removes any saved copy. Empty forgets it. */
+  setSessionPassword: (profileId: string, password: string) => call<null>("set_session_password", { profileId, password }),
+  /** Staged grid edits in one transaction; each must touch exactly one row, or nothing is saved. */
+  applyRowEdits: (profileId: string, connectionName: string, statements: string[], tabId?: string) =>
+    call<{ ok: boolean; failedIndex: number | null; error: string | null }>("apply_row_edits", { profileId, connectionName, statements, tabId }),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
   gitCommit: (message: string, stageAll?: boolean) => call<string>("git_commit", { message, stageAll }),
@@ -839,6 +859,11 @@ export const ipc = {
   revealPath: (path: string) => call<void>("reveal_path", { path }),
   writeTextFile: (path: string, contents: string) =>
     call<void>("write_text_file", { path, contents }),
+  /** Native save dialog, then write: the backend only writes where the person picked. Null when cancelled. */
+  saveTextAs: (defaultName: string, extensions: string[], contents: string) =>
+    call<string | null>("save_text_as", { defaultName, extensions, contents }),
+  /** Native open dialog for a .sql/.txt file: [path, text], or null when cancelled. The file may then be saved back. */
+  openTextFile: () => call<[string, string] | null>("open_text_file"),
   /** Open `html` in a print window and run the system print dialog on it;
    *  false when the window opened but the dialog did not. */
   printHtml: (title: string, html: string) => call<boolean>("print_html", { title, html }),
@@ -879,7 +904,38 @@ export const ipc = {
     split = true,
     addHistory = true,
     progressId?: string,
-  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId }),
+    /** Run on this SQL tab's own database session (session state carries over). */
+    tabId?: string,
+    /** Execution options; the backend stops on errors and goes on after empty results by default. */
+    stop?: { onError?: boolean; onNoRows?: boolean },
+  ) =>
+    call<ExecuteResponse>("execute_sql", {
+      profileId,
+      connectionName,
+      sql,
+      maxRows,
+      split,
+      addHistory,
+      progressId,
+      tabId,
+      stopOnError: stop?.onError,
+      stopOnNoRows: stop?.onNoRows,
+    }),
+  // ── The SQL tab's own session (session.rs) ──
+  /** Never opens a session: looking at a tab does not connect it. */
+  sessionInfo: (tabId: string, profileId?: string) => call<SessionInfo>("session_info", { tabId, profileId }),
+  sessionSetAutocommit: (profileId: string, tabId: string, on: boolean) => call<SessionInfo>("session_set_autocommit", { profileId, tabId, on }),
+  sessionCommit: (profileId: string, tabId: string) => call<SessionInfo>("session_commit", { profileId, tabId }),
+  sessionRollback: (profileId: string, tabId: string) => call<SessionInfo>("session_rollback", { profileId, tabId }),
+  sessionSetSchema: (profileId: string, tabId: string, schema: string) => call<SessionInfo>("session_set_schema", { profileId, tabId, schema }),
+  /** `seen`: the `changeSeq` the person was shown (none if shown nothing);
+   *  any other uncommitted changes → refused, the session stays. */
+  sessionClose: (tabId: string, commit: boolean, seen?: number) => call<null>("session_close", { tabId, commit, seen }),
+  sessionsWithChanges: (profileId?: string) => call<{ tabId: string; changes: number; recent: string[]; changeSeq: number }[]>("sessions_with_changes", { profileId }),
+  /** The page has a quit request and is asking the person (stops the watchdog). */
+  quitAck: () => call<null>("quit_ack"),
+  /** Quit for real, after open transactions were settled. */
+  quitApp: () => call<null>("quit_app"),
   /** Cancel the running query registered under `progressId` (Stop). Returns
    *  true when a kill was issued, false when nothing was running. */
   cancelQuery: (progressId: string) => call<boolean>("cancel_query", { progressId }),
