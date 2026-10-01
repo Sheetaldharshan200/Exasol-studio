@@ -420,7 +420,7 @@ pub fn is_txn_end(statement: &str) -> bool {
     head.starts_with("COMMIT") || head.starts_with("ROLLBACK")
 }
 
-fn autocommit_default(state: &AppState, profile_id: &str) -> bool {
+pub(crate) fn autocommit_default(state: &AppState, profile_id: &str) -> bool {
     let settings = crate::connection_settings::read_settings(state, profile_id);
     crate::connection_settings::bool_at(&settings, &["transaction", "autoCommit"]).unwrap_or(true)
 }

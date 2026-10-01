@@ -7,7 +7,8 @@
  * instead of spawning a separate tab. The old "Show in Dashboard" view moved
  * into the per-connection Health tab (issue #45).
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { NullTextContext } from "./null-text";
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
@@ -466,6 +467,7 @@ function ResultsView({
   fontSize: number;
   zebra: boolean;
 }) {
+  const nullText = useContext(NullTextContext);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<{ value: unknown; column: string; row: number; col: number } | null>(null);
   const [showPanel, setShowPanel] = useState(true);
@@ -555,7 +557,7 @@ function ResultsView({
               <>
                 <p className="mb-1 font-mono text-[10px] text-muted-foreground">{selected.column}</p>
                 <pre className="max-h-40 overflow-auto rounded bg-secondary/50 p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words text-foreground">
-                  {selected.value === null ? "null" : cellText(selected.value)}
+                  {selected.value === null ? <span className="text-muted-foreground italic">{nullText}</span> : cellText(selected.value)}
                 </pre>
               </>
             ) : (

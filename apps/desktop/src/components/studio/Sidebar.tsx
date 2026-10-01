@@ -82,8 +82,11 @@ function ConnectionSection({
   onUploadDriver,
   onContext,
   onOpenDetails,
+  showSystemSchemas,
 }: {
   connection: ActiveConnection;
+  /** Settings → Database Objects Tree → Show system schemas. */
+  showSystemSchemas: boolean;
   focused: boolean;
   /** Server reachability: true = up, false = down, undefined = probing. */
   live?: boolean;
@@ -107,8 +110,8 @@ function ConnectionSection({
   // Stable across refreshes: a refresh reloads IN PLACE via refreshSignal, so
   // roots must NOT change identity (that would remount/flicker the tree).
   const roots = useMemo(
-    () => buildConnectionNodes(connection.profile.id),
-    [connection.profile.id],
+    () => buildConnectionNodes(connection.profile.id, { showSystemSchemas }),
+    [connection.profile.id, showSystemSchemas],
   );
   // Bumped to collapse every expanded node in this connection's tree.
   const [collapseSignal, setCollapseSignal] = useState(0);
@@ -362,7 +365,10 @@ export function Sidebar({
   onOpenNewVisualizer,
   onFocusTab,
   onCloseTab,
+  showSystemSchemas = true,
 }: {
+  /** Settings → Database Objects Tree → Show system schemas. */
+  showSystemSchemas?: boolean;
   activity: ActivityId;
   connections: ActiveConnection[];
   profiles: ConnectionProfile[];
@@ -726,6 +732,7 @@ export function Sidebar({
             <ConnectionSection
               key={conn.profile.id}
               connection={conn}
+              showSystemSchemas={showSystemSchemas}
               focused={conn.profile.id === activeProfileId}
               live={reachable[conn.profile.id]}
               accent={accents[conn.profile.id]}

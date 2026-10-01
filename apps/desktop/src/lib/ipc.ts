@@ -906,10 +906,24 @@ export const ipc = {
     progressId?: string,
     /** Run on this SQL tab's own database session (session state carries over). */
     tabId?: string,
-  ) => call<ExecuteResponse>("execute_sql", { profileId, connectionName, sql, maxRows, split, addHistory, progressId, tabId }),
+    /** Execution options; the backend stops on errors and goes on after empty results by default. */
+    stop?: { onError?: boolean; onNoRows?: boolean },
+  ) =>
+    call<ExecuteResponse>("execute_sql", {
+      profileId,
+      connectionName,
+      sql,
+      maxRows,
+      split,
+      addHistory,
+      progressId,
+      tabId,
+      stopOnError: stop?.onError,
+      stopOnNoRows: stop?.onNoRows,
+    }),
   // ── The SQL tab's own session (session.rs) ──
   /** Never opens a session: looking at a tab does not connect it. */
-  sessionInfo: (tabId: string) => call<SessionInfo>("session_info", { tabId }),
+  sessionInfo: (tabId: string, profileId?: string) => call<SessionInfo>("session_info", { tabId, profileId }),
   sessionSetAutocommit: (profileId: string, tabId: string, on: boolean) => call<SessionInfo>("session_set_autocommit", { profileId, tabId, on }),
   sessionCommit: (profileId: string, tabId: string) => call<SessionInfo>("session_commit", { profileId, tabId }),
   sessionRollback: (profileId: string, tabId: string) => call<SessionInfo>("session_rollback", { profileId, tabId }),

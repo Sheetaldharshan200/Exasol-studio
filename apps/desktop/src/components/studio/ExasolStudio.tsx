@@ -69,13 +69,19 @@ import { installSqlMarkers, type SqlMarkers } from "./sql-markers";
 import { installUdfHints } from "./udf-hints";
 import { installInlineAi } from "./inline-ai";
 import { schemaContextLines } from "@/lib/schema-context";
+import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
+import { nullLabel } from "@/lib/null-label";
+import { NullTextContext } from "./null-text";
+import { markRunError } from "./run-error-markers";
+import { errorMarker } from "@/lib/error-markers";
+import { execDefaults, maxRowsOptions, splitsFor, type ExecDefaults } from "@/lib/exec-settings";
 import { openableSource, sourceQuery, sourceTitle } from "@/lib/script-source";
 import { QueryPlanView } from "./QueryPlanView";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
-import { MAX_ROWS_OPTIONS, NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, newTab, tabHasWork, type SqlTab, type TabGroup } from "./tabs";
+import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, newTab, tabHasWork, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { createSerialQueue } from "@/lib/serial-queue";
@@ -242,7 +248,7 @@ export function ExasolStudio({
   }, []);
   // Inline tab rename (double-click a tab title).
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
-  const [maxRows, setMaxRows] = useState(1000);
+  const [maxRows, setMaxRows] = useState(APP_SETTING_DEFAULTS.maxRows as number);
   const [schema, setSchema] = useState<string>("");
   const [schemas, setSchemas] = useState<string[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -251,13 +257,15 @@ export function ExasolStudio({
   // Query-toolbar options.
   const [execSettings, setExecSettings] = useState({
     stripComments: false,
+    splitStatements: true,
     stopOnError: true,
-    stopOnWarning: false,
     stopOnNoRows: false,
     showErrorPos: true,
     showErrorStmt: true,
   });
-  const [autoCommit, setAutoCommit] = useState(true);
+  // The run defaults last read from Settings: the toolbar can override them
+  // for this window, and only a changed stored value overrides it back.
+  const storedExec = useRef<ExecDefaults | null>(null);
   const [mergeResults, setMergeResults] = useState(false);
   const [queryBuilderOpen, setQueryBuilderOpen] = useState(false);
   // The visual UDF builder block (opens above the editor).
@@ -499,6 +507,9 @@ export function ExasolStudio({
   const [editorFontFamily, setEditorFontFamily] = useState("JetBrains Mono");
   const [editorWordWrap, setEditorWordWrap] = useState(false);
   const [gridFontSize, setGridFontSize] = useState(12);
+  const [nullText, setNullText] = useState(() => nullLabel(undefined));
+  const [autoComplete, setAutoComplete] = useState(APP_SETTING_DEFAULTS.autoComplete as boolean);
+  const [showSystemSchemas, setShowSystemSchemas] = useState(APP_SETTING_DEFAULTS.showSystemSchemas as boolean);
   const [gridZebra, setGridZebra] = useState(true);
 
   const setActiveTabId = useCallback(
@@ -741,18 +752,24 @@ export function ExasolStudio({
         setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
       // Only accept a persisted value that's one of the offered options, so the
       // dropdown always reflects a real default (never a blank/invalid value).
-      if (typeof s.maxRows === "number" && MAX_ROWS_OPTIONS.includes(s.maxRows)) setMaxRows(s.maxRows);
+      const ex = execDefaults(s);
+      const prev = storedExec.current;
+      storedExec.current = ex;
+      if (!prev || prev.maxRows !== ex.maxRows) setMaxRows(ex.maxRows);
+      setExecSettings((v) => ({
+        ...v,
+        stopOnError: !prev || prev.stopOnError !== ex.stopOnError ? ex.stopOnError : v.stopOnError,
+        stripComments: !prev || prev.stripComments !== ex.stripComments ? ex.stripComments : v.stripComments,
+        splitStatements: !prev || prev.splitStatements !== ex.splitStatements ? ex.splitStatements : v.splitStatements,
+      }));
       if (typeof s.editorFontSize === "number") setEditorFontSize(s.editorFontSize);
       if (typeof s.editorFontFamily === "string" && s.editorFontFamily) setEditorFontFamily(s.editorFontFamily);
       if (typeof s.wordWrap === "boolean") setEditorWordWrap(s.wordWrap);
       if (typeof s.gridFontSize === "number") setGridFontSize(s.gridFontSize);
+      if ("nullText" in s) setNullText(nullLabel(s.nullText));
+      if (typeof s.showSystemSchemas === "boolean") setShowSystemSchemas(s.showSystemSchemas);
+      if (typeof s.autoComplete === "boolean") setAutoComplete(s.autoComplete);
       if (typeof s.zebraStripes === "boolean") setGridZebra(s.zebraStripes);
-      if (typeof s.autoCommit === "boolean") setAutoCommit(s.autoCommit);
-      setExecSettings((v) => ({
-        ...v,
-        stopOnError: typeof s.stopOnError === "boolean" ? s.stopOnError : v.stopOnError,
-        stripComments: typeof s.stripComments === "boolean" ? s.stripComments : v.stripComments,
-      }));
       // Per-token editor colors: re-define the themes so open editors recolor
       // live (Monaco re-applies a re-defined theme that is currently active).
       syntaxOverridesRef.current = syntaxOverridesFromSettings(s);
@@ -2273,10 +2290,15 @@ export function ExasolStudio({
       if (execSettings.stripComments) sqlToRun = stripSqlComments(sqlToRun);
       if (!sqlToRun.trim()) return;
 
-      // "buffer" runs everything as a single statement; others split.
-      const split = scope !== "buffer";
+      // "buffer" runs everything as a single statement; others split unless
+      // splitting is off (Settings → Execution, or the toolbar).
+      const split = splitsFor(scope, execSettings.splitStatements);
+      const stop = { onError: execSettings.stopOnError, onNoRows: execSettings.stopOnNoRows };
 
       if (!acquireRun(connection.profile.id)) return;
+      // The marker belongs to THIS tab's model, even if the tab changes mid-run.
+      const runModel = editor?.getModel();
+      markRunError(runModel, monacoRef.current, null);
       const startedAt = Date.now();
       const tabId = activeTab.id;
       // Clear the previous result immediately so the panel shows THIS run's
@@ -2313,6 +2335,7 @@ export function ExasolStudio({
           true,
           progressId,
           tabId,
+          stop,
         );
         void tabSession.refresh(tabId);
         // The session died under the run. "Reconnect and re-execute" re-runs it
@@ -2323,12 +2346,20 @@ export function ExasolStudio({
           const settings = (await ipc.connectionSettingsGet(connection.profile.id).catch(() => null)) as { sqlEditor?: { lossHandling?: string } } | null;
           const mode = settings?.sqlEditor?.lossHandling ?? "reexecute";
           if (mode === "reexecute" && onlyReads(splitStatements(sqlToRun).map((x) => x.text))) {
-            const again = await execSql(connection.profile.id, connection.profile.name, sqlToRun, maxRows, split, true, progressId, tabId);
+            const again = await execSql(connection.profile.id, connection.profile.name, sqlToRun, maxRows, split, true, progressId, tabId, stop);
             Object.assign(result, again);
           }
         }
         if (!result.success) {
           const failed = result.results.find((r) => r.error);
+          if (failed?.error && runModel && !runModel.isDisposed()) {
+            const marker = errorMarker(runModel.getValue(), failed.statement, failed.error, {
+              position: execSettings.showErrorPos,
+              statement: execSettings.showErrorStmt,
+              near: cursorOffset,
+            });
+            markRunError(runModel, monacoRef.current, marker);
+          }
           patchTab(activeTab.id, {
             response: result,
                   resultPage: 0,
@@ -2361,7 +2392,7 @@ export function ExasolStudio({
         releaseRun();
       }
     },
-    [connection, running, activeTab, maxRows, loadHistory, execSettings.stripComments],
+    [connection, running, activeTab, maxRows, loadHistory, execSettings],
   );
 
   // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).
@@ -2989,6 +3020,7 @@ export function ExasolStudio({
             className="min-w-0 border-r border-border"
           >
             <Sidebar
+              showSystemSchemas={showSystemSchemas}
               activity={activity}
               connections={connections}
               profiles={profiles}
@@ -3243,7 +3275,7 @@ export function ExasolStudio({
                       <SelectValue placeholder="1,000" />
                     </SelectTrigger>
                     <SelectContent>
-                      {MAX_ROWS_OPTIONS.map((n) => (
+                      {maxRowsOptions(maxRows).map((n) => (
                         <SelectItem key={n} value={String(n)}>
                           {n.toLocaleString()}
                         </SelectItem>
@@ -3268,7 +3300,7 @@ export function ExasolStudio({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
                     <DropdownMenuCheckboxItem
-                      checked={tabSession.info ? tabSession.info.autocommit : autoCommit}
+                      checked={tabSession.info ? tabSession.info.autocommit : true}
                       onCheckedChange={(v) => void tabSession.setAutocommit(v === true)}
                     >
                       Auto-commit (this tab)
@@ -3342,13 +3374,17 @@ export function ExasolStudio({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-60">
                     <DropdownMenuLabel>SQL processing</DropdownMenuLabel>
-                    <DropdownMenuItem disabled>Preprocess Script</DropdownMenuItem>
-                    <DropdownMenuItem disabled>Parameterized SQL</DropdownMenuItem>
                     <DropdownMenuCheckboxItem
                       checked={execSettings.stripComments}
                       onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stripComments: v === true }))}
                     >
                       Strip Comments when Executing
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={execSettings.splitStatements}
+                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, splitStatements: v === true }))}
+                    >
+                      Split into Statements
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuCheckboxItem
@@ -3356,12 +3392,6 @@ export function ExasolStudio({
                       onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stopOnError: v === true }))}
                     >
                       Stop on Error
-                    </DropdownMenuCheckboxItem>
-                    <DropdownMenuCheckboxItem
-                      checked={execSettings.stopOnWarning}
-                      onCheckedChange={(v) => setExecSettings((s) => ({ ...s, stopOnWarning: v === true }))}
-                    >
-                      Stop on SQL Warning
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuCheckboxItem
                       checked={execSettings.stopOnNoRows}
@@ -3873,6 +3903,10 @@ export function ExasolStudio({
                     fontFamily: `"${editorFontFamily}", "JetBrains Mono", Menlo, monospace`,
                     fontSize: editorFontSize,
                     wordWrap: editorWordWrap ? "on" : "off",
+                    // Settings → SQL Editor → Auto-completion: off keeps
+                    // suggestions to Ctrl+Space.
+                    quickSuggestions: autoComplete,
+                    suggestOnTriggerCharacters: autoComplete,
                     minimap: { enabled: false },
                     scrollBeyondLastLine: false,
                     padding: { top: 10 },
@@ -3888,6 +3922,7 @@ export function ExasolStudio({
               </ResizablePanel>
               <ResizableHandle groupDirection="vertical" />
               <ResizablePanel defaultSize="45%" minSize="80px" className="min-h-0">
+                <NullTextContext.Provider value={nullText}>
                 <ResultsPanel
                   view={activeTab.resultView ?? "results"}
                   onViewChange={(v) => patchTab(activeTab.id, { resultView: v })}
@@ -3916,6 +3951,7 @@ export function ExasolStudio({
                   onProfile={() => void profileQuery(activeTab.sql)}
                   onOpenPlanTab={openPlanTab}
                 />
+                </NullTextContext.Provider>
               </ResizablePanel>
             </ResizablePanelGroup>
           )}
