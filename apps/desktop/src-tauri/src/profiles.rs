@@ -53,6 +53,9 @@ pub struct ConnectionProfile {
     /// where the password does (keychain / vault), and no user is sent.
     #[serde(default = "default_auth_method")]
     pub auth_method: String,
+    /// An SSH tunnel or proxy to reach the database (network.rs).
+    #[serde(default)]
+    pub network: Option<crate::network::NetworkSettings>,
 }
 
 fn default_auth_method() -> String {
@@ -98,6 +101,9 @@ pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionP
             p.password = moved;
         }
         write_json(&profiles_path(state), &all)?;
+    }
+    if let Some(n) = &mut profile.network {
+        crate::network::open(key.as_ref(), &profile.id, n)?;
     }
     // "This session only": not on disk, only in memory for this run.
     profile.password = if plain.is_empty() {
@@ -294,6 +300,9 @@ pub fn list_connection_profiles(
     let mut profiles = load_profiles(&state)?;
     for p in &mut profiles {
         p.password = String::new();
+        if let Some(n) = &mut p.network {
+            crate::network::redact(n);
+        }
     }
     Ok(profiles)
 }
@@ -357,6 +366,9 @@ pub fn save_profile(
             } else {
                 profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
             }
+            if let Some(n) = &mut profile.network {
+                crate::network::seal(key.as_ref(), &profile.id, n, profiles[idx].network.as_ref());
+            }
             profile.created_at = profiles[idx].created_at.clone();
             profiles[idx] = profile.clone();
         }
@@ -367,6 +379,9 @@ pub fn save_profile(
                 profiles.len() + 1
             );
             profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
+            if let Some(n) = &mut profile.network {
+                crate::network::seal(key.as_ref(), &profile.id, n, None);
+            }
             profile.created_at = Some(chrono::Utc::now().to_rfc3339());
             profiles.push(profile.clone());
         }
@@ -381,6 +396,9 @@ pub fn save_profile(
     // not published there (it would be read back as a password).
     if is_mcp_identity(&profile.username) || profile.auth_method != "password" {
         profile.password = String::new();
+        if let Some(n) = &mut profile.network {
+            crate::network::redact(n);
+        }
         return Ok(profile);
     }
     let plaintext = if typed.is_empty() {
@@ -405,8 +423,11 @@ pub fn save_profile(
         eprintln!("could not publish connection to the shared registry: {err}");
     }
 
-    // Don't echo the stored secret back to the caller.
+    // Don't echo the stored secrets back to the caller.
     profile.password = String::new();
+    if let Some(n) = &mut profile.network {
+        crate::network::redact(n);
+    }
     Ok(profile)
 }
 
@@ -504,6 +525,7 @@ pub fn import_shared_connections(state: &AppState) -> AppResult<usize> {
             fingerprint: None,
             ssl_ca: None,
             auth_method: "password".into(),
+            network: None,
         };
         if save_profile(state, profile).is_ok() {
             imported += 1;
@@ -568,6 +590,7 @@ pub fn ensure_local_profile(
             fingerprint: None,
             ssl_ca: None,
             auth_method: "password".into(),
+            network: None,
         },
     )
 }
@@ -604,5 +627,6 @@ pub async fn delete_connection_profile(
     }
     profiles.retain(|p| p.id != profile_id);
     crate::shared_registry::delete_credential(&crate::profile_secret::keychain_account(&profile_id));
+    crate::network::forget(&profile_id);
     write_json(&profiles_path(&state), &profiles)
 }

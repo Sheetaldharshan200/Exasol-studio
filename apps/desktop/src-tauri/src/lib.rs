@@ -45,11 +45,14 @@ mod market;
 mod metadata;
 mod print;
 mod process;
+mod network;
 mod profile_check;
 mod profile_io;
 mod pin_tunnel;
 mod profile_secret;
+mod proxy_tunnel;
 mod safety;
+mod ssh_tunnel;
 mod profiles;
 mod shared_registry;
 mod query;
@@ -217,6 +220,7 @@ pub fn run() {
             connection::connection_alive,
             connection::server_certificate,
             connection::pick_ca_file,
+            ssh_tunnel::ssh_trust_host_key,
             session_cmd::session_set_autocommit,
             session_cmd::session_commit,
             session_cmd::session_rollback,
