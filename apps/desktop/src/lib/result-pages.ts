@@ -10,8 +10,9 @@
 // The run itself had no tie breaker, so once the user pages, page 0 is
 // fetched again under the plan rather than reused.
 // A statement with its own top-level LIMIT is the rows the user asked for and
-// is not paged; neither is one with duplicate column names, which the wrapper
-// needed for the column order cannot select from.
+// is not paged. Duplicate column names only matter for the column-order
+// wrapper (it selects FROM the statement); a statement with its own ORDER BY
+// is paged in place and may repeat names.
 
 export type PagePlan = { kind: "ordered" | "columns"; base: string; columnCount: number };
 

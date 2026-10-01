@@ -9,16 +9,78 @@ use tauri::Manager;
 /// Write UTF-8 text to an absolute path chosen by the user in a save dialog.
 #[tauri::command]
 pub async fn write_text_file(path: String, contents: String) -> AppResult<()> {
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from);
     let target = std::path::PathBuf::from(&path);
-    write_permitted(&target, home.as_deref()).map_err(crate::error::AppError::InvalidSettings)?;
-    // A symlinked folder must not lead somewhere the rules forbid.
+    let home = home_dir();
+    let workspace = home.as_ref().map(|h| h.join("ExasolStudio"));
+    let approved = approved_paths().lock().map(|s| s.contains(&target)).unwrap_or(false);
+    if !write_authorized(&target, workspace.as_deref(), approved) {
+        return Err(crate::error::AppError::InvalidSettings(format!(
+            "Refusing to write {}: only files in your Studio workspace, files you opened, or a place you picked in a save dialog can be written.",
+            target.display()
+        )));
+    }
+    write_checked(&target, &contents, home.as_deref())
+}
+
+/// The safety checks every write passes, then the write.
+fn write_checked(target: &std::path::Path, contents: &str, home: Option<&std::path::Path>) -> AppResult<()> {
+    write_permitted(target, home).map_err(crate::error::AppError::InvalidSettings)?;
+    // A symlink — at the file itself or a folder above it — must not lead
+    // somewhere the rules forbid.
+    if std::fs::symlink_metadata(target).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        return Err(crate::error::AppError::InvalidSettings(format!("Refusing to write {}: it is a symbolic link.", target.display())));
+    }
     if let Some(real_parent) = target.parent().and_then(|p| std::fs::canonicalize(p).ok()) {
         let real = real_parent.join(target.file_name().unwrap_or_default());
-        write_permitted(&real, home.as_deref()).map_err(crate::error::AppError::InvalidSettings)?;
+        write_permitted(&real, home).map_err(crate::error::AppError::InvalidSettings)?;
     }
-    std::fs::write(&target, contents)?;
+    std::fs::write(target, contents)?;
     Ok(())
+}
+
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from)
+}
+
+/// Paths the user chose this session — opened, or picked in a save dialog —
+/// which the page may therefore write back to.
+fn approved_paths() -> &'static std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>> {
+    static PATHS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>> = std::sync::OnceLock::new();
+    PATHS.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+/// Record a path the user chose (opened it, or picked it in a dialog).
+pub(crate) fn approve_path(path: &std::path::Path) {
+    if let Ok(mut set) = approved_paths().lock() {
+        set.insert(path.to_path_buf());
+    }
+}
+
+/// Who may be written: the Studio workspace, or a path the user chose.
+pub(crate) fn write_authorized(path: &std::path::Path, workspace: Option<&std::path::Path>, approved: bool) -> bool {
+    approved || workspace.is_some_and(|w| path.starts_with(w))
+}
+
+/// Show the native save dialog and write there. The dialog runs here, not in
+/// the page, so a path only becomes writable because the person picked it.
+#[tauri::command]
+pub async fn save_text_as(app: tauri::AppHandle, default_name: String, extensions: Vec<String>, contents: String) -> AppResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let exts: Vec<String> = extensions.into_iter().filter(|e| WRITABLE_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str())).collect();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let mut d = app.dialog().file().set_file_name(&default_name);
+        if !exts.is_empty() {
+            let refs: Vec<&str> = exts.iter().map(String::as_str).collect();
+            d = d.add_filter("Document", &refs);
+        }
+        d.blocking_save_file()
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    write_checked(&path, &contents, home_dir().as_deref())?;
+    approve_path(&path);
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 /// File types the page may write: documents and data, never anything a
@@ -203,6 +265,16 @@ mod write_guard_tests {
 
     fn ok(p: &str) -> bool {
         write_permitted(Path::new(p), Some(Path::new("/Users/ada"))).is_ok()
+    }
+
+    #[test]
+    fn only_the_workspace_or_a_path_the_user_chose_is_writable() {
+        use super::write_authorized;
+        let ws = Path::new("/Users/ada/ExasolStudio");
+        assert!(write_authorized(Path::new("/Users/ada/ExasolStudio/q.sql"), Some(ws), false));
+        assert!(!write_authorized(Path::new("/Users/ada/Documents/report.sql"), Some(ws), false), "a page cannot pick any document");
+        assert!(write_authorized(Path::new("/Users/ada/Documents/report.sql"), Some(ws), true), "a file the user opened or picked");
+        assert!(!write_authorized(Path::new("/Users/ada/ExasolStudioEvil/q.sql"), Some(ws), false), "prefix is by component, not text");
     }
 
     #[test]

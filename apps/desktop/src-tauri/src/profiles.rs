@@ -114,6 +114,10 @@ pub fn clear_profile_password(state: &AppState, profile_id: &str) -> AppResult<(
     let mut profiles = load_profiles(state)?;
     if let Some(profile) = profiles.iter_mut().find(|p| p.id == profile_id) {
         profile.password = String::new();
+        // The copy shared with the exa CLI goes too, or a "cleared" password
+        // would still open the database from a terminal after Studio quits.
+        let shared = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
+        crate::shared_registry::delete_credential(&shared);
     }
     // The keychain copy and any in-memory one go too: "cleared" must mean
     // cleared everywhere.

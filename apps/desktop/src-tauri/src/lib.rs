@@ -197,6 +197,7 @@ pub fn run() {
             local_network::open_local_network_settings,
             profiles::set_session_password,
             grid_edits::apply_row_edits,
+            files::save_text_as,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,

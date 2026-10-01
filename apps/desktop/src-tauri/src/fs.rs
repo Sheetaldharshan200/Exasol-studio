@@ -62,6 +62,8 @@ pub async fn fs_read_text(path: String) -> AppResult<String> {
         return Err(AppError::Storage("File is too large to open (over 8 MB).".to_string()));
     }
     let bytes = std::fs::read(&path)?;
+    // A file opened in a tab may be saved back to.
+    crate::files::approve_path(std::path::Path::new(&path));
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 

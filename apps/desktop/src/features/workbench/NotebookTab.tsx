@@ -50,7 +50,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
-import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { buildNotebookMarkdown, buildNotebookHtml, EXPORT_ALL, filterExportCells, type ExportCell, type ExportInclude } from "@/features/workbench/notebook-export";
 import { cn } from "@/lib/utils";
 
@@ -462,15 +461,15 @@ export function NotebookTab({
       if (kind === "markdown") {
         const md = buildNotebookMarkdown(title, exportCells);
         if (!isTauri()) { download(`${slug}.md`, md, "text/markdown"); return; }
-        const path = await saveDialog({ defaultPath: `${slug}.md`, filters: [{ name: "Markdown", extensions: ["md"] }] });
-        if (path) { await ipc.writeTextFile(path, md); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
+        const path = await ipc.saveTextAs(`${slug}.md`, ["md"], md);
+        if (path) notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`);
         return;
       }
       const html = await buildNotebookHtml(title, exportCells);
       if (kind === "html") {
         if (!isTauri()) { download(`${slug}.html`, html, "text/html"); return; }
-        const path = await saveDialog({ defaultPath: `${slug}.html`, filters: [{ name: "HTML", extensions: ["html"] }] });
-        if (path) { await ipc.writeTextFile(path, html); notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`); }
+        const path = await ipc.saveTextAs(`${slug}.html`, ["html"], html);
+        if (path) notify("success", "Notebook exported", `Saved ${path}`, `file:${path}`);
       } else {
         const dialog = await printHtml(html, title);
         if (dialog) notify("success", "Print dialog opened", "Choose “Save as PDF” in the print dialog.");

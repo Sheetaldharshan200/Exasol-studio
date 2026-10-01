@@ -844,6 +844,9 @@ export const ipc = {
   revealPath: (path: string) => call<void>("reveal_path", { path }),
   writeTextFile: (path: string, contents: string) =>
     call<void>("write_text_file", { path, contents }),
+  /** Native save dialog, then write: the backend only writes where the person picked. Null when cancelled. */
+  saveTextAs: (defaultName: string, extensions: string[], contents: string) =>
+    call<string | null>("save_text_as", { defaultName, extensions, contents }),
   /** Open `html` in a print window and run the system print dialog on it;
    *  false when the window opened but the dialog did not. */
   printHtml: (title: string, html: string) => call<boolean>("print_html", { title, html }),
