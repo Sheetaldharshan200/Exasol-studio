@@ -144,3 +144,13 @@ test("deserialize tolerates malformed tab entries without throwing", () => {
   assert.equal(out.tabsByConn.c1.length, 1);
   assert.equal(out.tabsByConn.c1[0].id, "ok");
 });
+
+test("a file-backed tab keeps its last-saved text, so a restored tab is not marked modified", () => {
+  const state: WorkspaceState = {
+    tabsByConn: { c1: [tab({ id: "f", filePath: "/w/a.sql", sql: "SELECT 1", savedSql: "SELECT 1" })] },
+    groupsByConn: {},
+    activeIdByConn: { c1: "f" },
+  };
+  const out = roundTrip(state)!;
+  assert.equal(out.tabsByConn.c1[0].savedSql, "SELECT 1");
+});
