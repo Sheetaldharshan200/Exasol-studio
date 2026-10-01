@@ -722,6 +722,15 @@ export async function mockInvoke(
     case "write_text_file":
       return null;
 
+    // The mock has no tab sessions: every tab is autocommit, nothing is open.
+    case "session_info":
+      return { sessionId: null, schema: null, autocommit: true, changes: 0, recent: [], idleSeconds: 0, open: false };
+    case "sessions_with_changes":
+      return [];
+    case "session_close":
+    case "quit_ack":
+      return null;
+
     // No native dialog in the browser: the save becomes a download.
     case "save_text_as": {
       const { defaultName, contents } = (args ?? {}) as { defaultName?: string; contents?: string };

@@ -627,9 +627,17 @@ pub async fn execute_sql(
         if let (Some(g), Some(t)) = (session_guard.as_mut(), tab) {
             let lost = results.iter().filter_map(|r| r.error.as_deref()).any(crate::session::is_connection_lost);
             if lost {
-                let had = g.changes.len();
-                drop(session_guard.take());
-                state.sessions.drop_lost(t).await;
+                // What the server rolled back: earlier uncommitted changes AND
+                // the ones this script made before the connection died.
+                let this_run = if g.manual {
+                    results.iter().filter(|r| r.error.is_none() && crate::session::counts_as_change(&r.statement)).count()
+                } else {
+                    0
+                };
+                let had = g.changes.len() + this_run;
+                if let Some(co) = session_guard.take() {
+                    state.sessions.forget_lost(t, co).await;
+                }
                 if let Some(r) = results.iter_mut().rev().find(|r| r.error.is_some()) {
                     let note = if had > 0 {
                         format!(" The session was lost; its {had} uncommitted change{} were rolled back by the server. The next run opens a new session.", if had == 1 { "" } else { "s" })

@@ -299,13 +299,24 @@ pub fn run() {
                     api.prevent_close();
                     crate::session::QUIT_ACKED.store(false, Ordering::SeqCst);
                     let _ = app.emit("studio:quit-requested", ());
-                    // A page that cannot answer must not keep the app open.
+                    // A page that cannot answer must not keep the app open — nor
+                    // end the work without the person: ask natively instead.
                     let handle = app.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_secs(4));
-                        if !crate::session::QUIT_ACKED.load(Ordering::SeqCst) {
-                            crate::session::QUIT_CONFIRMED.store(true, Ordering::SeqCst);
-                            handle.exit(0);
+                        if crate::session::QUIT_ACKED.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+                        let quit = handle
+                            .dialog()
+                            .message("A tab has uncommitted changes and the window is not responding. Roll them back and quit, or cancel and keep working?")
+                            .title("Uncommitted changes")
+                            .kind(MessageDialogKind::Warning)
+                            .buttons(MessageDialogButtons::OkCancelCustom("Roll back and quit".into(), "Cancel".into()))
+                            .blocking_show();
+                        if quit {
+                            crate::session::rollback_all_and_quit(&handle);
                         }
                     });
                 }

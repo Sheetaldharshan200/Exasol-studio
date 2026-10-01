@@ -36,9 +36,30 @@ pub struct TabSession {
     pub last_used: Instant,
 }
 
-/// The tab sessions of the whole app: tab id → its session.
+/// A tab's slot. `None` until its session opens, and again once closed — a
+/// handle cloned before a close sees `None` (or a newer slot in the map) and
+/// never runs on the closed session.
+pub type Slot = Arc<Mutex<Option<TabSession>>>;
+
+/// The tab sessions of the whole app: tab id → its slot.
 #[derive(Default)]
-pub struct TabSessions(Mutex<HashMap<String, Arc<Mutex<TabSession>>>>);
+pub struct TabSessions(Mutex<HashMap<String, Slot>>);
+
+/// A locked, open session that is still the tab's current one.
+pub struct Checkout(OwnedMutexGuard<Option<TabSession>>, Slot);
+
+impl std::ops::Deref for Checkout {
+    type Target = TabSession;
+    fn deref(&self) -> &TabSession {
+        self.0.as_ref().expect("a checkout always holds an open session")
+    }
+}
+
+impl std::ops::DerefMut for Checkout {
+    fn deref_mut(&mut self) -> &mut TabSession {
+        self.0.as_mut().expect("a checkout always holds an open session")
+    }
+}
 
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -51,6 +72,8 @@ pub struct SessionInfo {
     /// The most recent of them, for "what would be lost".
     pub recent: Vec<String>,
     pub idle_seconds: u64,
+    /// Whether the tab has a session at all yet.
+    pub open: bool,
 }
 
 const RECENT: usize = 10;
@@ -80,7 +103,7 @@ pub fn open_schema_sql(schema: &str) -> String {
     format!("OPEN SCHEMA \"{}\"", schema.replace('"', "\"\""))
 }
 
-fn info_of(s: &mut TabSession) -> SessionInfo {
+fn info_of(s: &TabSession) -> SessionInfo {
     SessionInfo {
         session_id: s.session_id.clone(),
         schema: s.conn.attributes().current_schema().map(str::to_string),
@@ -88,73 +111,108 @@ fn info_of(s: &mut TabSession) -> SessionInfo {
         changes: if s.manual { s.changes.len() } else { 0 },
         recent: s.changes.iter().rev().take(RECENT).cloned().collect(),
         idle_seconds: s.last_used.elapsed().as_secs(),
+        open: true,
     }
 }
 
+fn closed_info() -> SessionInfo {
+    SessionInfo { session_id: None, schema: None, autocommit: true, changes: 0, recent: Vec::new(), idle_seconds: 0, open: false }
+}
+
 impl TabSessions {
-    /// The tab's session, opened on first use. A tab that moved to another
-    /// connection gets a fresh session (the old one is rolled back and closed).
-    pub async fn checkout(&self, state: &AppState, profile_id: &str, tab_id: &str) -> AppResult<OwnedMutexGuard<TabSession>> {
-        let existing = self.0.lock().await.get(tab_id).cloned();
-        if let Some(slot) = existing {
-            let guard = slot.lock_owned().await;
-            if guard.profile_id == profile_id {
-                return Ok(guard);
-            }
-            drop(guard);
-            self.close(tab_id, false).await;
-        }
-        let pool = require_pool(state, profile_id).await?;
-        let mut conn = pool.acquire().await.map_err(|e| AppError::Storage(e.to_string()))?.detach();
-        if let Some(secs) = query_timeout_seconds(state, profile_id) {
-            let _ = conn.attributes_mut().set_query_timeout(secs);
-        }
-        let session_id = sqlx_exasol::query("SELECT TO_CHAR(CURRENT_SESSION)")
-            .fetch_one(&mut conn)
-            .await
-            .ok()
-            .and_then(|r| r.try_get::<String, _>(0).ok());
-        // The connection's own default decides how a new tab starts.
-        let manual = !autocommit_default(state, profile_id);
-        if manual {
-            ExaTransactionManager::begin(&mut conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
-        }
-        let slot = Arc::new(Mutex::new(TabSession {
-            profile_id: profile_id.to_string(),
-            conn,
-            session_id,
-            manual,
-            changes: Vec::new(),
-            last_used: Instant::now(),
-        }));
-        self.0.lock().await.insert(tab_id.to_string(), slot.clone());
-        Ok(slot.lock_owned().await)
+    /// The tab's slot, created (empty) atomically if it has none.
+    async fn slot(&self, tab_id: &str) -> Slot {
+        self.0.lock().await.entry(tab_id.to_string()).or_insert_with(|| Arc::new(Mutex::new(None))).clone()
     }
 
-    /// End a tab's session: commit or roll back what is open, then close.
-    pub async fn close(&self, tab_id: &str, commit: bool) {
+    async fn is_current(&self, tab_id: &str, slot: &Slot) -> bool {
+        self.0.lock().await.get(tab_id).is_some_and(|cur| Arc::ptr_eq(cur, slot))
+    }
+
+    /// The tab's session, opened on first use. Get-or-create is atomic per tab
+    /// (the slot's lock), and a handle whose slot was closed and replaced
+    /// meanwhile retries on the current one. A tab whose session belongs to
+    /// another connection is refused while it holds uncommitted changes.
+    pub async fn checkout(&self, state: &AppState, profile_id: &str, tab_id: &str) -> AppResult<Checkout> {
+        loop {
+            let slot = self.slot(tab_id).await;
+            let mut guard = slot.clone().lock_owned().await;
+            if !self.is_current(tab_id, &slot).await {
+                continue; // closed and replaced while we waited
+            }
+            if let Some(s) = guard.as_mut() {
+                if s.profile_id == profile_id {
+                    return Ok(Checkout(guard, slot));
+                }
+                if s.manual && !s.changes.is_empty() {
+                    return Err(AppError::InvalidSettings(format!(
+                        "This tab has {} uncommitted change{} on another connection — commit or roll back there first.",
+                        s.changes.len(),
+                        if s.changes.len() == 1 { "" } else { "s" }
+                    )));
+                }
+                // Nothing to lose: the old session goes, a new one opens below.
+                *guard = None;
+            }
+            *guard = Some(open_session(state, profile_id).await?);
+            return Ok(Checkout(guard, slot));
+        }
+    }
+
+    /// The tab's session state without opening one.
+    pub async fn peek(&self, tab_id: &str) -> SessionInfo {
+        let slot = self.0.lock().await.get(tab_id).cloned();
+        match slot {
+            Some(slot) => slot.lock().await.as_ref().map(info_of).unwrap_or_else(closed_info),
+            None => closed_info(),
+        }
+    }
+
+    /// End a tab's session: commit or roll back what is open, then close. A
+    /// commit that fails is an error — the person chose Commit and must hear
+    /// that it may not have happened.
+    pub async fn close(&self, tab_id: &str, commit: bool) -> AppResult<()> {
         let slot = self.0.lock().await.remove(tab_id);
-        if let Some(slot) = slot {
-            let mut s = slot.lock().await;
-            if s.manual {
-                let _ = if commit { ExaTransactionManager::commit(&mut s.conn).await } else { ExaTransactionManager::rollback(&mut s.conn).await };
+        let Some(slot) = slot else { return Ok(()) };
+        let mut guard = slot.lock().await;
+        let Some(mut s) = guard.take() else { return Ok(()) };
+        if s.manual {
+            if commit {
+                if let Err(e) = ExaTransactionManager::commit(&mut s.conn).await {
+                    return Err(AppError::Storage(format!(
+                        "The commit could not be confirmed ({e}). The changes may or may not have been committed — check before redoing them."
+                    )));
+                }
+            } else {
+                let _ = ExaTransactionManager::rollback(&mut s.conn).await;
             }
         }
+        Ok(())
     }
 
     /// Forget a session whose connection is gone; the server rolled it back.
-    pub async fn drop_lost(&self, tab_id: &str) {
-        self.0.lock().await.remove(tab_id);
+    /// Only this slot is removed — never a newer session of the same tab.
+    pub async fn forget_lost(&self, tab_id: &str, mut co: Checkout) {
+        *co.0 = None;
+        let slot = co.1.clone();
+        drop(co);
+        let mut map = self.0.lock().await;
+        if map.get(tab_id).is_some_and(|cur| Arc::ptr_eq(cur, &slot)) {
+            map.remove(tab_id);
+        }
     }
 
-    /// Every session of a profile that holds uncommitted changes.
-    pub async fn with_changes(&self, profile_id: Option<&str>) -> Vec<(String, usize)> {
-        let slots: Vec<(String, Arc<Mutex<TabSession>>)> = self.0.lock().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    /// Every session (optionally of one profile) with uncommitted changes —
+    /// read from the sessions themselves, never a cache. Waits for a session
+    /// that is busy running.
+    pub async fn with_changes(&self, profile_id: Option<&str>) -> Vec<(String, usize, Vec<String>)> {
+        let slots: Vec<(String, Slot)> = self.0.lock().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
         let mut out = Vec::new();
         for (tab, slot) in slots {
-            let s = slot.lock().await;
-            if s.manual && !s.changes.is_empty() && profile_id.is_none_or(|p| s.profile_id == p) {
-                out.push((tab, s.changes.len()));
+            if let Some(s) = slot.lock().await.as_ref() {
+                if s.manual && !s.changes.is_empty() && profile_id.is_none_or(|p| s.profile_id == p) {
+                    out.push((tab, s.changes.len(), s.changes.iter().rev().take(RECENT).cloned().collect()));
+                }
             }
         }
         out
@@ -166,27 +224,49 @@ impl TabSessions {
     pub fn might_have_changes_now(&self) -> bool {
         let Ok(map) = self.0.try_lock() else { return true };
         map.values().any(|slot| match slot.try_lock() {
-            Ok(s) => s.manual && !s.changes.is_empty(),
+            Ok(s) => s.as_ref().is_some_and(|s| s.manual && !s.changes.is_empty()),
             Err(_) => true,
         })
     }
 
-    /// Close every session of a profile (disconnect), rolling back what is open.
+    /// Close every session of a profile (disconnect), rolling back what is
+    /// open. The map lock is released before any session is waited on.
     pub async fn close_profile(&self, profile_id: &str) {
-        let tabs: Vec<String> = {
-            let map = self.0.lock().await;
-            let mut tabs = Vec::new();
-            for (k, v) in map.iter() {
-                if v.lock().await.profile_id == profile_id {
-                    tabs.push(k.clone());
-                }
+        let slots: Vec<(String, Slot)> = self.0.lock().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        for (tab, slot) in slots {
+            let belongs = slot.lock().await.as_ref().is_some_and(|s| s.profile_id == profile_id);
+            if belongs {
+                let _ = self.close(&tab, false).await;
             }
-            tabs
-        };
-        for t in tabs {
-            self.close(&t, false).await;
         }
     }
+
+    /// Roll back and close everything (quit after the person chose so).
+    pub async fn close_all(&self) {
+        let tabs: Vec<String> = self.0.lock().await.keys().cloned().collect();
+        for t in tabs {
+            let _ = self.close(&t, false).await;
+        }
+    }
+}
+
+async fn open_session(state: &AppState, profile_id: &str) -> AppResult<TabSession> {
+    let pool = require_pool(state, profile_id).await?;
+    let mut conn = pool.acquire().await.map_err(|e| AppError::Storage(e.to_string()))?.detach();
+    if let Some(secs) = query_timeout_seconds(state, profile_id) {
+        let _ = conn.attributes_mut().set_query_timeout(secs);
+    }
+    let session_id = sqlx_exasol::query("SELECT TO_CHAR(CURRENT_SESSION)")
+        .fetch_one(&mut conn)
+        .await
+        .ok()
+        .and_then(|r| r.try_get::<String, _>(0).ok());
+    // The connection's own default decides how a new tab starts.
+    let manual = !autocommit_default(state, profile_id);
+    if manual {
+        ExaTransactionManager::begin(&mut conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
+    }
+    Ok(TabSession { profile_id: profile_id.to_string(), conn, session_id, manual, changes: Vec::new(), last_used: Instant::now() })
 }
 
 /// After a run on the session: count what changed, keep manual mode open.
@@ -226,9 +306,9 @@ fn query_timeout_seconds(state: &AppState, profile_id: &str) -> Option<u64> {
 // ── Commands ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn session_info(state: State<'_, AppState>, profile_id: String, tab_id: String) -> AppResult<SessionInfo> {
-    let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
-    Ok(info_of(&mut s))
+pub async fn session_info(state: State<'_, AppState>, tab_id: String) -> AppResult<SessionInfo> {
+    // Never opens a session: looking at a tab must not move it anywhere.
+    Ok(state.sessions.peek(&tab_id).await)
 }
 
 /// Switch a tab between autocommit and manual commit. Leaving manual mode
@@ -237,7 +317,7 @@ pub async fn session_info(state: State<'_, AppState>, profile_id: String, tab_id
 pub async fn session_set_autocommit(state: State<'_, AppState>, profile_id: String, tab_id: String, on: bool) -> AppResult<SessionInfo> {
     let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
     if on == !s.manual {
-        return Ok(info_of(&mut s));
+        return Ok(info_of(&s));
     }
     if on {
         if !s.changes.is_empty() {
@@ -254,7 +334,7 @@ pub async fn session_set_autocommit(state: State<'_, AppState>, profile_id: Stri
         s.manual = true;
         s.changes.clear();
     }
-    Ok(info_of(&mut s))
+    Ok(info_of(&s))
 }
 
 #[tauri::command]
@@ -265,7 +345,7 @@ pub async fn session_commit(state: State<'_, AppState>, profile_id: String, tab_
         s.changes.clear();
         ExaTransactionManager::begin(&mut s.conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
     }
-    Ok(info_of(&mut s))
+    Ok(info_of(&s))
 }
 
 #[tauri::command]
@@ -276,7 +356,7 @@ pub async fn session_rollback(state: State<'_, AppState>, profile_id: String, ta
         s.changes.clear();
         ExaTransactionManager::begin(&mut s.conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
     }
-    Ok(info_of(&mut s))
+    Ok(info_of(&s))
 }
 
 /// The schema selector: OPEN SCHEMA on the tab's own session.
@@ -285,14 +365,13 @@ pub async fn session_set_schema(state: State<'_, AppState>, profile_id: String, 
     let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
     s.conn.execute(AssertSqlSafe(open_schema_sql(&schema))).await.map_err(|e| AppError::Storage(e.to_string()))?;
     s.last_used = Instant::now();
-    Ok(info_of(&mut s))
+    Ok(info_of(&s))
 }
 
 /// Close a tab's session; `commit` decides what happens to open changes.
 #[tauri::command]
 pub async fn session_close(state: State<'_, AppState>, tab_id: String, commit: bool) -> AppResult<()> {
-    state.sessions.close(&tab_id, commit).await;
-    Ok(())
+    state.sessions.close(&tab_id, commit).await
 }
 
 /// Set once the person has settled open transactions and asked to quit.
@@ -304,6 +383,18 @@ pub static QUIT_ACKED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 #[tauri::command]
 pub fn quit_ack() {
     QUIT_ACKED.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Roll back every tab's open work and quit — the native fallback dialog's
+/// choice when the page cannot answer.
+pub fn rollback_all_and_quit(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        use tauri::Manager;
+        handle.state::<AppState>().sessions.close_all().await;
+        QUIT_CONFIRMED.store(true, std::sync::atomic::Ordering::SeqCst);
+        handle.exit(0);
+    });
 }
 
 /// Quit for real: open transactions were committed or rolled back.
@@ -318,6 +409,7 @@ pub fn quit_app(app: tauri::AppHandle) {
 pub struct PendingTab {
     pub tab_id: String,
     pub changes: usize,
+    pub recent: Vec<String>,
 }
 
 /// Tabs with uncommitted changes — for disconnect and quit.
@@ -328,7 +420,7 @@ pub async fn sessions_with_changes(state: State<'_, AppState>, profile_id: Optio
         .with_changes(profile_id.as_deref())
         .await
         .into_iter()
-        .map(|(tab_id, changes)| PendingTab { tab_id, changes })
+        .map(|(tab_id, changes, recent)| PendingTab { tab_id, changes, recent })
         .collect())
 }
 
@@ -384,7 +476,7 @@ mod live {
             s.manual = true;
             s.conn.execute("INSERT INTO T VALUES (1)").await.unwrap();
             after_run(&mut s, &[("INSERT INTO T VALUES (1)".into(), true)]).await;
-            assert_eq!(info_of(&mut s).changes, 1);
+            assert_eq!(info_of(&s).changes, 1);
             ExaTransactionManager::rollback(&mut s.conn).await.unwrap();
             ExaTransactionManager::begin(&mut s.conn, None).await.unwrap();
             s.changes.clear();
@@ -400,7 +492,7 @@ mod live {
         }
         assert_eq!(crate::query::fetch_all_rows(&pool, "SELECT COUNT(*) FROM STUDIO_SESSION_PROBE.T").await.unwrap()[0][0], serde_json::json!(1));
 
-        state.sessions.close("tab-1", false).await;
+        state.sessions.close("tab-1", false).await.unwrap();
         pool.execute("DROP SCHEMA STUDIO_SESSION_PROBE CASCADE").await.ok();
         pool.close().await;
         let _ = std::fs::remove_dir_all(dir);

@@ -1116,7 +1116,7 @@ export function ExasolStudio({
       ? `${name} is managed by Exasol Studio and will be re-created automatically while the local database is installed. To remove it permanently, uninstall the local database from the Marketplace. Remove it for now anyway?`
       : `Remove ${name}? The saved connection and its password are deleted. The database itself is not touched.`;
     if (!window.confirm(message)) return;
-    if (connections.some((c) => c.profile.id === profileId)) onDisconnect(profileId);
+    if (connections.some((c) => c.profile.id === profileId) && !(await disconnectSafely(profileId))) return;
     try {
       await ipc.deleteConnectionProfile(profileId);
     } catch (e) {
@@ -2602,10 +2602,11 @@ export function ExasolStudio({
   });
   // Disconnecting ends every tab session of that connection: tabs with
   // uncommitted changes ask Commit / Roll back / Cancel first.
-  function disconnectSafely(profileId?: string) {
+  async function disconnectSafely(profileId?: string): Promise<boolean> {
     const id = profileId ?? connection?.profile.id;
-    if (!id) return onDisconnect(profileId);
-    void tabSession.settleBeforeClose(tabsFor(id).filter((t) => t.view === "sql"), "Disconnect with uncommitted changes?").then((ok) => ok && onDisconnect(profileId));
+    if (id && !(await tabSession.settleBeforeClose(tabsFor(id).filter((t) => t.view === "sql"), "Disconnect with uncommitted changes?"))) return false;
+    onDisconnect(profileId);
+    return true;
   }
   const pushNotification = (kind: "info" | "warning" | "success", title: string, body: string) =>
     window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind, title, body } }));
@@ -2783,7 +2784,8 @@ export function ExasolStudio({
     connection,
     activeTab,
     maxRows,
-    execIfCurrent: (gen, pid, name, sql, rows) => execSqlIfCurrent(gen, pid, name, sql, rows, false, false),
+    execIfCurrent: (gen, pid, name, sql, rows, split, addHistory, progressId, tabId) =>
+      execSqlIfCurrent(gen, pid, name, sql, rows, split ?? false, addHistory ?? false, progressId, tabId),
     genOf,
     patchTab,
     onError: (message) => pushNotification("warning", "Page load failed", message),
@@ -3405,12 +3407,11 @@ export function ExasolStudio({
             {!isSpecialTab ? (
               <>
                 <Selector
-                  value={schema || "schema"}
+                  value={(tabSession.info?.open ? tabSession.info.schema : schema) || "schema"}
                   options={schemas}
-                  onChange={(s) => {
-                    setSchema(s);
-                    void tabSession.setSchema(s);
-                  }}
+                  // The tab's own session decides: the label changes only
+                  // once OPEN SCHEMA succeeded there.
+                  onChange={(s) => void tabSession.setSchema(s)}
                   disabled={!connected || schemas.length === 0}
                   label="Schema"
                 />
@@ -3631,7 +3632,7 @@ export function ExasolStudio({
                   sectionNonce={activeTab.connSectionNonce}
                   onSaved={() => onSaved?.()}
                   onOpenObject={(schema, name) => openObject(connection.profile.id, schema, name)}
-                  onDisconnect={() => onDisconnect(connection.profile.id)}
+                  onDisconnect={() => void disconnectSafely(connection.profile.id)}
                   onConnect={() => void connectSaved(connection.profile.id)}
                   onRefresh={() => refreshConnection(connection.profile.id)}
                 />
