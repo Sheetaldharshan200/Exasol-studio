@@ -70,6 +70,12 @@ export function useResultPaging(opts: {
     connectionName: string,
     sql: string,
     maxRows: number,
+    split?: boolean,
+    addHistory?: boolean,
+    progressId?: string,
+    /** The tab whose session the page runs on: a manual-commit tab's own
+     *  uncommitted rows are only visible to that session. */
+    tabId?: string,
   ) => Promise<ExecuteResponse | null>;
   genOf: (profileId: string) => number;
   /** Only ever asked to write the result of a page turn. */
@@ -94,7 +100,7 @@ export function useResultPaging(opts: {
     try {
       const pid = conn.profile.id;
       const at = gen(pid);
-      const res = await exec(at, pid, conn.profile.name, pageSql(entry.plan, page, rows), rows);
+      const res = await exec(at, pid, conn.profile.name, pageSql(entry.plan, page, rows), rows, true, true, undefined, tabId);
       const cur = cache.current.get(tabId);
       if (res && gen(pid) === at && res.success && cur && cur.sql === base) cachePage(cur, page, res);
     } catch {
@@ -166,7 +172,7 @@ export function useResultPaging(opts: {
         // stay out of the execution log; the original run is already in it.
         const pid = connection.profile.id;
         const at = genOf(pid);
-        const res = await execIfCurrent(at, pid, connection.profile.name, pageSql(entry.plan, page, maxRows), maxRows);
+        const res = await execIfCurrent(at, pid, connection.profile.name, pageSql(entry.plan, page, maxRows), maxRows, true, true, undefined, activeTab.id);
         // A run started while this page was queued or in flight: its rows own
         // the tab now, and this answer is dropped (or was never fetched).
         if (!res || genOf(pid) !== at) return;

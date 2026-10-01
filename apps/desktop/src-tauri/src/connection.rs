@@ -277,7 +277,18 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
         });
     }
 
-    state.pools.write().await.insert(profile_id.clone(), pool);
+    // Two connects can race (a double click, a reload re-adopting while the
+    // person clicks). The first pool in wins; a later one is closed rather
+    // than overwriting it and leaking its connections and keep-alive task.
+    {
+        let mut pools = state.pools.write().await;
+        if let Some(existing) = pools.get(&profile_id).cloned() {
+            drop(pools);
+            pool.close().await;
+            return read_server_info(&existing).await;
+        }
+        pools.insert(profile_id.clone(), pool.clone());
+    }
     touch_profile(&state, &profile_id)?;
     Ok(info)
 }
@@ -296,6 +307,9 @@ async fn run_hook_sql(pool: &ExaPool, sql: &str) {
 
 #[tauri::command]
 pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppResult<()> {
+    // The tabs' own sessions go first. The UI has already asked Commit / Roll
+    // back for any with uncommitted changes; what is still open rolls back.
+    state.sessions.close_profile(&profile_id).await;
     if let Some(pool) = state.pools.write().await.remove(&profile_id) {
         let settings = crate::connection_settings::read_settings(&state, &profile_id);
         // Run SQL at Disconnect (Connection Hooks) while the pool still lives.

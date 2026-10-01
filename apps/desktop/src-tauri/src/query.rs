@@ -468,6 +468,7 @@ pub async fn execute_sql(
     split: Option<bool>,
     add_history: Option<bool>,
     progress_id: Option<String>,
+    tab_id: Option<String>,
 ) -> AppResult<ExecuteResponse> {
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
@@ -506,11 +507,23 @@ pub async fn execute_sql(
         // ONE connection for the whole batch: statements from a script share a
         // session, so ALTER SESSION (e.g. PROFILE), transactions, and session
         // functions like CURRENT_SESSION behave like they do in any SQL client.
-        // Round-robining the pool per statement broke the query profiler.
-        let mut conn = pool
-            .acquire()
-            .await
-            .map_err(|e| crate::error::AppError::Storage(e.to_string()))?;
+        // A SQL tab runs on ITS OWN session (session.rs), so state set by one
+        // run — OPEN SCHEMA, ALTER SESSION, an open transaction — is there for
+        // the next; other callers borrow a pooled connection for the batch.
+        let tab = tab_id.as_deref().filter(|t| !t.is_empty());
+        let mut session_guard = match tab {
+            Some(t) => Some(state.sessions.checkout(&state, &profile_id, t).await?),
+            None => None,
+        };
+        let mut pooled = match session_guard {
+            Some(_) => None,
+            None => Some(pool.acquire().await.map_err(|e| crate::error::AppError::Storage(e.to_string()))?),
+        };
+        let conn: &mut sqlx_exasol::ExaConnection = match (session_guard.as_mut(), pooled.as_mut()) {
+            (Some(g), _) => &mut g.conn,
+            (None, Some(p)) => &mut **p,
+            (None, None) => unreachable!("one of the two connections is always set"),
+        };
 
         // Baseline for the Query Performance view: the session + the statement
         // id BEFORE the user's statements run. Since profiling is on per session
@@ -600,7 +613,7 @@ pub async fn execute_sql(
         let mut success = true;
         for (i, statement) in statements.iter().enumerate() {
             stmt_idx.store(i, std::sync::atomic::Ordering::Relaxed);
-            let result = run_statement(&pool, &mut conn, statement, max_rows).await;
+            let result = run_statement(&pool, conn, statement, max_rows).await;
             let failed = result.error.is_some();
             results.push(result);
             if failed {
@@ -609,6 +622,27 @@ pub async fn execute_sql(
             }
         }
         done.store(true, std::sync::atomic::Ordering::Relaxed);
+        // The tab's session: count what is now uncommitted; a session whose
+        // connection died is forgotten — the server rolled its work back.
+        if let (Some(g), Some(t)) = (session_guard.as_mut(), tab) {
+            let lost = results.iter().filter_map(|r| r.error.as_deref()).any(crate::session::is_connection_lost);
+            if lost {
+                let had = g.changes.len();
+                drop(session_guard.take());
+                state.sessions.drop_lost(t).await;
+                if let Some(r) = results.iter_mut().rev().find(|r| r.error.is_some()) {
+                    let note = if had > 0 {
+                        format!(" The session was lost; its {had} uncommitted change{} were rolled back by the server. The next run opens a new session.", if had == 1 { "" } else { "s" })
+                    } else {
+                        " The session was lost; the next run opens a new session.".to_string()
+                    };
+                    r.error = r.error.take().map(|e| format!("{e}{note}"));
+                }
+            } else {
+                let ran: Vec<(String, bool)> = results.iter().map(|r| (r.statement.clone(), r.error.is_none())).collect();
+                crate::session::after_run(g, &ran).await;
+            }
+        }
         if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {
             // No longer cancellable — the batch has finished.
             if let Ok(mut m) = state.running_queries.lock() {

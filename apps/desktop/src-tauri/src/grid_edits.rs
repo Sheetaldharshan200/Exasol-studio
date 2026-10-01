@@ -47,13 +47,28 @@ pub async fn apply_row_edits(
     profile_id: String,
     connection_name: String,
     statements: Vec<String>,
+    tab_id: Option<String>,
 ) -> AppResult<EditOutcome> {
     if statements.is_empty() {
         return Ok(EditOutcome { ok: true, failed_index: None, error: None });
     }
-    let pool = require_pool(&state, &profile_id).await?;
     let started = std::time::Instant::now();
-    let outcome = apply_batch(&pool, &statements).await?;
+    // A tab in manual-commit mode: the edits join ITS open transaction and
+    // show as uncommitted, instead of committing on their own.
+    let manual_tab = match tab_id.as_deref().filter(|t| !t.is_empty()) {
+        Some(t) => {
+            let guard = state.sessions.checkout(&state, &profile_id, t).await?;
+            if guard.manual { Some(guard) } else { None }
+        }
+        None => None,
+    };
+    let outcome = match manual_tab {
+        Some(mut s) => apply_in_open_transaction(&mut s, &statements).await,
+        None => {
+            let pool = require_pool(&state, &profile_id).await?;
+            apply_batch(&pool, &statements).await?
+        }
+    };
     let _ = history::append_history(
         &state,
         HistoryEntry {
@@ -73,6 +88,33 @@ pub async fn apply_row_edits(
         },
     );
     Ok(outcome)
+}
+
+/// Edits inside a manual-commit tab's open transaction. Exasol has no
+/// savepoints, so a change that fails or touches the wrong number of rows
+/// stops the batch and the changes before it stay in the open transaction —
+/// the message says so, and Roll back undoes all of it.
+async fn apply_in_open_transaction(s: &mut crate::session::TabSession, statements: &[String]) -> EditOutcome {
+    let mut ran = Vec::new();
+    for (i, sql) in statements.iter().enumerate() {
+        let problem = match s.conn.execute(AssertSqlSafe(sql.as_str())).await {
+            Ok(done) => affected_problem(i, done.rows_affected()),
+            Err(e) => Some(format!("Change {} failed: {e}.", i + 1)),
+        };
+        if let Some(error) = problem {
+            crate::session::after_run(s, &ran).await;
+            let note = if i > 0 {
+                format!(" The {i} change{} before it are in this tab's open transaction — Roll back undoes them.", if i == 1 { "" } else { "s" })
+            } else {
+                String::new()
+            };
+            let error = error.replace(" Nothing was saved.", "");
+            return EditOutcome { ok: false, failed_index: Some(i), error: Some(format!("{error}{note}")) };
+        }
+        ran.push((sql.clone(), true));
+    }
+    crate::session::after_run(s, &ran).await;
+    EditOutcome { ok: true, failed_index: None, error: None }
 }
 
 /// The batch in one transaction on one connection; rolled back unless every

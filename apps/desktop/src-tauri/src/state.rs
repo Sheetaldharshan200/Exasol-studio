@@ -25,6 +25,8 @@ pub struct AppState {
     /// Passwords kept for this run only (policy "this session only"):
     /// `profile_id -> password`. Never written anywhere; gone on quit.
     pub session_passwords: std::sync::Mutex<HashMap<String, String>>,
+    /// One database session per SQL tab (session.rs).
+    pub sessions: crate::session::TabSessions,
     /// ConfD (Admin API) sessions keyed by connection profile id. Credentials
     /// live ONLY here, for this app session — never returned to the frontend
     /// and never persisted (admin-api-parity spec).
@@ -40,6 +42,7 @@ impl AppState {
             master_secret: std::sync::RwLock::new(None),
             running_queries: std::sync::Mutex::new(HashMap::new()),
             session_passwords: std::sync::Mutex::new(HashMap::new()),
+            sessions: crate::session::TabSessions::default(),
             admin_sessions: std::sync::Mutex::new(HashMap::new()),
         }
     }
