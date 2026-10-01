@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 use sqlx_core::transaction::TransactionManager;
-use sqlx_exasol::{ExaConnection, ExaTransactionManager, Row};
+use sqlx_exasol::{ExaConnection, ExaTransactionManager, Executor, Row};
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -91,6 +91,35 @@ pub struct PendingTab {
     pub change_seq: u64,
 }
 
+/// A tab session found dead by the keep-alive ping.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LostSession {
+    pub tab_id: String,
+    pub profile_id: String,
+    /// Uncommitted changes the server rolled back with it.
+    pub changes: usize,
+}
+
+/// How long a keep-alive ping may wait before giving up on this round (the
+/// slot lock must not stay held by a hung socket).
+const PING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// What a keep-alive ping got back.
+pub enum Ping {
+    Answered,
+    Failed(String),
+    TimedOut,
+}
+
+/// Whether a ping proves the session is gone. Only a closed connection does:
+/// dropping a session closes its socket and the server rolls its open
+/// transaction back, so a slow answer (a timeout) or a SQL error keeps it —
+/// a dead one shows on the next ping or run.
+pub fn ping_means_lost(outcome: &Ping) -> bool {
+    matches!(outcome, Ping::Failed(e) if is_connection_lost(e))
+}
+
 /// What a close checks before it commits or rolls back.
 pub enum Fence {
     /// Nobody is asked (quit fallback, disconnect cleanup): just end it.
@@ -116,7 +145,7 @@ pub fn counts_as_change(statement: &str) -> bool {
 /// Whether an error means the connection itself is gone (not a SQL error).
 pub fn is_connection_lost(error: &str) -> bool {
     let e = error.to_ascii_lowercase();
-    ["connection closed", "connection reset", "broken pipe", "websocket", "connection refused", "timed out while", "os error 54", "os error 32", "unexpected eof", "session does not exist", "session has been killed"]
+    ["connection closed", "connection reset", "broken pipe", "websocket", "connection refused", "timed out while", "os error 54", "os error 32", "unexpected eof", "peer closed connection", "error communicating with database", "session does not exist", "session has been killed"]
         .iter()
         .any(|p| e.contains(p))
 }
@@ -257,6 +286,39 @@ impl TabSessions {
         out
     }
 
+    /// Ping every tab session idle for at least `idle_for`, so a dropped
+    /// connection is found while nobody is using the tab, not on the next run.
+    /// A session busy with a statement is skipped (its run reports for
+    /// itself), and the ping never counts as use: the idle-transaction
+    /// warning still sees the tab as idle. Dead sessions are removed and
+    /// returned, with the changes the server rolled back.
+    pub async fn ping_idle(&self, idle_for: std::time::Duration) -> Vec<LostSession> {
+        let slots: Vec<(String, Slot)> = self.0.lock().await.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut lost = Vec::new();
+        for (tab, slot) in slots {
+            let Ok(mut guard) = slot.clone().try_lock_owned() else { continue };
+            let Some(s) = guard.as_mut() else { continue };
+            if s.last_used.elapsed() < idle_for {
+                continue;
+            }
+            let outcome = match tokio::time::timeout(PING_TIMEOUT, s.conn.execute("SELECT 1")).await {
+                Ok(Ok(_)) => Ping::Answered,
+                Ok(Err(e)) => Ping::Failed(e.to_string()),
+                Err(_) => Ping::TimedOut,
+            };
+            if !ping_means_lost(&outcome) {
+                continue;
+            }
+            lost.push(LostSession { tab_id: tab.clone(), profile_id: s.profile_id.clone(), changes: if s.manual { s.changes.len() } else { 0 } });
+            *guard = None;
+            let mut map = self.0.lock().await;
+            if map.get(&tab).is_some_and(|cur| Arc::ptr_eq(cur, &slot)) {
+                map.remove(&tab);
+            }
+        }
+        lost
+    }
+
     /// Whether quitting might end uncommitted work — without waiting. A session
     /// busy with a running statement cannot be inspected, so it counts as yes:
     /// asking once too often is fine, losing work silently is not.
@@ -372,7 +434,7 @@ fn query_timeout_seconds(state: &AppState, profile_id: &str) -> Option<u64> {
 mod live {
     //! EXASOL_LIVE_PORT=8565 EXASOL_LIVE_PASSWORD=… cargo test --lib session::live -- --ignored
     use super::*;
-    use sqlx_exasol::{AssertSqlSafe, Executor};
+    use sqlx_exasol::AssertSqlSafe;
 
     async fn scalar(s: &mut TabSession, sql: &str) -> String {
         sqlx_exasol::query(AssertSqlSafe(sql.to_string())).fetch_one(&mut s.conn).await.unwrap().try_get::<String, _>(0).unwrap()
@@ -460,6 +522,22 @@ mod live {
         assert!(!state.sessions.peek("tab-1").await.open);
         assert_eq!(crate::query::fetch_all_rows(&pool, "SELECT COUNT(*) FROM STUDIO_SESSION_PROBE.T").await.unwrap()[0][0], serde_json::json!(2));
 
+        // Keep-alive: a healthy idle session survives the ping; one killed on
+        // the server is found, removed, and reported with its lost changes.
+        let sid = {
+            let mut s = state.sessions.checkout(&state, "live", "tab-2").await.unwrap();
+            s.manual = true;
+            s.changes.push("INSERT …".into());
+            s.session_id.clone().unwrap()
+        };
+        assert!(state.sessions.ping_idle(std::time::Duration::ZERO).await.is_empty());
+        assert!(state.sessions.peek("tab-2").await.open);
+        pool.execute(AssertSqlSafe(format!("KILL SESSION {sid}"))).await.unwrap();
+        let lost = state.sessions.ping_idle(std::time::Duration::ZERO).await;
+        assert_eq!(lost.len(), 1, "killed session not detected");
+        assert_eq!((lost[0].tab_id.as_str(), lost[0].changes), ("tab-2", 1));
+        assert!(!state.sessions.peek("tab-2").await.open);
+
         state.sessions.close("tab-1", false, Fence::Force).await.unwrap();
         pool.execute("DROP SCHEMA STUDIO_SESSION_PROBE CASCADE").await.ok();
         pool.close().await;
@@ -483,6 +561,8 @@ mod tests {
 
     #[test]
     fn a_lost_connection_is_told_apart_from_a_sql_error() {
+        // What sqlx-exasol reports for a session killed on the server (TLS).
+        assert!(is_connection_lost("error communicating with database: peer closed connection without sending TLS close_notify: https://docs.rs/rustls/latest/rustls/manual/_03_howto/index.html#unexpected-eof"));
         assert!(is_connection_lost("error communicating with database: Connection reset by peer (os error 54)"));
         assert!(is_connection_lost("WebSocket protocol error: Connection closed normally"));
         assert!(!is_connection_lost("[42000] object TABLE_X not found [line 1, column 15]"));
@@ -523,6 +603,15 @@ mod tests {
         assert!(is_txn_end("/* x */ COMMIT"));
         assert!(!is_txn_end("SELECT 'COMMIT'"));
         assert!(!is_txn_end(""));
+    }
+
+    #[test]
+    fn only_a_closed_connection_makes_a_ping_drop_the_session() {
+        assert!(!ping_means_lost(&Ping::Answered));
+        assert!(!ping_means_lost(&Ping::TimedOut), "slow is not dead: dropping would roll back live work");
+        assert!(!ping_means_lost(&Ping::Failed("[42000] insufficient privileges".into())));
+        assert!(ping_means_lost(&Ping::Failed("error communicating with database: peer closed connection without sending TLS close_notify".into())));
+        assert!(ping_means_lost(&Ping::Failed("WebSocket protocol error: Connection closed normally".into())));
     }
 
     #[test]

@@ -48,3 +48,10 @@ export function onlyReads(statements: readonly string[]): boolean {
     })
   );
 }
+
+/** The notice when the keep-alive finds a tab's session dead (session.rs). */
+export function sessionLostNotice(tabTitle: string | null | undefined, changes: number): string {
+  const where = tabTitle ? `"${tabTitle}"` : "A closed tab";
+  const lost = changes > 0 ? ` The server rolled back its ${changes} uncommitted change${changes === 1 ? "" : "s"}.` : "";
+  return `${where} lost its database session.${lost} The next run opens a new session.`;
+}

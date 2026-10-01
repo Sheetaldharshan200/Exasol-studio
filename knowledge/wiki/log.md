@@ -267,3 +267,8 @@ Gotchas worth keeping:
 - **Empty result headers** are described on the tab's own connection: a table created in an uncommitted transaction is invisible to the pool.
 - Removed the unwired "Ask when auto-commit is off" and "Commit batch size" settings: Studio always asks, grid edits are atomic.
 - Three Codex passes (12 + 9 + 2 findings). The third: close must remove the map entry while still holding the slot lock, and the fence is a monotonic `change_seq`, not a count (COMMIT; INSERT keeps the count the same). One "critical" (mid-batch COMMIT drops manual mode) was disproved by the driver source and a live test; the rest were fixed.
+
+## [2026-10-01] gotcha | tab-session keep-alive — a killed Exasol session reports a TLS EOF, and a slow ping must not drop the session
+- A session killed on the server (`KILL SESSION`) surfaces in sqlx-exasol as `error communicating with database: peer closed connection without sending TLS close_notify … #unexpected-eof`. `is_connection_lost` did not match it, so dead sessions were never detected. It now matches "peer closed connection" and "error communicating with database" (sqlx's transport-error prefix). Live-tested.
+- The keep-alive drops a session only on a closed connection, never on a timeout: dropping closes the socket and the server rolls back the open transaction, so a slow answer would destroy live work. The ping does not touch `last_used`, so the idle-transaction warning still fires.
+- The health dot for a connected profile is `connection_alive` (pool acquire + `SELECT 1`, 5s each). All connections busy counts as alive.

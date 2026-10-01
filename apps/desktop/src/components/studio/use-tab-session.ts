@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, ipc, type SessionInfo } from "@/lib/ipc";
-import { idleWarning, pendingSummary } from "@/lib/txn-state";
+import { idleWarning, pendingSummary, sessionLostNotice } from "@/lib/txn-state";
 import type { PendingClose } from "./UncommittedDialog";
 
 type Conn = { profile: { id: string; name: string } } | null;
@@ -137,6 +137,29 @@ export function useTabSession(opts: {
     [notify, refresh],
   );
   settleRef.current = settleBeforeClose;
+
+  // The keep-alive found a tab's session dead: say so, with what was lost.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let alive = true;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<{ tabId: string; changes: number }>("studio:session-lost", ({ payload }) => {
+          const tab = ctx.current.allSqlTabs().find((t) => t.id === payload.tabId);
+          ctx.current.notify("warning", "Session lost", sessionLostNotice(tab?.title, payload.changes));
+          void refresh(payload.tabId);
+        }),
+      )
+      .then((u) => {
+        if (alive) unlisten = u;
+        else u();
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, [refresh]);
 
   // Quitting with uncommitted work: Rust holds the window and asks; the
   // answer comes from the same dialog closing a tab uses.

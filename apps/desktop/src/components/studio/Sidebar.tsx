@@ -134,10 +134,10 @@ function ConnectionSection({
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           title={`${connection.profile.host}:${connection.profile.port}`}
         >
-          {/* Status dot = liveness, not focus: solid green while the server
-              answers, red if a connected server stops responding. */}
+          {/* Status dot = liveness, not focus: solid green while the database
+              runs a query, red once it stops (checked every 20s). */}
           <span
-            title={live === false ? "Server not responding" : "Connected — server is up"}
+            title={live === false ? "Connected, but the database does not answer queries" : "Connected — the database answers queries"}
             className={cn(
               "h-2 w-2 shrink-0 rounded-full",
               live === false
@@ -399,8 +399,9 @@ export function Sidebar({
 }) {
   const [showSearch, setShowSearch] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  // Server reachability per profile id (TCP ping, refreshed every 20s):
-  // green dot = server up, red = a live connection whose server went away,
+  // Server reachability per profile id, refreshed every 20s: a connected
+  // profile must still run a query (login + SELECT 1); a saved one only needs
+  // its port to answer. Green dot = up, red = a live connection that died,
   // grey = saved server that is not running. `undefined` = not probed yet.
   const [reachable, setReachable] = useState<Record<string, boolean>>({});
   // Connection accent colors (Properties → Color and Border → show in name).
@@ -434,10 +435,10 @@ export function Sidebar({
   const pingTargets = useMemo(
     () =>
       [
-        ...connections.map((c) => ({ id: c.profile.id, host: c.profile.host, port: c.profile.port })),
+        ...connections.map((c) => ({ id: c.profile.id, host: c.profile.host, port: c.profile.port, connected: true })),
         ...profiles
           .filter((p) => !connections.some((c) => c.profile.id === p.id) && !p.username.startsWith("STUDIO_MCP_"))
-          .map((p) => ({ id: p.id, host: p.host, port: p.port })),
+          .map((p) => ({ id: p.id, host: p.host, port: p.port, connected: false })),
       ],
     [connections, profiles],
   );
@@ -445,10 +446,9 @@ export function Sidebar({
     let cancelled = false;
     const probe = () => {
       for (const t of pingTargets) {
-        ipc
-          .pingServer(t.host, t.port)
-          .then((r) => {
-            if (!cancelled) setReachable((prev) => (prev[t.id] === r.reachable ? prev : { ...prev, [t.id]: r.reachable }));
+        (t.connected ? ipc.connectionAlive(t.id) : ipc.pingServer(t.host, t.port).then((r) => r.reachable))
+          .then((up) => {
+            if (!cancelled) setReachable((prev) => (prev[t.id] === up ? prev : { ...prev, [t.id]: up }));
           })
           .catch(() => {
             if (!cancelled) setReachable((prev) => (prev[t.id] === false ? prev : { ...prev, [t.id]: false }));

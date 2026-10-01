@@ -334,6 +334,39 @@ pub async fn list_open_connections(state: State<'_, AppState>) -> AppResult<Vec<
 }
 
 /// Fetch the pool for a connected profile, or a typed error if not connected.
+/// Whether a connected profile's database still answers a query — more
+/// than "the port is open": the session logs in and runs `SELECT 1`. A pool
+/// whose connections are all busy (a long query) counts as alive.
+#[tauri::command]
+pub async fn connection_alive(state: State<'_, AppState>, profile_id: String) -> AppResult<bool> {
+    let pool = require_pool(&state, &profile_id).await?;
+    let wait = std::time::Duration::from_secs(5);
+    let probe = match tokio::time::timeout(wait, pool.acquire()).await {
+        Err(_) => Probe::Busy,
+        Ok(Err(_)) => Probe::CannotConnect,
+        Ok(Ok(mut conn)) => match tokio::time::timeout(wait, sqlx_exasol::query("SELECT 1").execute(&mut *conn)).await {
+            Ok(Ok(_)) => Probe::Answered,
+            _ => Probe::NoAnswer,
+        },
+    };
+    Ok(probe_alive(probe))
+}
+
+/// What the health probe found.
+#[derive(Debug, Clone, Copy)]
+pub enum Probe {
+    /// Every pooled connection is in use (a long query): the database is working.
+    Busy,
+    CannotConnect,
+    Answered,
+    /// Connected, but `SELECT 1` failed or did not answer in time.
+    NoAnswer,
+}
+
+pub fn probe_alive(probe: Probe) -> bool {
+    matches!(probe, Probe::Busy | Probe::Answered)
+}
+
 pub async fn require_pool(state: &AppState, profile_id: &str) -> AppResult<ExaPool> {
     state
         .pools
@@ -346,6 +379,15 @@ pub async fn require_pool(state: &AppState, profile_id: &str) -> AppResult<ExaPo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_health_dot_is_green_only_for_a_database_that_works() {
+        use super::{probe_alive, Probe};
+        assert!(probe_alive(Probe::Answered));
+        assert!(probe_alive(Probe::Busy), "all connections busy with a long query is alive");
+        assert!(!probe_alive(Probe::CannotConnect));
+        assert!(!probe_alive(Probe::NoAnswer));
+    }
+
     use super::*;
 
     fn profile(compression: bool) -> ConnectionProfile {
