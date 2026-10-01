@@ -473,7 +473,18 @@ export function ConnectionPropertiesTab({
       await ipc.connectionSettingsSet(profileId, settings);
       // The assistant's copy of a connection follows its safety settings
       // before "Applied" shows (App also re-grants on the event).
-      if (connectedLive) await agentClient.grantConnection(profileId).catch(() => undefined);
+      if (connectedLive) {
+        try {
+          await agentClient.grantConnection(profileId);
+        } catch (e) {
+          // Saved, but the assistant may still hold the old settings: say so
+          // instead of showing "Applied".
+          setSavedSnapshot(JSON.stringify(settings));
+          window.dispatchEvent(new CustomEvent("studio:conn-settings-changed", { detail: { profileId } }));
+          setError(`Saved, but the assistant could not be updated (${errorMessage(e)}). Disconnect and connect again before using the assistant on it.`);
+          return;
+        }
+      }
       setSavedSnapshot(JSON.stringify(settings));
       window.dispatchEvent(new CustomEvent("studio:conn-settings-changed", { detail: { profileId } }));
       onSaved?.();
@@ -675,7 +686,7 @@ export function ConnectionPropertiesTab({
                 onChange={(v) => patch((n) => { n.safety.env = v as Environment; })}
               />
             </SectionCard>
-            <SectionCard title="Read-only connection" description="Only statements that change nothing run: queries, session settings and transaction control. Inserts, updates, DDL, grants, scripts, data loads and grid edits are refused before they reach the server — in the editor, notebooks, object menus and the assistant. A query can still call a UDF that writes elsewhere: for a guarantee, sign in with a database user that has only SELECT privileges.">
+            <SectionCard title="Read-only connection" description="Only statements that change nothing run: queries, session settings and transaction control. Inserts, updates, DDL, grants, scripts, data loads and grid edits are refused before they reach the server — in the editor, notebooks, object menus and the assistant. A query can still call a UDF that writes elsewhere, and BucketFS uses its own credentials: for a guarantee, sign in with a database user that has only SELECT privileges.">
               <CheckRow label="Read-only connection" checked={s.safety.readOnly} onChange={(v) => patch((n) => { n.safety.readOnly = v; })} />
             </SectionCard>
             <SectionCard title="Confirm destructive statements" description="Ask before running DROP, TRUNCATE, and DELETE or UPDATE without a WHERE clause. Always on for Prod.">

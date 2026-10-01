@@ -292,3 +292,10 @@ Three designs, two rejected by review — worth knowing before touching TLS here
 - "preferred" falls back to plaintext when TLS fails (a downgrade an attacker can force); it and "disabled" connect as "required".
 - Exasol's self-signed certificates name the node's host names and IPs (SAN), e.g. Personal: localhost, 127.0.0.1, ::1.
 - Four Codex passes (10 + 2 + 5 + earlier); all fixed.
+
+## [2026-10-02] security | workbench-hardening phase 5 — production safety and the limits of a client-side read-only
+- **Read-only is enforced where SQL leaves the app, not at the Run button:** `safety.rs` in `execute_sql` and grid edits; connect/disconnect hooks and the keep-alive statement skip writes; marketplace DB scripts, ExaPump loads (now resolved from the profile in Rust), commits and Admin API jobs that change state are refused. In agent-core, both the write paths and the read paths (`query`/`queryIsolated` — EXECUTE SCRIPT runs through them) check, with one classifier (`sql-kind.ts`).
+- **What it cannot promise:** a SELECT may call a UDF that writes elsewhere, and BucketFS has its own credentials. The UI says so: a SELECT-only database user is the guarantee.
+- **Confirmation at the boundary:** destructive statements (DROP, TRUNCATE, DELETE/UPDATE without a top-level WHERE) are confirmed in `ipc.executeSql` via `lib/run-guard.ts`, with the connection's settings read per run — confirming in the Run button missed notebooks and menu runs, and cached settings raced a connection switch.
+- **The agent's grant is a snapshot:** changing Safety settings re-grants it, Apply waits for that and reports a failure instead of "Applied".
+- Two Codex passes (8 + 3 findings), all fixed.
