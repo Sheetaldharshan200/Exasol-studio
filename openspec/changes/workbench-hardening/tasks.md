@@ -49,8 +49,8 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 - [x] 2.9 Confirm on tab close / disconnect / app quit with uncommitted work, honouring `askWhenUncommitted` / `askAlways` (`lib/tab-close.ts`, `lib.rs` `CloseRequested`; test: `tab-close.test.ts`).
 - [x] 2.10 Lost session detected on use and reported as rolled back; `lossHandling` re-executes only scripts that only read (`session.rs`, `lib/txn-state.ts`; test: both).
 - [x] 2.11 `connect` idempotent under concurrency; the losing pool is closed (`connection.rs`; test: `connection.rs`).
-- [ ] 2.12 Keep-alive pings every tab session; failures surface as "connection lost" (`connection.rs`). PARTIAL: a dead tab session is detected on its next use and reported; idle tab sessions are not pinged yet.
-- [ ] 2.13 Health dot reflects session liveness, not just TCP reachability (`Sidebar.tsx`, `TitleBar.tsx`).
+- [x] 2.12 Keep-alive pings every tab session; failures surface as "connection lost" (`session.rs::ping_idle`, `session_cmd.rs::start_keepalive`; live test in `session.rs`). Idle sessions are pinged each minute; a dead one is removed and the page is told what the server rolled back.
+- [x] 2.13 Health dot reflects session liveness, not just TCP reachability (`connection.rs::connection_alive`, `Sidebar.tsx`). The title bar has no dot; the sidebar is the one place it shows.
 - [x] 2.14 Session id shown is the tab's session (`ExasolStudio.tsx` status bar).
 
 ## Phase 3 — Every setting applied or removed

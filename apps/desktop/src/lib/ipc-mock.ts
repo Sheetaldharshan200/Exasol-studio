@@ -727,6 +727,8 @@ export async function mockInvoke(
       return { sessionId: null, schema: null, autocommit: true, changes: 0, recent: [], idleSeconds: 0, open: false, changeSeq: 0 };
     case "sessions_with_changes":
       return [];
+    case "connection_alive":
+      return true;
     case "session_close":
     case "quit_ack":
       return null;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { IDLE_WARNING_MINUTES, idleWarning, pendingSummary, uncommittedLabel } from "./txn-state.ts";
+import { IDLE_WARNING_MINUTES, idleWarning, pendingSummary, sessionLostNotice, uncommittedLabel } from "./txn-state.ts";
 
 const info = (over: Partial<Parameters<typeof uncommittedLabel>[0] & object>) => ({ sessionId: "1", schema: null, autocommit: false, changes: 0, recent: [], idleSeconds: 0, open: true, changeSeq: 0, ...over });
 
@@ -31,4 +31,12 @@ test("only a script that only reads is re-run after a lost session", async () =>
   assert.equal(onlyReads([]), false);
   assert.equal(sessionWasLost("Connection reset. The session was lost; the next run opens a new session."), true);
   assert.equal(sessionWasLost("[42000] syntax error"), false);
+});
+
+test("a lost session says what the server rolled back, and only then", () => {
+  assert.equal(sessionLostNotice("Query 1", 0), '"Query 1" lost its database session. The next run opens a new session.');
+  assert.match(sessionLostNotice("Query 1", 1), /rolled back its 1 uncommitted change\./);
+  assert.match(sessionLostNotice("Q", 3), /3 uncommitted changes\./);
+  assert.match(sessionLostNotice(undefined, 2), /^A closed tab lost/);
+  assert.match(sessionLostNotice("", 0), /^A closed tab lost/);
 });

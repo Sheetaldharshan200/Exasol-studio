@@ -116,3 +116,18 @@ pub fn quit_app(app: tauri::AppHandle) {
 pub async fn sessions_with_changes(state: State<'_, AppState>, profile_id: Option<String>) -> AppResult<Vec<PendingTab>> {
     Ok(state.sessions.with_changes(profile_id.as_deref()).await)
 }
+
+/// Every minute, ping the tab sessions that sat idle for a minute; tell the
+/// page about any that died ("studio:session-lost").
+pub fn start_keepalive(app: tauri::AppHandle) {
+    use tauri::{Emitter, Manager};
+    tauri::async_runtime::spawn(async move {
+        let every = std::time::Duration::from_secs(60);
+        loop {
+            tokio::time::sleep(every).await;
+            for lost in app.state::<AppState>().sessions.ping_idle(every).await {
+                let _ = app.emit("studio:session-lost", &lost);
+            }
+        }
+    });
+}

@@ -637,6 +637,8 @@ export const ipc = {
     call<ConnectionProfile>("save_connection_profile", { profile: { id: "", ...profile } }),
   deleteConnectionProfile: (profileId: string) =>
     call<void>("delete_connection_profile", { profileId }),
+  /** Whether a connected profile still runs a query (not just an open port). */
+  connectionAlive: (profileId: string) => call<boolean>("connection_alive", { profileId }),
   pingServer: (host: string, port: number) =>
     call<PingResult>("ping_server", { host, port }),
   testConnection: (profile: Omit<ConnectionProfile, "id"> & { id?: string }) =>

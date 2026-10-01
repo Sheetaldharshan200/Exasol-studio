@@ -93,6 +93,7 @@ pub fn run() {
             app.manage(crate::cloudflared::CloudflaredProc::default());
             crate::updates::start(app.handle().clone());
             crate::verified_lock::start(app.handle().clone());
+            crate::session_cmd::start_keepalive(app.handle().clone());
             app.manage(crate::local_database::LocalBootstrap::default());
             crate::local_llm::auto_start_if_enabled(app.handle());
             crate::local_database::auto_start_if_installed(app.handle());
@@ -202,6 +203,7 @@ pub fn run() {
             files::save_text_as,
             files::open_text_file,
             session_cmd::session_info,
+            connection::connection_alive,
             session_cmd::session_set_autocommit,
             session_cmd::session_commit,
             session_cmd::session_rollback,
