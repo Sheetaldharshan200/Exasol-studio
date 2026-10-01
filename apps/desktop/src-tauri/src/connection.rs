@@ -462,10 +462,11 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
             return read_server_info(&existing).await;
         }
         pools.insert(profile_id.clone(), pool.clone());
-    }
-    // A pinned connection's tunnel lives as long as its pool.
-    if let (Some(t), Ok(mut tunnels)) = (tunnel, state.pin_tunnels.lock()) {
-        tunnels.insert(profile_id.clone(), t);
+        // A pinned connection's tunnel lives as long as its pool: registered
+        // under the same lock, so a disconnect sees both or neither.
+        if let (Some(t), Ok(mut tunnels)) = (tunnel, state.pin_tunnels.lock()) {
+            tunnels.insert(profile_id.clone(), t);
+        }
     }
     touch_profile(&state, &profile_id)?;
     Ok(info)
@@ -484,15 +485,24 @@ async fn run_hook_sql(pool: &ExaPool, sql: &str) -> Vec<String> {
 
 #[tauri::command]
 pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppResult<Vec<String>> {
+    Ok(close_connection(&state, &profile_id).await)
+}
+
+/// End a connection: its tab sessions, its disconnect hooks, its pool, and —
+/// for a pinned one — its tunnel. Disconnect and profile deletion both come
+/// here. Returns the disconnect hook statements that failed.
+pub(crate) async fn close_connection(state: &AppState, profile_id: &str) -> Vec<String> {
     let mut hook_errors = Vec::new();
     // The tabs' own sessions go first. The UI has already asked Commit / Roll
     // back for any with uncommitted changes; what is still open rolls back.
-    state.sessions.close_profile(&profile_id).await;
-    let removed = state.pools.write().await.remove(&profile_id);
-    // The pool is closed below; then its tunnel (if pinned) stops.
-    let tunnel = state.pin_tunnels.lock().ok().and_then(|mut t| t.remove(&profile_id));
+    state.sessions.close_profile(profile_id).await;
+    let (removed, tunnel) = {
+        let mut pools = state.pools.write().await;
+        let tunnel = state.pin_tunnels.lock().ok().and_then(|mut t| t.remove(profile_id));
+        (pools.remove(profile_id), tunnel)
+    };
     if let Some(pool) = removed {
-        let settings = crate::connection_settings::read_settings(&state, &profile_id);
+        let settings = crate::connection_settings::read_settings(state, profile_id);
         // Run SQL at Disconnect (Connection Hooks) while the pool still lives.
         if crate::connection_settings::bool_at(&settings, &["hooks", "disconnectEnabled"]).unwrap_or(false) {
             if let Some(sql) = crate::connection_settings::str_at(&settings, &["hooks", "disconnectSql"]) {
@@ -503,11 +513,12 @@ pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppRe
         // Password policy "Clear at Disconnect": blank the stored password so
         // the next connect prompts for it.
         if crate::connection_settings::str_at(&settings, &["auth", "passwordPolicy"]) == Some("clear") {
-            let _ = crate::profiles::clear_profile_password(&state, &profile_id);
+            let _ = crate::profiles::clear_profile_password(state, profile_id);
         }
     }
+    // After the pool: the tunnel's relays end with it.
     drop(tunnel);
-    Ok(hook_errors)
+    hook_errors
 }
 
 #[tauri::command]

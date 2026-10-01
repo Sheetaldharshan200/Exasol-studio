@@ -199,11 +199,20 @@ pub(crate) fn pinned_client(pin: &str) -> Result<Arc<rustls::ClientConfig>, Stri
 /// presents instead. (Not the protection — that is `PinVerifier` on every
 /// tunnelled connection.)
 pub async fn check_pin(host: &str, port: u16, pin: &str, timeout: Duration) -> crate::error::AppResult<()> {
-    let actual = server_fingerprint(&first_host(host), port, timeout).await.map_err(crate::error::AppError::Database)?;
-    if actual == pin {
-        Ok(())
-    } else {
-        Err(crate::error::AppError::CertificateChanged { expected: pin.to_string(), actual })
+    // Any node of a range that presents the pin is enough (the tunnel fails
+    // over the same way); otherwise the mismatch, else why none answered.
+    let mut changed = None;
+    let mut unreachable = String::new();
+    for node in expand_hosts(host) {
+        match server_fingerprint(&node, port, timeout).await {
+            Ok(fp) if fp == pin => return Ok(()),
+            Ok(fp) => changed = changed.or(Some(fp)),
+            Err(e) => unreachable = e,
+        }
+    }
+    match changed {
+        Some(actual) => Err(crate::error::AppError::CertificateChanged { expected: pin.to_string(), actual }),
+        None => Err(crate::error::AppError::Database(unreachable)),
     }
 }
 
