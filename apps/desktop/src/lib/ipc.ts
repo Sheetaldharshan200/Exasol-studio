@@ -800,6 +800,8 @@ export const ipc = {
   openExternal: (url: string) => call<null>("open_external", { url }),
   /** System Settings → Privacy & Security → Local Network (macOS). */
   openLocalNetworkSettings: () => call<null>("open_local_network_settings"),
+  /** Keep a password for this run only; removes any saved copy. Empty forgets it. */
+  setSessionPassword: (profileId: string, password: string) => call<null>("set_session_password", { profileId, password }),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
   gitCommit: (message: string, stageAll?: boolean) => call<string>("git_commit", { message, stageAll }),

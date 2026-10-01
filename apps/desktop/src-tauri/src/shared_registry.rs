@@ -188,7 +188,9 @@ fn secret_read_command(id: &str) -> Option<Vec<String>> {
             "-NoProfile".into(),
             "-Command".into(),
             format!(
-                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];(New-Object Windows.Security.Credentials.PasswordVault).Retrieve('{SERVICE}','{id}').Password"
+                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];(New-Object Windows.Security.Credentials.PasswordVault).Retrieve({},{}).Password",
+                ps_quote(SERVICE),
+                ps_quote(id)
             ),
         ]),
         _ => None,
@@ -205,31 +207,83 @@ fn secret_delete_command(id: &str) -> Option<Vec<String>> {
             "-NoProfile".into(),
             "-Command".into(),
             format!(
-                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];$v=New-Object Windows.Security.Credentials.PasswordVault;$v.Remove($v.Retrieve('{SERVICE}','{id}'))"
+                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];$v=New-Object Windows.Security.Credentials.PasswordVault;$v.Remove($v.Retrieve({},{}))",
+                ps_quote(SERVICE),
+                ps_quote(id)
             ),
         ]),
         _ => None,
     }
 }
 
-fn secret_write_command(id: &str, secret: &str) -> Option<Vec<String>> {
-    let own = |parts: &[&str]| Some(parts.iter().map(|s| s.to_string()).collect());
+/// How a secret is written: the program and its arguments, and what goes on
+/// its stdin. The secret is ONLY ever in `stdin` — never an argument and never
+/// script text — so no process listing can show it and no quote in a password
+/// can change what runs.
+pub(crate) struct SecretWrite {
+    pub argv: Vec<String>,
+    pub stdin: String,
+}
+
+/// A word for `security -i`: double-quoted, with `\` and `"` escaped, which is
+/// how its line reader takes a literal. `$` and backticks are not special there.
+pub(crate) fn security_quote(word: &str) -> String {
+    format!("\"{}\"", word.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// A literal inside a PowerShell single-quoted string: `'` doubles.
+pub(crate) fn ps_quote(word: &str) -> String {
+    format!("'{}'", word.replace('\'', "''"))
+}
+
+fn secret_write_command(id: &str, secret: &str) -> Option<SecretWrite> {
+    let owned = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     match std::env::consts::OS {
-        // -U updates in place; without it a repeat save fails and silently
-        // keeps the old password.
-        "macos" => own(&["security", "add-generic-password", "-a", id, "-s", SERVICE, "-w", secret, "-U"]),
-        // The secret goes on stdin, never the command line, so it cannot be
-        // read out of a process listing.
-        "linux" => own(&["secret-tool", "store", "--label", "exa", "service", SERVICE, "account", id]),
-        "windows" => Some(vec![
-            "powershell".into(),
-            "-NoProfile".into(),
-            "-Command".into(),
-            format!(
-                "[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];$v=New-Object Windows.Security.Credentials.PasswordVault;$v.Add((New-Object Windows.Security.Credentials.PasswordCredential('{SERVICE}','{id}','{secret}')))"
+        // `security -i` reads its commands from stdin, so the password travels
+        // there. The item is still created by /usr/bin/security, as the exa CLI
+        // expects (same keychain ACL), and -U updates in place — without it a
+        // repeat save fails and silently keeps the old password.
+        "macos" => Some(SecretWrite {
+            argv: owned(&["security", "-i"]),
+            stdin: format!(
+                "add-generic-password -a {} -s {} -w {} -U\n",
+                security_quote(id),
+                security_quote(SERVICE),
+                security_quote(secret)
             ),
-        ]),
+        }),
+        "linux" => Some(SecretWrite {
+            argv: owned(&["secret-tool", "store", "--label", "exa", "service", SERVICE, "account", id]),
+            stdin: secret.to_string(),
+        }),
+        // The same PasswordVault entry the CLI uses, with the password read from
+        // stdin inside the script rather than pasted into it.
+        "windows" => Some(SecretWrite {
+            argv: vec![
+                "powershell".into(),
+                "-NoProfile".into(),
+                "-NonInteractive".into(),
+                "-Command".into(),
+                format!(
+                    "$p=[Console]::In.ReadToEnd();[void][Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime];$v=New-Object Windows.Security.Credentials.PasswordVault;$v.Add((New-Object Windows.Security.Credentials.PasswordCredential({},{},$p)))",
+                    ps_quote(SERVICE),
+                    ps_quote(id)
+                ),
+            ],
+            stdin: secret.to_string(),
+        }),
         _ => None,
+    }
+}
+
+/// Delete one secret from the OS credential store (best effort).
+pub(crate) fn delete_credential(id: &str) {
+    if let Some(cmd) = secret_delete_command(id) {
+        let _ = crate::process::command(&cmd[0])
+            .args(&cmd[1..])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output();
     }
 }
 
@@ -251,22 +305,24 @@ pub fn read_credential(id: &str) -> Option<String> {
 
 /// Store a shared secret. Returns false when it could only be written to a
 /// file, so callers can tell the user their machine has no credential store.
-fn write_credential(id: &str, secret: &str) -> bool {
+pub(crate) fn write_credential(id: &str, secret: &str) -> bool {
+    // A newline would end the `security -i` command early; such a password
+    // cannot be stored safely in the shared keychain, so it is not.
+    if secret.contains('\n') || secret.contains('\r') {
+        return false;
+    }
     if let Some(cmd) = secret_write_command(id, secret) {
         use std::io::Write;
         use std::process::Stdio;
-        let needs_stdin = std::env::consts::OS == "linux";
-        let spawned = crate::process::command(&cmd[0])
-            .args(&cmd[1..])
-            .stdin(if needs_stdin { Stdio::piped() } else { Stdio::null() })
+        let spawned = crate::process::command(&cmd.argv[0])
+            .args(&cmd.argv[1..])
+            .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn();
         if let Ok(mut child) = spawned {
-            if needs_stdin {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(secret.as_bytes());
-                }
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(cmd.stdin.as_bytes());
             }
             if child.wait().map(|s| s.success()).unwrap_or(false) {
                 // Never leave a plaintext copy behind once the store has it.
@@ -439,18 +495,57 @@ mod tests {
             assert!(joined.contains("my-db"), "read must use the connection id: {joined}");
         }
         if let Some(write) = secret_write_command("my-db", "hunter2") {
-            let joined = write.join(" ");
-            assert!(joined.contains(SERVICE));
-            assert!(joined.contains("my-db"));
+            let argv = write.argv.join(" ");
+            let all = format!("{argv} {}", write.stdin);
+            assert!(all.contains(SERVICE));
+            assert!(all.contains("my-db"));
+            // On every platform the secret is on stdin only: never in an
+            // argument, so `ps` cannot show it.
+            assert!(!argv.contains("hunter2"), "secret must not be on the command line: {argv}");
+            assert!(write.stdin.contains("hunter2"));
             if std::env::consts::OS == "macos" {
                 // Without -U a repeat save fails and keeps the old password.
-                assert!(write.iter().any(|p| p == "-U"), "keychain write must update in place");
-            }
-            if std::env::consts::OS == "linux" {
-                // The secret goes on stdin so it cannot be read from `ps`.
-                assert!(!joined.contains("hunter2"), "secret must not be on the command line");
+                assert!(write.stdin.contains(" -U"), "keychain write must update in place");
             }
         }
+    }
+
+    /// Run by hand: `cargo test --lib keychain_round_trip -- --ignored`.
+    /// Writes, reads and deletes a throwaway item in the real OS store.
+    #[test]
+    #[ignore]
+    fn keychain_round_trip_with_awkward_passwords() {
+        for pw in ["p'q\"r s", "a\\b$x`y", "plain"] {
+            assert!(write_credential("studio-probe-xyz", pw), "write {pw}");
+            assert_eq!(read_credential("studio-probe-xyz").as_deref(), Some(pw));
+        }
+        assert!(!write_credential("studio-probe-xyz", "two\nlines"), "a newline is refused");
+        if let Some(cmd) = secret_delete_command("studio-probe-xyz") {
+            let _ = std::process::Command::new(&cmd[0]).args(&cmd[1..]).output();
+        }
+    }
+
+    #[test]
+    fn quoting_keeps_any_password_a_literal() {
+        // `security -i`: verified on macOS 26 — a\\b → a\b, quotes and spaces survive.
+        assert_eq!(security_quote("plain"), "\"plain\"");
+        assert_eq!(security_quote("p'q\"r s"), "\"p'q\\\"r s\"");
+        assert_eq!(security_quote("a\\b$x`y"), "\"a\\\\b$x`y\"");
+        // PowerShell single-quoted: only ' is special, and it doubles.
+        assert_eq!(ps_quote("my-db"), "'my-db'");
+        assert_eq!(ps_quote("o'brien"), "'o''brien'");
+    }
+
+    #[test]
+    fn a_windows_script_never_contains_the_password() {
+        // Built for any OS: the Windows script must read the password from stdin.
+        let script = format!(
+            "$p=[Console]::In.ReadToEnd();x({},{},$p)",
+            ps_quote(SERVICE),
+            ps_quote("my-db")
+        );
+        assert!(script.contains("[Console]::In.ReadToEnd()"));
+        assert!(!script.contains("hunter2"));
     }
 
     #[test]
