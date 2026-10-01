@@ -77,6 +77,7 @@ pub async fn session_set_schema(state: State<'_, AppState>, profile_id: String, 
     let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
     s.conn.execute(AssertSqlSafe(open_schema_sql(&schema))).await.map_err(|e| AppError::Storage(e.to_string()))?;
     s.last_used = Instant::now();
+    crate::session::note_schema(&state, &s);
     Ok(info_of(&s))
 }
 

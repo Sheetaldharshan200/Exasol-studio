@@ -55,19 +55,19 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 
 ## Phase 3 — Every setting applied or removed
 
-- [ ] 3.1 Max rows: any value 1–100,000 from Settings is honoured (`ExasolStudio.tsx`; test: `lib/exec-settings.test.ts`).
-- [ ] 3.2 Stop on error / warning / no rows read by `run()` (`lib/exec-settings.ts`; test: same).
-- [ ] 3.3 Split statements setting honoured (`run()`).
-- [ ] 3.4 `nullText` used by the grid and the cell viewer (`ResultsGrid.tsx`).
-- [ ] 3.5 `connectTimeoutMs` / per-connection login timeout applied to TCP probe and pool acquire (`connection.rs`; test: `connection.rs`).
-- [ ] 3.6 `fetchSize` applied where the driver supports it, else removed.
-- [ ] 3.7 `showSystemSchemas` hides SYS / EXA_STATISTICS in the tree (`tree-model.ts`; test: `tree-model.test.ts`).
-- [ ] 3.8 `keepHistory` / `historyLimit` honoured (`history.rs`; test: `history.rs`).
-- [ ] 3.9 `sqlEditor.initialSchema` honoured on connect (`session.rs`).
-- [ ] 3.10 `uiFontSize` / `uiDensity` applied or removed.
-- [ ] 3.11 Remove settings with no behaviour behind them and no plan: delimited.* , qualifiers.*, sqlTemplates (until 7.x), queryBuilder.*, commitBatchSize, textToBinary, isolation, statementDelimiter, metadataStaleDays, qbDefaultLimit, duplicated global tls/compression/defaultSchema (`ConnectionPropertiesTab.tsx`, `SettingsWindow.tsx`; test: a settings-inventory test asserting every key has a reader — `lib/settings-inventory.test.ts`).
-- [ ] 3.12 Driver-properties rows become editable key/value pairs that reach the driver, or are removed.
-- [ ] 3.13 Connection URL preview shows the real DSN (TLS, schema, fingerprint), password masked (`lib/connection-url.ts`; test: `connection-url.test.ts`).
+- [x] 3.1 Max rows: any value 1–100,000 from Settings is honoured (`ExasolStudio.tsx`; test: `lib/exec-settings.test.ts`). Any value 1–100,000; the toolbar shows the current value next to the presets.
+- [x] 3.2 Stop on error / warning / no rows read by `run()` (`lib/exec-settings.ts`; test: same). Stop on error and stop on no rows reach the backend (`query.rs::StopPolicy`, tested); "Stop on SQL warning" removed — the driver reports no warnings. Error position/statement markers implemented (`lib/error-markers.ts`, tested).
+- [x] 3.3 Split statements setting honoured (`run()`). `splitsFor` in `lib/exec-settings.ts`; also a toolbar toggle.
+- [x] 3.4 `nullText` used by the grid and the cell viewer (`ResultsGrid.tsx`). Grid and cell viewer through `NullTextContext`; `lib/null-label.test.ts`.
+- [x] 3.5 `connectTimeoutMs` / per-connection login timeout applied to TCP probe and pool acquire (`connection.rs`; test: `connection.rs`). Global connect timeout (no per-connection one exists) for the TCP probe and pool acquire/login; `connection.rs` test.
+- [x] 3.6 `fetchSize` applied where the driver supports it, else removed. Removed: the driver's fetch size is a byte budget, not rows; max rows already caps a run.
+- [x] 3.7 `showSystemSchemas` hides SYS / EXA_STATISTICS in the tree (`tree-model.ts`; test: `tree-model.test.ts`). Default on (the folder always showed); `features/workbench/tree-folders.ts`, tested in `tree-model.test.ts`.
+- [x] 3.8 `keepHistory` / `historyLimit` honoured (`history.rs`; test: `history.rs`). Was a fixed 300; `history.rs` test.
+- [x] 3.9 `sqlEditor.initialSchema` honoured on connect (`session.rs`). default / none / most recently used, applied when a tab session opens; `session.rs` test.
+- [x] 3.10 `uiFontSize` / `uiDensity` applied or removed. Removed: the UI uses fixed pixel sizes, so neither could do anything.
+- [x] 3.11 Remove settings with no behaviour behind them and no plan: delimited.* , qualifiers.*, sqlTemplates (until 7.x), queryBuilder.*, commitBatchSize, textToBinary, isolation, statementDelimiter, metadataStaleDays, qbDefaultLimit, duplicated global tls/compression/defaultSchema (`ConnectionPropertiesTab.tsx`, `SettingsWindow.tsx`; test: a settings-inventory test asserting every key has a reader — `lib/settings-inventory.test.ts`). Global and per-connection; retired app keys (incl. a plaintext `aiApiKey`) scrubbed from disk, retired connection keys dropped on load; `lib/settings-inventory.test.ts` covers both.
+- [x] 3.12 Driver-properties rows become editable key/value pairs that reach the driver, or are removed. The two parameters that reach the driver stay editable (pool size, query timeout); the fake `clientname`, the duplicated encryption/compression and `fetchsize` rows and the disabled "Edited" checkbox are gone.
+- [x] 3.13 Connection URL preview shows the real DSN (TLS, schema, fingerprint), password masked (`lib/connection-url.ts`; test: `connection-url.test.ts`). `lib/connection-url.ts` mirrors `build_connect_options`; fingerprint support ready for 4.1.
 
 ## Phase 4 — Connection essentials
 

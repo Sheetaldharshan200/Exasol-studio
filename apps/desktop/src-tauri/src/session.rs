@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use serde::Serialize;
 use sqlx_core::transaction::TransactionManager;
-use sqlx_exasol::{ExaConnection, ExaTransactionManager, Executor, Row};
+use sqlx_exasol::{AssertSqlSafe, ExaConnection, ExaTransactionManager, Executor, Row};
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -362,12 +362,41 @@ async fn open_session(state: &AppState, profile_id: &str) -> AppResult<TabSessio
         .await
         .ok()
         .and_then(|r| r.try_get::<String, _>(0).ok());
+    // Properties → SQL Editor → Initial schema: a pooled connection may carry
+    // another schema from earlier work, so the start is set explicitly.
+    let settings = crate::connection_settings::read_settings(state, profile_id);
+    let mode = crate::connection_settings::str_at(&settings, &["sqlEditor", "initialSchema"]).unwrap_or("default");
+    let profile_schema = crate::profiles::find_profile(state, profile_id).ok().and_then(|p| p.schema);
+    let recent = state.recent_schemas.lock().ok().and_then(|m| m.get(profile_id).cloned());
+    if let Some(sql) = initial_schema_sql(mode, profile_schema.as_deref(), recent.as_deref()) {
+        // A schema that no longer exists leaves the tab without one.
+        let _ = conn.execute(AssertSqlSafe(sql)).await;
+    }
     // The connection's own default decides how a new tab starts.
     let manual = !autocommit_default(state, profile_id);
     if manual {
         ExaTransactionManager::begin(&mut conn, None).await.map_err(|e| AppError::Storage(e.to_string()))?;
     }
     Ok(TabSession { profile_id: profile_id.to_string(), conn, session_id, manual, changes: Vec::new(), change_seq: 0, last_used: Instant::now() })
+}
+
+/// The statement that gives a new tab session its starting schema:
+/// "default" the connection's schema, "none" no schema, "recent" the schema
+/// last used on this connection (else the default).
+pub fn initial_schema_sql(mode: &str, profile_schema: Option<&str>, recent: Option<&str>) -> Option<String> {
+    let pick = |s: Option<&str>| s.map(str::trim).filter(|s| !s.is_empty()).map(open_schema_sql);
+    match mode {
+        "none" => Some("CLOSE SCHEMA".to_string()),
+        "recent" => pick(recent).or_else(|| pick(profile_schema)),
+        _ => pick(profile_schema),
+    }
+}
+
+/// Remember the schema a tab of this connection now uses ("recent").
+pub fn note_schema(state: &AppState, s: &TabSession) {
+    if let (Some(schema), Ok(mut m)) = (s.conn.attributes().current_schema(), state.recent_schemas.lock()) {
+        m.insert(s.profile_id.clone(), schema.to_string());
+    }
 }
 
 /// After a run on the session: count what changed, keep manual mode open.
@@ -434,7 +463,7 @@ fn query_timeout_seconds(state: &AppState, profile_id: &str) -> Option<u64> {
 mod live {
     //! EXASOL_LIVE_PORT=8565 EXASOL_LIVE_PASSWORD=… cargo test --lib session::live -- --ignored
     use super::*;
-    use sqlx_exasol::AssertSqlSafe;
+
 
     async fn scalar(s: &mut TabSession, sql: &str) -> String {
         sqlx_exasol::query(AssertSqlSafe(sql.to_string())).fetch_one(&mut s.conn).await.unwrap().try_get::<String, _>(0).unwrap()
@@ -612,6 +641,17 @@ mod tests {
         assert!(!ping_means_lost(&Ping::Failed("[42000] insufficient privileges".into())));
         assert!(ping_means_lost(&Ping::Failed("error communicating with database: peer closed connection without sending TLS close_notify".into())));
         assert!(ping_means_lost(&Ping::Failed("WebSocket protocol error: Connection closed normally".into())));
+    }
+
+    #[test]
+    fn a_new_tab_starts_in_the_schema_the_setting_names() {
+        assert_eq!(initial_schema_sql("default", Some("RETAIL"), Some("HR")), Some("OPEN SCHEMA \"RETAIL\"".into()));
+        assert_eq!(initial_schema_sql("default", None, Some("HR")), None, "no default: leave it");
+        assert_eq!(initial_schema_sql("none", Some("RETAIL"), None), Some("CLOSE SCHEMA".into()));
+        assert_eq!(initial_schema_sql("recent", Some("RETAIL"), Some("HR")), Some("OPEN SCHEMA \"HR\"".into()));
+        assert_eq!(initial_schema_sql("recent", Some("RETAIL"), None), Some("OPEN SCHEMA \"RETAIL\"".into()), "nothing recent yet");
+        assert_eq!(initial_schema_sql("recent", None, Some("  ")), None);
+        assert_eq!(initial_schema_sql("bogus", Some("RETAIL"), None), Some("OPEN SCHEMA \"RETAIL\"".into()), "unknown = default");
     }
 
     #[test]

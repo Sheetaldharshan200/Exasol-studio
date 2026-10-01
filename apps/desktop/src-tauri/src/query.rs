@@ -690,6 +690,7 @@ pub async fn execute_sql(
             } else {
                 let ran: Vec<(String, bool)> = results.iter().map(|r| (r.statement.clone(), r.error.is_none())).collect();
                 crate::session::after_run(g, &ran);
+                crate::session::note_schema(&state, g);
             }
         }
         if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {

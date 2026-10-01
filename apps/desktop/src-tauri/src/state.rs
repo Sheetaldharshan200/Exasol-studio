@@ -34,6 +34,9 @@ pub struct AppState {
     /// The app settings as last read or saved (settings.rs), for backend
     /// readers such as history and connect.
     pub app_settings: std::sync::RwLock<serde_json::Value>,
+    /// The schema last used per connection (SQL Editor → initial schema
+    /// "Most Recently Used"); memory only.
+    pub recent_schemas: std::sync::Mutex<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -48,6 +51,7 @@ impl AppState {
             sessions: crate::session::TabSessions::default(),
             admin_sessions: std::sync::Mutex::new(HashMap::new()),
             app_settings: std::sync::RwLock::new(serde_json::Value::Null),
+            recent_schemas: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
