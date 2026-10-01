@@ -6,18 +6,20 @@ import { ipc } from "@/lib/ipc";
 import { withConnDefaults, type ConnSettings } from "@/lib/conn-settings";
 
 export function useConnSettings(profileId: string | null | undefined): ConnSettings | null {
-  const [settings, setSettings] = useState<ConnSettings | null>(null);
+  // Keyed by profile: right after a switch, the previous connection's
+  // settings are never shown as this one's.
+  const [entry, setEntry] = useState<{ id: string; settings: ConnSettings } | null>(null);
   useEffect(() => {
     if (!profileId || profileId === "none") {
-      setSettings(null);
+      setEntry(null);
       return;
     }
     let dead = false;
     const load = () =>
       void ipc
         .connectionSettingsGet(profileId)
-        .then((raw) => !dead && setSettings(withConnDefaults(raw)))
-        .catch(() => !dead && setSettings(withConnDefaults(null)));
+        .then((raw) => !dead && setEntry({ id: profileId, settings: withConnDefaults(raw) }))
+        .catch(() => !dead && setEntry({ id: profileId, settings: withConnDefaults(null) }));
     load();
     window.addEventListener("studio:conn-settings-changed", load);
     return () => {
@@ -25,5 +27,5 @@ export function useConnSettings(profileId: string | null | undefined): ConnSetti
       window.removeEventListener("studio:conn-settings-changed", load);
     };
   }, [profileId]);
-  return settings;
+  return entry && entry.id === profileId ? entry.settings : null;
 }

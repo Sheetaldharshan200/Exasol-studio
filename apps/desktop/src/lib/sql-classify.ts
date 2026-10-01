@@ -47,7 +47,8 @@ export function classifyStatement(text: string): Classified {
   const second = words[1] ?? "";
   // ALTER SESSION changes only this session; ALTER anything else writes.
   const sessionOnly = first === "ALTER" && second === "SESSION";
-  const read = (READ_FIRST.has(first) || sessionOnly) && !/\bINTO\b/i.test(b);
+  // EXPLAIN describes a statement without running it, whatever it is.
+  const read = first === "EXPLAIN" || ((READ_FIRST.has(first) || sessionOnly) && !/\bINTO\b/i.test(b));
   let danger: Danger | undefined;
   if (first === "DROP") danger = "drop";
   else if (first === "TRUNCATE") danger = "truncate";

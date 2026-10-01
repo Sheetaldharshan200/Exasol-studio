@@ -14,10 +14,11 @@ import { SettingsModalHost } from "@/features/settings/SettingsModal";
 import { isInstallWindow } from "@/lib/install-window";
 import { InstallWindow } from "@/features/marketplace/InstallWindow";
 import { LocalSetupFloating } from "@/features/marketplace/LocalSetupFloating";
-import { ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type ServerInfo } from "@/lib/ipc";
+import { ipc, isTauri, setRunGuard, type ConnectionProfile, type PersonalLocalStatus, type ServerInfo } from "@/lib/ipc";
 import { agent as agentClient } from "@/lib/agent-client";
 import { VaultSetup, VaultUnlock } from "@/features/security/VaultScreens";
 import { ConnectPasswordDialog } from "@/features/connection/ConnectPasswordDialog";
+import { installRunGuard } from "@/lib/run-guard";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
 const SETUP_KEY = "exasol-studio-setup-done";
@@ -129,6 +130,9 @@ function MainApp() {
       void agentClient.grantConnection(c.profile.id).catch(() => grantedRef.current.delete(c.profile.id));
     }
   }, [connections]);
+  // Production safety on every run (read-only, destructive statements).
+  useEffect(() => installRunGuard({ setRunGuard, settingsOf: (id) => ipc.connectionSettingsGet(id), confirm: (q) => window.confirm(q) }), []);
+
   // A connection's Safety settings changed (say, read-only switched on): the
   // agent's copy of the grant must follow at once.
   useEffect(() => {

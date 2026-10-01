@@ -51,6 +51,10 @@ pub async fn session_set_autocommit(state: State<'_, AppState>, profile_id: Stri
 
 #[tauri::command]
 pub async fn session_commit(state: State<'_, AppState>, profile_id: String, tab_id: String) -> AppResult<SessionInfo> {
+    // Changes made before read-only was switched on are not committed now.
+    if crate::safety::read_only(&state, &profile_id) {
+        return Err(AppError::InvalidSettings("This connection is now read-only: roll back the open changes.".into()));
+    }
     let mut s = state.sessions.checkout(&state, &profile_id, &tab_id).await?;
     if s.manual {
         ExaTransactionManager::commit(&mut s.conn).await.map_err(|e| AppError::Storage(format!("Commit failed: {e}")))?;
@@ -84,6 +88,11 @@ pub async fn session_set_schema(state: State<'_, AppState>, profile_id: String, 
 /// Close a tab's session; `commit` decides what happens to open changes.
 #[tauri::command]
 pub async fn session_close(state: State<'_, AppState>, tab_id: String, commit: bool, seen: Option<u64>) -> AppResult<()> {
+    if commit {
+        if state.sessions.profile_of(&tab_id).await.is_some_and(|p| crate::safety::read_only(&state, &p)) {
+            return Err(AppError::InvalidSettings("This connection is now read-only: roll back the open changes.".into()));
+        }
+    }
     state.sessions.close(&tab_id, commit, Fence::Shown(seen)).await
 }
 
