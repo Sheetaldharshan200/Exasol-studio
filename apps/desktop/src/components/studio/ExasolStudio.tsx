@@ -2300,6 +2300,7 @@ export function ExasolStudio({
       // Cursor after a trailing ";" (common right after opening an object) yields
       // an empty statement — fall back to running the whole tab so Run always acts.
       if (!sqlToRun.trim()) sqlToRun = full;
+      const unstripped = sqlToRun;
       if (execSettings.stripComments) sqlToRun = stripSqlComments(sqlToRun);
       if (!sqlToRun.trim()) return;
 
@@ -2371,7 +2372,13 @@ export function ExasolStudio({
             const marker = errorMarker(buffer, failed.statement, failed.error, {
               position: execSettings.showErrorPos,
               statement: execSettings.showErrorStmt,
-              place: { runText: sqlToRun, runStart: runStartIn(buffer, sqlToRun, selectionStart, cursorOffset), split, index: failedIndex },
+              place: {
+                runText: unstripped,
+                runStart: runStartIn(buffer, unstripped, selectionStart, cursorOffset),
+                split,
+                index: failedIndex,
+                stripped: unstripped !== sqlToRun,
+              },
             });
             markRunError(runModel, monacoRef.current, marker);
           }

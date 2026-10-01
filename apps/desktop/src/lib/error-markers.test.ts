@@ -63,3 +63,12 @@ test("nothing to mark: both off, statement not in the buffer, or a position past
   assert.deepEqual([m.start, m.end], [0, 8], "falls back to the statement");
   assert.equal(errorMarker("x", "   ", "e", both(whole("x", 0))), null);
 });
+
+test("comments stripped before the run: the failed statement is still found", () => {
+  const buffer = "-- first\nDELETE FROM T;\n-- second\nDELETE FROM T;";
+  // The server saw "DELETE FROM T" twice; the second one failed.
+  const place: RunPlace = { runText: buffer, runStart: 0, split: true, index: 1, stripped: true };
+  const m = errorMarker(buffer, "DELETE FROM T", "lock conflict [line 1, column 13]", { position: true, statement: false, place })!;
+  assert.equal(buffer.slice(m.start, m.end), "-- second\nDELETE FROM T", "the whole statement, not a column in changed text");
+  assert.ok(m.start > buffer.indexOf("DELETE"));
+});

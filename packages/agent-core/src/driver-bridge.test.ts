@@ -88,3 +88,10 @@ test("the bridge stops where the run's execution options say", () => {
   assert.equal(halts({ stopIfEmpty: [true] }, 3, empty), false, "past the list");
   assert.equal(halts({ stopIfEmpty: [true] }, 0, { ...empty, rowCount: 2 }), false);
 });
+
+test("a lost connection ends the bridge's script even with stop on error off", () => {
+  const lost = { error: "WebSocket protocol error: Connection closed", kind: "rowCount" as const, rowCount: 0 };
+  assert.equal(halts({ stopOnError: false, lostPatterns: ["connection closed"] }, 0, lost), true);
+  assert.equal(halts({ stopOnError: false, lostPatterns: ["broken pipe"] }, 0, lost), false);
+  assert.equal(halts({ stopOnError: false }, 0, lost), false, "no patterns sent: an older Studio");
+});

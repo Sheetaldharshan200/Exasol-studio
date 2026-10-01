@@ -71,6 +71,9 @@ expect_rows <- if (is.null(req$expectRows)) list() else req$expectRows
 # after an empty result where Studio asked (stopIfEmpty, per statement).
 stop_on_error <- !isFALSE(req$stopOnError)
 stop_if_empty <- if (is.null(req$stopIfEmpty)) list() else req$stopIfEmpty
+# A lost connection ends the script even with stop-on-error off.
+lost_patterns <- if (is.null(req$lostPatterns)) character(0) else unlist(req$lostPatterns)
+is_lost <- function(msg) any(vapply(lost_patterns, function(p) grepl(p, tolower(msg), fixed = TRUE), logical(1)))
 
 # `exasol` connects through ODBC. Studio passes the driver library it manages,
 # so no system-wide odbcinst registration is ever required.
@@ -170,7 +173,7 @@ for (i in seq_along(statements)) {
   e$elapsedMs <- as.integer(as.numeric(difftime(Sys.time(), started, units = "secs")) * 1000)
   results[[length(results) + 1L]] <- e
   if (!is.null(e$error)) {
-    if (stop_on_error) break
+    if (stop_on_error || is_lost(e$error)) break
   } else if (i <= length(stop_if_empty) && isTRUE(stop_if_empty[[i]]) &&
              e$kind %in% c("resultSet", "rowCount") && e$rowCount == 0) {
     break

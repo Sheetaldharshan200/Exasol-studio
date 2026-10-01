@@ -32,11 +32,20 @@ type Request = {
   stopOnError?: boolean;
   /** Per statement: stop after it when it returns or touches no rows. */
   stopIfEmpty?: boolean[];
+  /** Lower-case error fragments meaning the connection is gone: always stop. */
+  lostPatterns?: string[];
 };
 
 /** Whether the script stops after this statement's entry. */
-export function halts(req: Pick<Request, "stopOnError" | "stopIfEmpty">, i: number, e: Pick<Entry, "error" | "kind" | "rowCount">): boolean {
-  if (e.error) return req.stopOnError !== false;
+export function halts(
+  req: Pick<Request, "stopOnError" | "stopIfEmpty" | "lostPatterns">,
+  i: number,
+  e: Pick<Entry, "error" | "kind" | "rowCount">,
+): boolean {
+  if (e.error) {
+    const err = e.error.toLowerCase();
+    return req.stopOnError !== false || (req.lostPatterns ?? []).some((p) => err.includes(p));
+  }
   return !!req.stopIfEmpty?.[i] && (e.kind === "resultSet" || e.kind === "rowCount") && e.rowCount === 0;
 }
 

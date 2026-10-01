@@ -722,6 +722,8 @@ fn execute_bridge(
         // The bridge's own loop applies the run's execution options.
         "stopOnError": stop.on_error,
         "stopIfEmpty": stop.stop_if_empty(statements),
+        // A lost connection ends the script even with stop-on-error off.
+        "lostPatterns": crate::session::LOST_CONNECTION_PATTERNS,
     });
 
     let mut cmd = crate::process::command(&runtime_bin);

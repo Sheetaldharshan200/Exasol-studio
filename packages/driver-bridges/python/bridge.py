@@ -6,10 +6,12 @@ def cell(v):
     return str(v)
 
 def halts(req, i, e):
-    """The script stops here: after an error unless stopOnError is off, or
-    after an empty result where Studio asked (stopIfEmpty, per statement)."""
+    """The script stops here: after a lost connection (lostPatterns), after an
+    error unless stopOnError is off, or after an empty result where Studio
+    asked (stopIfEmpty, per statement)."""
     if e.get("error"):
-        return req.get("stopOnError", True) is not False
+        lost = any(p in str(e["error"]).lower() for p in req.get("lostPatterns") or [])
+        return lost or req.get("stopOnError", True) is not False
     empty = req.get("stopIfEmpty") or []
     return i < len(empty) and bool(empty[i]) and e.get("kind") in ("resultSet", "rowCount") and e.get("rowCount") == 0
 
