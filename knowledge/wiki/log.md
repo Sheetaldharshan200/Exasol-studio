@@ -247,3 +247,28 @@ Panorama zooms its canvas on ctrl/⌘ + wheel (Chromium reports a trackpad pinch
 ## [2026-09-30] windows | every child process through `process::command` (CREATE_NO_WINDOW); CI compiles the crate on windows-latest
 A GUI app on Windows flashes a console window for every console child — `VBoxManage list vms`, `exasol slc list`, `python -c`, and a lasting one per sidecar (node, dash-server, llama-server, cloudflared). All 52 `Command::new` sites now go through one constructor that sets `CREATE_NO_WINDOW` on Windows. Cross-checking from macOS is not possible (aws-lc-sys and zstd-sys need a Windows C toolchain), so CI gained a `windows-check` job: `cargo check --tests` on windows-latest with the same stubbed dist as the Linux job.
 
+## [2026-10-01] security+correctness | workbench-hardening phase 1 — credentials, exact results, atomic grid edits, file-write guard
+Audit-driven (openspec/changes/workbench-hardening). Gotchas worth keeping:
+- **Keychain without argv**: `security add-generic-password -w <pw>` shows the password to `ps`. `security -i` reads its command from stdin and keeps /usr/bin/security as the item creator, so the exa CLI still reads it without a prompt. Quote rule in `-i` mode: inside "…" a backslash escapes the next char; `$` and backticks are literal (verified on macOS 26). Windows: read the password from stdin inside the PowerShell script; quote ids with `''`.
+- **No plaintext anywhere**: without a vault key the password goes to the keychain under `studio-<profile id>`, the file holds `keychain:`; the shared exa registry no longer falls back to `~/.exasol/credentials/<id>`.
+- **Exasol paging**: OFFSET over an unordered result is not stable, and `ORDER BY amount` alone lets ties swap. Plan = own ORDER BY + every column as tie breaker (`…\n, 1, 2, …` — the newline ends a trailing `--` comment), else `SELECT * FROM (…) ORDER BY 1..n`. Page 0 is re-fetched under the plan before Next is enabled.
+- **sqlx-exasol decode**: DECIMAL(36,15) through rust_decimal lost 6 digits; chrono formatting cut TIMESTAMP(6) to ms. Read DECIMAL/TIMESTAMP via `try_get_unchecked::<String>` first; ints beyond ±2^53 as JSON strings.
+- **Grid edits**: one `pool.begin()` transaction, each statement must affect exactly 1 row, else rollback; a lost commit reply is "may or may not be saved", never "nothing was saved". The editable table comes from `runMeta.sql`, not the buffer.
+- **File writes**: only the workspace (checked on the canonical path) or a path picked in a Rust-side dialog (`save_text_as`, `open_text_file`); O_NOFOLLOW open; no hidden/Library/system/non-text targets.
+- Two Codex passes (11 + 8 findings), all fixed.
+
+
+## [2026-10-01] correctness | workbench-hardening phase 2 — one session per SQL tab, manual commit without silent loss
+Gotchas worth keeping:
+- **sqlx-exasol autocommit** is `pub(crate)`; only `ExaTransactionManager::begin` turns it off (needs `sqlx_core::transaction::TransactionManager` in scope). The driver's `open_transaction` is literally `!autocommit`.
+- **A COMMIT/ROLLBACK typed as SQL keeps autocommit off**: the server runs the next statement in a new transaction already. Calling `begin` again fails with "transaction already open" — the old code ignored that error, so it looked like it worked. `restart_manual` begins only when no transaction is open (live-tested: `INSERT; COMMIT; INSERT` leaves the second insert uncommitted).
+- **Close is fenced**: `session_close(tab, commit, seen)` waits on the tab's slot lock (a running statement finishes first), refuses if more changes exist than the person was shown, keeps the session when a commit is not confirmed, and removes the map entry only if it still points at the same slot.
+- **The backend is the source of truth** for "what would be lost": close/disconnect/quit call `sessions_with_changes`, never a cached snapshot. `session_info` only peeks, so looking at a tab never connects it.
+- **Empty result headers** are described on the tab's own connection: a table created in an uncommitted transaction is invisible to the pool.
+- Removed the unwired "Ask when auto-commit is off" and "Commit batch size" settings: Studio always asks, grid edits are atomic.
+- Three Codex passes (12 + 9 + 2 findings). The third: close must remove the map entry while still holding the slot lock, and the fence is a monotonic `change_seq`, not a count (COMMIT; INSERT keeps the count the same). One "critical" (mid-batch COMMIT drops manual mode) was disproved by the driver source and a live test; the rest were fixed.
+
+## [2026-10-01] gotcha | tab-session keep-alive — a killed Exasol session reports a TLS EOF, and a slow ping must not drop the session
+- A session killed on the server (`KILL SESSION`) surfaces in sqlx-exasol as `error communicating with database: peer closed connection without sending TLS close_notify … #unexpected-eof`. `is_connection_lost` did not match it, so dead sessions were never detected. It now matches "peer closed connection" and "error communicating with database" (sqlx's transport-error prefix). Live-tested.
+- The keep-alive drops a session only on a closed connection, never on a timeout: dropping closes the socket and the server rolls back the open transaction, so a slow answer would destroy live work. The ping does not touch `last_used`, so the idle-transaction warning still fires.
+- The health dot for a connected profile is `connection_alive` (pool acquire + `SELECT 1`, 5s each). All connections busy counts as alive.

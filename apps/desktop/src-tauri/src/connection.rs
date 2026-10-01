@@ -113,7 +113,7 @@ pub fn build_connect_options(profile: &ConnectionProfile) -> AppResult<ExaConnec
         .map_err(|err| AppError::InvalidSettings(err.to_string()))
 }
 
-async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
+pub(crate) async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
     open_pool_sized(profile, 4, Vec::new()).await
 }
 
@@ -277,7 +277,18 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
         });
     }
 
-    state.pools.write().await.insert(profile_id.clone(), pool);
+    // Two connects can race (a double click, a reload re-adopting while the
+    // person clicks). The first pool in wins; a later one is closed rather
+    // than overwriting it and leaking its connections and keep-alive task.
+    {
+        let mut pools = state.pools.write().await;
+        if let Some(existing) = pools.get(&profile_id).cloned() {
+            drop(pools);
+            pool.close().await;
+            return read_server_info(&existing).await;
+        }
+        pools.insert(profile_id.clone(), pool.clone());
+    }
     touch_profile(&state, &profile_id)?;
     Ok(info)
 }
@@ -296,6 +307,9 @@ async fn run_hook_sql(pool: &ExaPool, sql: &str) {
 
 #[tauri::command]
 pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppResult<()> {
+    // The tabs' own sessions go first. The UI has already asked Commit / Roll
+    // back for any with uncommitted changes; what is still open rolls back.
+    state.sessions.close_profile(&profile_id).await;
     if let Some(pool) = state.pools.write().await.remove(&profile_id) {
         let settings = crate::connection_settings::read_settings(&state, &profile_id);
         // Run SQL at Disconnect (Connection Hooks) while the pool still lives.
@@ -320,6 +334,39 @@ pub async fn list_open_connections(state: State<'_, AppState>) -> AppResult<Vec<
 }
 
 /// Fetch the pool for a connected profile, or a typed error if not connected.
+/// Whether a connected profile's database still answers a query — more
+/// than "the port is open": the session logs in and runs `SELECT 1`. A pool
+/// whose connections are all busy (a long query) counts as alive.
+#[tauri::command]
+pub async fn connection_alive(state: State<'_, AppState>, profile_id: String) -> AppResult<bool> {
+    let pool = require_pool(&state, &profile_id).await?;
+    let wait = std::time::Duration::from_secs(5);
+    let probe = match tokio::time::timeout(wait, pool.acquire()).await {
+        Err(_) => Probe::Busy,
+        Ok(Err(_)) => Probe::CannotConnect,
+        Ok(Ok(mut conn)) => match tokio::time::timeout(wait, sqlx_exasol::query("SELECT 1").execute(&mut *conn)).await {
+            Ok(Ok(_)) => Probe::Answered,
+            _ => Probe::NoAnswer,
+        },
+    };
+    Ok(probe_alive(probe))
+}
+
+/// What the health probe found.
+#[derive(Debug, Clone, Copy)]
+pub enum Probe {
+    /// Every pooled connection is in use (a long query): the database is working.
+    Busy,
+    CannotConnect,
+    Answered,
+    /// Connected, but `SELECT 1` failed or did not answer in time.
+    NoAnswer,
+}
+
+pub fn probe_alive(probe: Probe) -> bool {
+    matches!(probe, Probe::Busy | Probe::Answered)
+}
+
 pub async fn require_pool(state: &AppState, profile_id: &str) -> AppResult<ExaPool> {
     state
         .pools
@@ -332,6 +379,15 @@ pub async fn require_pool(state: &AppState, profile_id: &str) -> AppResult<ExaPo
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_health_dot_is_green_only_for_a_database_that_works() {
+        use super::{probe_alive, Probe};
+        assert!(probe_alive(Probe::Answered));
+        assert!(probe_alive(Probe::Busy), "all connections busy with a long query is alive");
+        assert!(!probe_alive(Probe::CannotConnect));
+        assert!(!probe_alive(Probe::NoAnswer));
+    }
+
     use super::*;
 
     fn profile(compression: bool) -> ConnectionProfile {
