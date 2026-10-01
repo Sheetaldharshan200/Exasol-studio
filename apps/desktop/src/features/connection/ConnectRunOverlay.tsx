@@ -158,6 +158,7 @@ export function ConnectRunOverlay({
         if (cancelled) return;
         setStep("auth", "ok");
         append("success", "Authenticated.");
+        for (const h of server.hookErrors ?? []) append("error", `Connection hook failed: ${h}`);
         setStep("db", "ok");
         append(
           "success",

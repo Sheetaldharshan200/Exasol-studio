@@ -19,25 +19,36 @@ pub struct PingResult {
     pub error: Option<String>,
 }
 
+/// Open a TCP connection to any of a host's addresses (IPv4 and IPv6): a
+/// server listening on only one of them is still reachable.
+fn reach_any(addrs: &[std::net::SocketAddr], timeout: Duration) -> Result<(), String> {
+    let mut last = "could not resolve host".to_string();
+    for addr in addrs {
+        match std::net::TcpStream::connect_timeout(addr, timeout) {
+            Ok(_) => return Ok(()),
+            Err(e) => last = e.to_string(),
+        }
+    }
+    Err(last)
+}
+
 /// TCP-level reachability check: can we open a socket to host:port?
 /// This is the first step Test/Connect run so we can tell "server unreachable"
 /// apart from "credentials rejected".
 #[tauri::command]
 pub async fn ping_server(state: State<'_, AppState>, host: String, port: u16) -> AppResult<PingResult> {
     let timeout = connect_timeout(&state);
-    let target = format!("{}:{}", host.trim(), port);
+    let host = crate::tls_trust::first_host(host.trim().split('/').next().unwrap_or_default());
+    // An IPv6 literal goes in brackets before the port.
+    let target = if host.contains(':') && !host.starts_with('[') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
     let started = Instant::now();
 
     let outcome = tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let mut addrs = target
+        let addrs: Vec<std::net::SocketAddr> = target
             .to_socket_addrs()
-            .map_err(|e| format!("failed to lookup host: {e}"))?;
-        let addr = addrs
-            .next()
-            .ok_or_else(|| "could not resolve host".to_string())?;
-        std::net::TcpStream::connect_timeout(&addr, timeout)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("failed to lookup host: {e}"))?
+            .collect();
+        reach_any(&addrs, timeout)
     })
     .await
     .map_err(|e| AppError::Database(e.to_string()))?;
@@ -65,6 +76,34 @@ pub struct ServerInfo {
     pub current_schema: Option<String>,
     pub session_id: String,
     pub nodes: Option<i64>,
+    /// Connection hook statements that failed (Properties → Connection Hooks):
+    /// the connection works, but the person must hear about them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hook_errors: Vec<String>,
+}
+
+/// Failures of the person's own connect hooks, collected as pooled
+/// connections open: each failing statement once.
+#[derive(Clone, Default)]
+pub(crate) struct HookLog(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+impl HookLog {
+    fn note(&self, line: String) {
+        if let Ok(mut v) = self.0.lock() {
+            if !v.contains(&line) {
+                v.push(line);
+            }
+        }
+    }
+    fn take(&self) -> Vec<String> {
+        self.0.lock().map(|mut v| std::mem::take(&mut *v)).unwrap_or_default()
+    }
+}
+
+/// How a failed hook statement is reported: the statement, then why.
+fn hook_failure(stmt: &str, error: &str) -> String {
+    let short: String = stmt.trim().chars().take(80).collect();
+    format!("{short} — {}", humanize_db_error(error))
 }
 
 fn percent_encode(raw: &str) -> String {
@@ -134,7 +173,7 @@ pub(crate) fn connect_url(profile: &ConnectionProfile) -> String {
 }
 
 pub(crate) async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
-    open_pool_sized(profile, 4, Vec::new(), connect_timeout_from(None)).await
+    open_pool_sized(profile, 4, Vec::new(), connect_timeout_from(None), &HookLog::default()).await
 }
 
 /// Settings → Database → Connect timeout: how long reaching the server and
@@ -153,6 +192,7 @@ async fn open_pool_sized(
     max_connections: u32,
     connect_hooks: Vec<String>,
     timeout: Duration,
+    log: &HookLog,
 ) -> AppResult<ExaPool> {
     let options = build_connect_options(profile)?;
     let mut opts = sqlx_exasol::pool::PoolOptions::<Exasol>::new()
@@ -164,23 +204,25 @@ async fn open_pool_sized(
     // just flushes + reads that profile instead of re-running the query (which
     // is why the plan appears instantly, like the VS Code extension). Prepended
     // so it runs before any user-configured hooks.
-    let mut hooks = vec!["ALTER SESSION SET PROFILE = 'ON'".to_string()];
-    hooks.extend(connect_hooks);
+    let profiling = "ALTER SESSION SET PROFILE = 'ON'".to_string();
+    let user_hooks = connect_hooks;
     // Run-SQL-at-Connect hooks must apply to EVERY physical session, not a
     // one-shot connection that's returned to the pool — otherwise a session
     // setting like ALTER SESSION never reaches the connection a later query
     // acquires. after_connect fires as each pooled connection is established,
     // best-effort (a bad hook logs, never fails the connection).
     {
+        let log = log.clone();
         opts = opts.after_connect(move |conn, _meta| {
-            let hooks = hooks.clone();
+            let profiling = profiling.clone();
+            let user_hooks = user_hooks.clone();
+            let log = log.clone();
             Box::pin(async move {
-                for stmt in &hooks {
-                    if let Err(e) = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(stmt.clone()))
-                        .execute(&mut *conn)
-                        .await
-                    {
-                        eprintln!("connection hook statement failed: {e}");
+                // Studio's own profiling switch: best effort, never reported.
+                let _ = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(profiling)).execute(&mut *conn).await;
+                for stmt in &user_hooks {
+                    if let Err(e) = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(stmt.clone())).execute(&mut *conn).await {
+                        log.note(hook_failure(stmt, &e.to_string()));
                     }
                 }
                 Ok(())
@@ -224,6 +266,7 @@ fn server_info_from(session: &[Vec<serde_json::Value>], meta: &[Vec<serde_json::
         current_schema: cell(1).filter(|s| s != "null"),
         session_id: cell(2).unwrap_or_default(),
         nodes,
+        hook_errors: Vec::new(),
     }
 }
 
@@ -253,9 +296,13 @@ pub async fn server_certificate(state: State<'_, AppState>, host: String, port: 
 /// fingerprint, so the person can choose to trust it.
 async fn open_checked(profile: &ConnectionProfile, size: u32, hooks: Vec<String>, timeout: Duration) -> AppResult<(ExaPool, ServerInfo)> {
     crate::tls_trust::check_pin(&profile.host, profile.port, profile.fingerprint.as_deref(), timeout).await?;
-    let opened = match open_pool_sized(profile, size, hooks, timeout).await {
+    let log = HookLog::default();
+    let opened = match open_pool_sized(profile, size, hooks, timeout, &log).await {
         Ok(pool) => match read_server_info(&pool).await {
-            Ok(info) => Ok((pool, info)),
+            Ok(mut info) => {
+                info.hook_errors = log.take();
+                Ok((pool, info))
+            }
             Err(e) => {
                 pool.close().await;
                 Err(e)
@@ -392,20 +439,20 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
     Ok(info)
 }
 
-/// Run hook SQL (one or more ;-separated statements) best-effort.
-async fn run_hook_sql(pool: &ExaPool, sql: &str) {
+/// Run hook SQL (one or more ;-separated statements); what failed, reported.
+async fn run_hook_sql(pool: &ExaPool, sql: &str) -> Vec<String> {
+    let mut failed = Vec::new();
     for stmt in sql.split(';').map(str::trim).filter(|s| !s.is_empty()) {
-        if let Err(e) = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(stmt.to_string()))
-            .execute(pool)
-            .await
-        {
-            eprintln!("connection hook statement failed: {e}");
+        if let Err(e) = sqlx_exasol::query(sqlx_exasol::AssertSqlSafe(stmt.to_string())).execute(pool).await {
+            failed.push(hook_failure(stmt, &e.to_string()));
         }
     }
+    failed
 }
 
 #[tauri::command]
-pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppResult<()> {
+pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppResult<Vec<String>> {
+    let mut hook_errors = Vec::new();
     // The tabs' own sessions go first. The UI has already asked Commit / Roll
     // back for any with uncommitted changes; what is still open rolls back.
     state.sessions.close_profile(&profile_id).await;
@@ -414,7 +461,7 @@ pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppRe
         // Run SQL at Disconnect (Connection Hooks) while the pool still lives.
         if crate::connection_settings::bool_at(&settings, &["hooks", "disconnectEnabled"]).unwrap_or(false) {
             if let Some(sql) = crate::connection_settings::str_at(&settings, &["hooks", "disconnectSql"]) {
-                run_hook_sql(&pool, sql).await;
+                hook_errors = run_hook_sql(&pool, sql).await;
             }
         }
         pool.close().await;
@@ -424,7 +471,7 @@ pub async fn disconnect(state: State<'_, AppState>, profile_id: String) -> AppRe
             let _ = crate::profiles::clear_profile_password(&state, &profile_id);
         }
     }
-    Ok(())
+    Ok(hook_errors)
 }
 
 #[tauri::command]
@@ -540,6 +587,30 @@ mod tests {
         assert!(u.contains("ssl-mode=required") && !u.contains("ssl-ca"), "the pin replaces the CA check: {u}");
         assert!(super::build_connect_options(&pinned).is_ok());
         assert!(super::build_connect_options(&t).is_ok());
+    }
+
+    #[test]
+    fn a_server_on_any_of_its_addresses_is_reachable() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let dead: std::net::SocketAddr = format!("[::1]:{port}").parse().unwrap();
+        let live: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
+        let t = std::time::Duration::from_secs(2);
+        assert!(super::reach_any(&[dead, live], t).is_ok(), "the IPv4 address answers after IPv6 failed");
+        assert!(super::reach_any(&[dead], t).is_err());
+        assert_eq!(super::reach_any(&[], t).unwrap_err(), "could not resolve host");
+    }
+
+    #[test]
+    fn a_failed_hook_is_reported_once_with_its_statement() {
+        let log = super::HookLog::default();
+        let line = super::hook_failure("  ALTER SESSION SET NLS_DATE_FORMAT = 'X'  ", "[42000] invalid format");
+        assert!(line.starts_with("ALTER SESSION SET NLS_DATE_FORMAT = 'X' — "), "{line}");
+        log.note(line.clone());
+        log.note(line.clone());
+        assert_eq!(log.take(), vec![line], "every pooled connection runs the hooks; reported once");
+        assert!(log.take().is_empty());
+        assert_eq!(super::hook_failure(&"x".repeat(200), "e").chars().take_while(|c| *c == 'x').count(), 80);
     }
 
     #[test]

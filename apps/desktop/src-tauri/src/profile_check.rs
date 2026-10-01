@@ -54,9 +54,31 @@ pub fn validate_profile(p: &mut ConnectionProfile) -> AppResult<()> {
     Ok(())
 }
 
+/// Whether a profile saved without an id is the same connection as `p` (so
+/// it is updated, not added): the same name AND the same address and user.
+/// Two connections to one server with different names are allowed — say a
+/// read-only and an admin login.
+pub fn same_connection(p: &ConnectionProfile, new: &ConnectionProfile) -> bool {
+    p.name.trim().eq_ignore_ascii_case(new.name.trim())
+        && p.host.trim().eq_ignore_ascii_case(new.host.trim())
+        && p.port == new.port
+        && p.username == new.username
+        && p.driver_id == new.driver_id
+}
+
+/// A name for a copy that no other profile has: "X (copy)", "X (copy 2)", …
+pub fn copy_name(name: &str, taken: &[String]) -> String {
+    let base = format!("{} (copy)", name.trim());
+    let free = |n: &str| !taken.iter().any(|t| t.trim().eq_ignore_ascii_case(n));
+    if free(&base) {
+        return base;
+    }
+    (2..).map(|i| format!("{} (copy {i})", name.trim())).find(|n| free(n)).expect("an unused name")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::validate_profile;
+    use super::{copy_name, same_connection, validate_profile};
     use crate::profiles::ConnectionProfile;
 
     fn draft() -> ConnectionProfile {
@@ -78,6 +100,29 @@ mod tests {
             ssl_ca: None,
             auth_method: "password".into(),
         }
+    }
+
+    #[test]
+    fn a_second_login_to_the_same_server_is_its_own_connection() {
+        let a = draft();
+        let mut b = draft();
+        assert!(same_connection(&a, &b), "the same connection saved again");
+        b.name = "x (admin)".into();
+        assert!(!same_connection(&a, &b), "a different name is a different connection");
+        let mut c = draft();
+        c.port = 8564;
+        assert!(!same_connection(&a, &c));
+        let mut d = draft();
+        d.host = "DB.EXAMPLE.COM".into();
+        d.name = "X".into();
+        assert!(same_connection(&a, &d), "host and name ignore case");
+    }
+
+    #[test]
+    fn a_copy_gets_a_free_name() {
+        assert_eq!(copy_name("Prod", &["Prod".into()]), "Prod (copy)");
+        assert_eq!(copy_name("Prod", &["Prod".into(), "Prod (copy)".into()]), "Prod (copy 2)");
+        assert_eq!(copy_name("Prod", &["prod (COPY)".into(), "Prod (copy 2)".into()]), "Prod (copy 3)");
     }
 
     #[test]

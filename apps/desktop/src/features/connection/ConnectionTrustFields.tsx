@@ -7,6 +7,7 @@ import { Check, ChevronDown, FileKey, Loader2, ShieldCheck, X } from "lucide-rea
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { errorMessage, ipc } from "@/lib/ipc";
 import { AUTH_METHODS, ENCRYPTION_MODES, displayFingerprint, encryptionChoice, isSaasHost } from "@/lib/connect-flow";
+import { checkHost, checkPort } from "@/lib/dsn";
 
 export type TrustDraft = { host: string; port: string; sslMode: string; fingerprint: string; sslCa: string; authMethod: string };
 
@@ -120,4 +121,21 @@ export function ConnectionTrustFields({ draft, onChange }: { draft: TrustDraft; 
       </div>
     </>
   );
+}
+
+/** Under host and port: the nodes a range reaches, or what is wrong. */
+export function AddressNote({ host, port }: { host: string; port: string }) {
+  if (!host.trim() && !port.trim()) return null;
+  const h = checkHost(host);
+  const p = checkPort(port);
+  const problem = !h.ok ? h.error : !p.ok ? p.error : null;
+  const nodes = h.ok && h.hosts.length > 1 ? `${h.hosts.length} nodes: ${h.hosts[0]} … ${h.hosts[h.hosts.length - 1]}` : null;
+  if (!problem && !nodes) {
+    return (
+      <p className="border-b border-border/60 py-2 text-[11px] text-muted-foreground">
+        Paste a JDBC URL, an exa:// URL or a pyexasol DSN into the server field to fill the form. Consecutive nodes: db1..4.example.com.
+      </p>
+    );
+  }
+  return <p className={`border-b border-border/60 py-2 text-[11px] ${problem ? "text-destructive" : "text-muted-foreground"}`}>{problem ?? nodes}</p>;
 }

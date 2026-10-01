@@ -46,6 +46,7 @@ mod metadata;
 mod print;
 mod process;
 mod profile_check;
+mod profile_io;
 mod profile_secret;
 mod profiles;
 mod shared_registry;
@@ -203,6 +204,10 @@ pub fn run() {
             market::open_external,
             local_network::open_local_network_settings,
             profiles::set_session_password,
+            profiles::profile_secret_missing,
+            profiles::duplicate_profile,
+            profile_io::export_connections,
+            profile_io::import_connections,
             grid_edits::apply_row_edits,
             files::save_text_as,
             files::open_text_file,
