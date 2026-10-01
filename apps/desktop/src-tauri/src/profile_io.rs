@@ -32,7 +32,11 @@ pub fn build_export(profiles: &[(ConnectionProfile, Value)]) -> Value {
     let connections: Vec<Value> = profiles
         .iter()
         .map(|(p, settings)| {
-            let mut v = serde_json::to_value(p).unwrap_or(Value::Null);
+            let mut p = p.clone();
+            if let Some(n) = &mut p.network {
+                crate::network::redact(n);
+            }
+            let mut v = serde_json::to_value(&p).unwrap_or(Value::Null);
             if let Some(o) = v.as_object_mut() {
                 for k in ["id", "password", "createdAt", "lastUsedAt"] {
                     o.remove(k);
@@ -68,7 +72,10 @@ pub fn parse_import(text: &str) -> AppResult<Vec<(ConnectionProfile, Value)>> {
                 o.insert("id".into(), json!(""));
                 o.insert("password".into(), json!(""));
             }
-            let p: ConnectionProfile = serde_json::from_value(c).map_err(|e| bad(&format!("Connection {} is incomplete: {e}", i + 1)))?;
+            let mut p: ConnectionProfile = serde_json::from_value(c).map_err(|e| bad(&format!("Connection {} is incomplete: {e}", i + 1)))?;
+            if let Some(n) = &mut p.network {
+                crate::network::redact(n);
+            }
             Ok((p, settings))
         })
         .collect()
@@ -186,6 +193,23 @@ mod tests {
         assert!(imported.get("hooks").is_none());
         assert!(imported["physical"].get("validationSql").is_none());
         assert_eq!(imported["physical"]["keepAlive"], json!(true));
+    }
+
+    #[test]
+    fn network_secrets_never_travel_in_the_file() {
+        let mut p = profile("P");
+        p.network = Some(crate::network::NetworkSettings {
+            ssh: Some(crate::network::SshSettings {
+                host: "bastion".into(), port: None, user: Some("ops".into()), auth: "password".into(), key_path: None,
+                jump: None, host_key: "ask".into(), keepalive_secs: 30, secret: "v1:sealed-ssh".into(),
+            }),
+            proxy: None,
+        });
+        let text = build_export(&[(p, Value::Null)]).to_string();
+        assert!(!text.contains("sealed-ssh"), "{text}");
+        assert!(text.contains("bastion"), "the tunnel settings travel");
+        let (back, _) = parse_import(&text).unwrap().remove(0);
+        assert_eq!(back.network.unwrap().ssh.unwrap().secret, "");
     }
 
     #[test]

@@ -544,7 +544,7 @@ pub async fn execute_sql(
     if !native {
         // These drivers connect on their own for each run: what only the
         // native driver applies (pin, CA file, tokens) is refused plainly.
-        if let Some(why) = crate::tls_trust::bridge_unsupported(profile.ssl_ca.as_deref(), &profile.auth_method, profile.fingerprint.is_some()) {
+        if let Some(why) = crate::tls_trust::bridge_unsupported(profile.ssl_ca.as_deref(), &profile.auth_method, profile.fingerprint.is_some(), profile.network.is_some()) {
             return Err(crate::error::AppError::InvalidSettings(why));
         }
     }
@@ -857,6 +857,7 @@ mod live_decode {
             fingerprint: None,
             ssl_ca: None,
             auth_method: "password".into(),
+            network: None,
         };
         let pool = crate::connection::open_pool(&profile).await.unwrap();
         let rows = super::fetch_all_rows(&pool,

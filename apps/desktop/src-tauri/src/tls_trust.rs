@@ -225,7 +225,10 @@ pub fn driver_tls(ssl_mode: &str) -> (bool, bool) {
 /// Why a non-native driver cannot run this profile, if it cannot: a pinned
 /// certificate, a custom CA file and token sign-in are applied only by the
 /// native driver, so the others refuse rather than connect less safely.
-pub fn bridge_unsupported(ssl_ca: Option<&str>, auth_method: &str, pinned: bool) -> Option<String> {
+pub fn bridge_unsupported(ssl_ca: Option<&str>, auth_method: &str, pinned: bool, routed: bool) -> Option<String> {
+    if routed {
+        return Some("An SSH tunnel or proxy works with the native Exasol driver. Switch this connection's driver to Native.".into());
+    }
     if auth_method != "password" {
         return Some("Token sign-in works with the native Exasol driver. Switch this connection's driver to Native, or sign in with a password.".into());
     }
@@ -292,10 +295,11 @@ mod tests {
     fn other_drivers_always_encrypt_and_say_what_they_cannot_do() {
         assert_eq!(driver_tls("verify_identity"), (true, true));
         assert_eq!(driver_tls("disabled"), (true, false));
-        assert!(bridge_unsupported(None, "password", false).is_none());
-        assert!(bridge_unsupported(Some("/ca.pem"), "password", false).unwrap().contains("CA file"));
-        assert!(bridge_unsupported(None, "access_token", false).unwrap().contains("Token"));
-        assert!(bridge_unsupported(None, "password", true).unwrap().contains("pinned"));
+        assert!(bridge_unsupported(None, "password", false, false).is_none());
+        assert!(bridge_unsupported(Some("/ca.pem"), "password", false, false).unwrap().contains("CA file"));
+        assert!(bridge_unsupported(None, "access_token", false, false).unwrap().contains("Token"));
+        assert!(bridge_unsupported(None, "password", true, false).unwrap().contains("pinned"));
+        assert!(bridge_unsupported(None, "password", false, true).unwrap().contains("SSH"));
     }
 
     #[test]

@@ -109,7 +109,19 @@ pub async fn exapump_upload(
     if profile.auth_method != "password" {
         return Err(AppError::InvalidSettings("Loading data signs in with a password; this connection uses a token.".into()));
     }
-    let (host, port, user, password) = (profile.host.clone(), profile.port, profile.username.clone(), profile.password.clone());
+    // Through an SSH tunnel or proxy: the open connection's loopback port.
+    let (host, port) = match &profile.network {
+        Some(_) => {
+            let state = app.state::<crate::state::AppState>();
+            let route = state.carriers.lock().ok().and_then(|c| c.get(&profile.id).and_then(|c| c.route_port()));
+            match route {
+                Some(p) => ("127.0.0.1".to_string(), p),
+                None => return Err(AppError::InvalidSettings("Connect first: this connection runs through an SSH tunnel or proxy.".into())),
+            }
+        }
+        None => (profile.host.clone(), profile.port),
+    };
+    let (user, password) = (profile.username.clone(), profile.password.clone());
     let (_, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode);
     let bin = exapump_path(&app).ok_or_else(|| {
         AppError::Storage(

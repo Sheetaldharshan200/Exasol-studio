@@ -45,6 +45,12 @@ pub fn validate_profile(p: &mut ConnectionProfile) -> AppResult<()> {
     if !SSL_MODES.contains(&p.ssl_mode.as_str()) {
         return bad("Unknown encryption mode.");
     }
+    if let Some(n) = &mut p.network {
+        crate::network::validate(n)?;
+        if n.ssh.is_none() && n.proxy.is_none() {
+            p.network = None;
+        }
+    }
     p.ssl_ca = p.ssl_ca.as_deref().map(str::trim).filter(|c| !c.is_empty()).map(str::to_string);
     if let Some(ca) = &p.ssl_ca {
         if !std::path::Path::new(ca).is_absolute() {
@@ -110,6 +116,7 @@ mod tests {
             fingerprint: None,
             ssl_ca: None,
             auth_method: "password".into(),
+            network: None,
         }
     }
 

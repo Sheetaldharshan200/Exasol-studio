@@ -567,6 +567,7 @@ mod tests {
             fingerprint: None,
             ssl_ca: None,
             auth_method: "password".into(),
+            network: None,
         }
     }
 
