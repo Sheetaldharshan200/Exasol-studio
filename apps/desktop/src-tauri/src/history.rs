@@ -67,7 +67,11 @@ pub fn append_history(state: &AppState, entry: HistoryEntry) -> AppResult<()> {
 
 #[tauri::command]
 pub fn sql_history_list(state: State<'_, AppState>) -> AppResult<Vec<HistoryEntry>> {
-    read_json(&history_path(&state), Vec::new())
+    let mut entries: Vec<HistoryEntry> = read_json(&history_path(&state), Vec::new())?;
+    // A lowered limit shows at once; the file is trimmed on the next append.
+    let limit = history_limit(Some(serde_json::Value::Bool(true)), crate::settings::app_setting(&state, "historyLimit"));
+    entries.truncate(limit.unwrap_or(DEFAULT_LIMIT));
+    Ok(entries)
 }
 
 #[tauri::command]

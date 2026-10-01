@@ -635,10 +635,11 @@ pub fn execute_via_driver(
     profile: &ConnectionProfile,
     statements: &[String],
     max_rows: usize,
+    stop: crate::query::StopPolicy,
 ) -> AppResult<ExecuteResponse> {
     let runtime = driver_runtime(&profile.driver_id);
     if uses_bridge_process(runtime) {
-        execute_bridge(app, profile, statements, max_rows)
+        execute_bridge(app, profile, statements, max_rows, stop)
     } else {
         Err(AppError::Storage(format!("Execution via the {runtime} driver isn’t available yet.")))
     }
@@ -649,6 +650,7 @@ fn execute_bridge(
     profile: &ConnectionProfile,
     statements: &[String],
     max_rows: usize,
+    stop: crate::query::StopPolicy,
 ) -> AppResult<ExecuteResponse> {
     if !driver_implemented(&profile.driver_id) {
         return Err(AppError::Storage(unimplemented_driver_message(&profile.driver_id)));
@@ -717,6 +719,9 @@ fn execute_bridge(
         "driverPath": odbc_lib,
         "statements": statements,
         "expectRows": expect_rows(statements),
+        // The bridge's own loop applies the run's execution options.
+        "stopOnError": stop.on_error,
+        "stopIfEmpty": stop.stop_if_empty(statements),
     });
 
     let mut cmd = crate::process::command(&runtime_bin);

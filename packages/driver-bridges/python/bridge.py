@@ -5,6 +5,14 @@ def cell(v):
     if isinstance(v, (int, float, bool)): return v
     return str(v)
 
+def halts(req, i, e):
+    """The script stops here: after an error unless stopOnError is off, or
+    after an empty result where Studio asked (stopIfEmpty, per statement)."""
+    if e.get("error"):
+        return req.get("stopOnError", True) is not False
+    empty = req.get("stopIfEmpty") or []
+    return i < len(empty) and bool(empty[i]) and e.get("kind") in ("resultSet", "rowCount") and e.get("rowCount") == 0
+
 def run_pyexasol(req):
     import pyexasol
     dsn = "%s:%s" % (req["host"], req["port"])
@@ -13,7 +21,7 @@ def run_pyexasol(req):
         websocket_sslopt={"cert_reqs": 0} if (req.get("tls", True) and not req.get("verify")) else None)
     max_rows = int(req.get("maxRows", 1000))
     out = {"results": []}
-    for stmt in req.get("statements", []):
+    for i, stmt in enumerate(req.get("statements", [])):
         t0 = time.time()
         e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
         try:
@@ -30,7 +38,7 @@ def run_pyexasol(req):
         except Exception as ex:
             e["error"] = str(ex)
         e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-        if e["error"]: break
+        if halts(req, i, e): break
     try: C.close()
     except Exception: pass
     return out
@@ -55,7 +63,7 @@ def run_sqlalchemy(req):
     # AUTOCOMMIT: SQLAlchemy 2.0 opens a transaction by default, so DDL/DML
     # would roll back when the connection closes.
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as C:
-        for stmt in req.get("statements", []):
+        for i, stmt in enumerate(req.get("statements", [])):
             t0 = time.time()
             e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
             try:
@@ -73,7 +81,7 @@ def run_sqlalchemy(req):
             except Exception as ex:
                 e["error"] = str(ex)
             e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-            if e["error"]: break
+            if halts(req, i, e): break
     try: engine.dispose()
     except Exception: pass
     return out
@@ -87,7 +95,7 @@ def run_jdbc(req):
     C = jaydebeapi.connect("com.exasol.jdbc.EXADriver", url, [req["user"], req["password"]], req["jarPath"])
     max_rows = int(req.get("maxRows", 1000))
     out = {"results": []}
-    for stmt in req.get("statements", []):
+    for i, stmt in enumerate(req.get("statements", [])):
         t0 = time.time()
         e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
         cur = C.cursor()
@@ -108,7 +116,7 @@ def run_jdbc(req):
             try: cur.close()
             except Exception: pass
         e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-        if e["error"]: break
+        if halts(req, i, e): break
     try: C.close()
     except Exception: pass
     return out
@@ -132,7 +140,7 @@ def run_odbc(req):
     C = pyodbc.connect(cs, autocommit=True)
     max_rows = int(req.get("maxRows", 1000))
     out = {"results": []}
-    for stmt in req.get("statements", []):
+    for i, stmt in enumerate(req.get("statements", [])):
         t0 = time.time()
         e = {"statement": stmt, "kind": "rowCount", "columns": [], "rows": [], "rowCount": 0, "truncated": False, "elapsedMs": 0, "error": None}
         cur = C.cursor()
@@ -153,7 +161,7 @@ def run_odbc(req):
             try: cur.close()
             except Exception: pass
         e["elapsedMs"] = int((time.time()-t0)*1000); out["results"].append(e)
-        if e["error"]: break
+        if halts(req, i, e): break
     try: C.close()
     except Exception: pass
     return out
