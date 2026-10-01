@@ -16,18 +16,18 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 - [x] 1.1.7 `connections.json` and secrets written with 0600 on Unix (`storage.rs::write_json`; test: `storage.rs`).
 
 ### 1.2 Exact results
-- [ ] 1.2.1 Paging continues page to page in the statement's own order: no outer `ORDER BY 1`; pages from the statement as written for page 0 and later (`use-result-paging.ts::pagedSql`; test: `use-result-paging.test.ts`).
-- [ ] 1.2.2 WITH and comment-led statements page like SELECT (`ResultsPanel.tsx::isSingleSelect` → shared helper; test: `use-result-paging.test.ts`).
-- [ ] 1.2.3 Integers beyond ±2^53 and DECIMALs wider than `rust_decimal` travel as strings (`query.rs::decode_cell`; test: `query.rs` tests).
-- [ ] 1.2.4 TIMESTAMP keeps fractional seconds as stored (`query.rs`; test: `query.rs`).
-- [ ] 1.2.5 CSV export: NULL distinct from empty, formula-injection guard, UTF-8 BOM option (`lib/result-stats.ts::toCsv`; test: `result-stats.test.ts`).
-- [ ] 1.2.6 History records rows affected for DML, not 0 (`lib/result-stats.ts::rowTotal`, `history.rs`; test: `result-stats.test.ts`).
+- [x] 1.2.1 Paging continues page to page in the statement's own order: one plan per result: the statement's own ORDER BY plus every column as tie breaker, or every column; own LIMIT or duplicate names are not paged; page 0 re-fetched under the plan (`lib/result-pages.ts`; test: `result-pages.test.ts`, `use-result-paging.test.ts`; SQL shapes verified on a live database).
+- [x] 1.2.2 WITH and comment-led statements page like SELECT (`ResultsPanel.tsx::isSingleSelect` → shared helper; test: `use-result-paging.test.ts`).
+- [x] 1.2.3 Integers beyond ±2^53 and DECIMALs wider than `rust_decimal` travel as strings (`query.rs::decode_cell`; test: `query.rs` tests).
+- [x] 1.2.4 TIMESTAMP keeps fractional seconds as stored (`query.rs`; test: `query.rs`).
+- [x] 1.2.5 CSV export: NULL distinct from empty, formula-injection guard, UTF-8 BOM option (`lib/result-stats.ts::toCsv`; test: `result-stats.test.ts`).
+- [x] 1.2.6 History records rows affected for DML, not 0 (`lib/result-stats.ts::rowTotal`, `history.rs`; test: `result-stats.test.ts`).
 
 ### 1.3 Grid edits
-- [ ] 1.3.1 NULL key values match with `IS NULL` (`edit-dml.ts::buildDml`; test: `edit-dml.test.ts`).
-- [ ] 1.3.2 The edit batch runs on one connection in one transaction; any statement that affects ≠ 1 row rolls the batch back and names the row (`query.rs::execute_edit_batch` new command; test: `query.rs` pure checker + `edit-dml.test.ts`).
-- [ ] 1.3.3 After a save the grid re-runs the statement that produced it, not the editor buffer (`ExasolStudio.tsx::commitEdits` → `runMeta.sql`; test: extracted helper in `lib/run-meta.test.ts`).
-- [ ] 1.3.4 Edits on a truncated or paged result are keyed by the row's own key values only (`edit-dml.ts`; test: `edit-dml.test.ts`).
+- [x] 1.3.1 NULL key values match with `IS NULL` (`edit-dml.ts::buildDml`; test: `edit-dml.test.ts`).
+- [x] 1.3.2 The edit batch runs on one connection in one transaction; any statement that affects ≠ 1 row rolls the batch back and names the row (`grid_edits.rs::apply_row_edits`; test: `grid_edits.rs` rule + live rollback test).
+- [x] 1.3.3 After a save the grid re-runs the statement that produced it, not the editor buffer (`ExasolStudio.tsx::commitEdits` → `runMeta.sql`; test: extracted helper in `lib/run-meta.test.ts`).
+- [x] 1.3.4 Edits on a truncated or paged result are keyed by the row's own key values only (`edit-dml.ts`; test: `edit-dml.test.ts`).
 
 ### 1.4 Files and tabs
 - [ ] 1.4.1 `write_text_file` only writes under the workspace folder or a path picked in a save dialog this session (`files.rs`; test: `files.rs` path-allow tests incl. `..` and symlinks).

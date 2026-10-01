@@ -82,6 +82,7 @@ import { createSerialQueue } from "@/lib/serial-queue";
 import { useResultPaging } from "./use-result-paging";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
+import { sqlBehindGrid } from "@/lib/run-meta";
 
 export function ExasolStudio({
   connection,
@@ -813,22 +814,20 @@ export function ExasolStudio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
 
-  // Apply staged row edits directly ("Confirm & Save"). Exasol returns
-  // statement errors INSIDE the result (not as a JS throw), so we inspect each
-  // one and stop at the first failure, returning it so the grid shows the
-  // inline error and keeps the user's edits.
+  // Apply staged row edits ("Confirm & Save"): one transaction on one
+  // connection, each change required to touch exactly one row — all of it or
+  // none. On failure the grid keeps the edits and names the change that
+  // stopped the batch. On success it refreshes from the statement that
+  // produced it, never the editor buffer.
   async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
     if (!connection || !statements.length) return { ok: false, error: "No active connection." };
     try {
-      for (const st of statements) {
-        const r = await execSql(connection.profile.id, connection.profile.name, st, 1, false);
-        const errored = r.results.find((x) => x.error);
-        if (errored?.error) {
-          loadHistory();
-          return { ok: false, error: errored.error, failedSql: st };
-        }
+      const out = await ipc.applyRowEdits(connection.profile.id, connection.profile.name, statements);
+      loadHistory();
+      if (!out.ok) {
+        return { ok: false, error: out.error ?? "Nothing was saved.", failedSql: out.failedIndex != null ? statements[out.failedIndex] : undefined };
       }
-      const res = await execSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
+      const res = await execSql(connection.profile.id, connection.profile.name, sqlBehindGrid(activeTab), maxRows, false);
       patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
       void refreshSqlCatalog();

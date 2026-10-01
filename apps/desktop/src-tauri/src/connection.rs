@@ -113,7 +113,7 @@ pub fn build_connect_options(profile: &ConnectionProfile) -> AppResult<ExaConnec
         .map_err(|err| AppError::InvalidSettings(err.to_string()))
 }
 
-async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
+pub(crate) async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
     open_pool_sized(profile, 4, Vec::new()).await
 }
 

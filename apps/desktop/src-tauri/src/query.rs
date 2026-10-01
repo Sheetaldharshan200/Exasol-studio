@@ -76,11 +76,22 @@ fn decode_cell(row: &ExaRow, idx: usize) -> Value {
         Ok(_) => {}
     }
 
+    // Exact first: DECIMAL and TIMESTAMP take the text Exasol sent, as sent.
+    // Through f64 or rust_decimal a DECIMAL(36,15) loses digits, and chrono
+    // formatting cut TIMESTAMP(6)/(9) to milliseconds, so an edit keyed on it
+    // matched no row.
+    let declared = row.columns().get(idx).map(|c| c.type_info().name().to_ascii_uppercase()).unwrap_or_default();
+    if exact_text_type(&declared) {
+        if let Ok(Some(v)) = row.try_get_unchecked::<Option<String>, _>(idx) {
+            return Value::String(v);
+        }
+    }
+
     if let Ok(Some(v)) = row.try_get::<Option<bool>, _>(idx) {
         return Value::from(v);
     }
     if let Ok(Some(v)) = row.try_get::<Option<i64>, _>(idx) {
-        return Value::from(v);
+        return integer_json(v);
     }
     if let Ok(Some(v)) = row.try_get::<Option<f64>, _>(idx) {
         return json!(v);
@@ -116,6 +127,31 @@ fn decode_cell(row: &ExaRow, idx: usize) -> Value {
             .map(|c| c.type_info().name().to_string())
             .unwrap_or_else(|| "value".into())
     ))
+}
+
+/// Rows a run touched, for its history entry: rows returned plus rows a write
+/// affected. A driver that cannot count ("executed") adds nothing.
+pub(crate) fn history_row_total<'a>(results: impl Iterator<Item = (&'a str, u64)>) -> u64 {
+    results.filter(|(kind, _)| *kind == "resultSet" || *kind == "rowCount").map(|(_, n)| n).sum()
+}
+
+/// Types whose wire text is the exact value and must not pass through a
+/// lossy native type on the way to the grid.
+pub(crate) fn exact_text_type(declared_upper: &str) -> bool {
+    declared_upper.starts_with("DECIMAL") || declared_upper.starts_with("TIMESTAMP")
+}
+
+/// The largest integer a JavaScript number holds exactly.
+const JS_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
+
+/// An integer as JSON: a number while the page can hold it exactly, else its
+/// digits as a string — `JSON.parse` would round 9007199254740993 to …992.
+pub(crate) fn integer_json(v: i64) -> Value {
+    if (-JS_SAFE_INTEGER..=JS_SAFE_INTEGER).contains(&v) {
+        Value::from(v)
+    } else {
+        Value::String(v.to_string())
+    }
 }
 
 pub fn row_to_json(row: &ExaRow) -> Vec<Value> {
@@ -587,11 +623,7 @@ pub async fn execute_sql(
     };
 
     let total_elapsed_ms = started.elapsed().as_millis() as u64;
-    let row_total: u64 = results
-        .iter()
-        .filter(|r| r.kind == "resultSet")
-        .map(|r| r.row_count)
-        .sum();
+    let row_total = history_row_total(results.iter().map(|r| (r.kind.as_str(), r.row_count)));
 
     // Millis alone collide when runs land in the same millisecond (notebook
     // Run-All, fast statements) — duplicate ids duplicate React rows on sort.
@@ -686,8 +718,77 @@ pub async fn cancel_query(state: State<'_, AppState>, progress_id: String) -> Ap
 
 
 #[cfg(test)]
+mod live_decode {
+    //! Run by hand against a live database:
+    //! EXASOL_LIVE_PORT=8565 EXASOL_LIVE_PASSWORD=… cargo test --lib live_decode -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "needs a live database (EXASOL_LIVE_* env)"]
+    async fn live_values_decode_exactly() {
+        let profile = crate::profiles::ConnectionProfile {
+            id: "live".into(),
+            name: "live".into(),
+            host: std::env::var("EXASOL_LIVE_HOST").unwrap_or_else(|_| "127.0.0.1".into()),
+            port: std::env::var("EXASOL_LIVE_PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8563),
+            username: std::env::var("EXASOL_LIVE_USER").unwrap_or_else(|_| "sys".into()),
+            password: std::env::var("EXASOL_LIVE_PASSWORD").expect("EXASOL_LIVE_PASSWORD"),
+            schema: None,
+            notes: None,
+            ssl_mode: "preferred".into(),
+            compression: false,
+            driver_id: "sqlx-exasol".into(),
+            created_at: None,
+            last_used_at: None,
+        };
+        let pool = crate::connection::open_pool(&profile).await.unwrap();
+        let rows = super::fetch_all_rows(&pool,
+                "SELECT CAST(9007199254740993 AS DECIMAL(18,0)) AS big18, \
+                 CAST(-9007199254740993 AS DECIMAL(18,0)) AS negbig18, \
+                 CAST(42 AS DECIMAL(18,0)) AS small18, \
+                 CAST('123456789012345678901234567890123456' AS DECIMAL(36,0)) AS huge36, \
+                 CAST('12345678901234567890.123456789012345' AS DECIMAL(36,15)) AS wide_scale, \
+                 CAST(1.5 AS DOUBLE) AS dbl, \
+                 CAST('2026-01-02 03:04:05.123456' AS TIMESTAMP(6)) AS ts6, \
+                 CAST('2026-01-02 03:04:05.123456789' AS TIMESTAMP(9)) AS ts9, \
+                 CAST('2026-01-02 03:04:05' AS TIMESTAMP) AS ts3",
+        )
+        .await
+        .unwrap();
+        eprintln!("{}", serde_json::to_string(&rows[0]).unwrap());
+        pool.close().await;
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{is_result_set_statement, parse_activity_percent, split_statements};
+    use super::{exact_text_type, history_row_total, integer_json};
+
+    #[test]
+    fn history_counts_rows_returned_and_rows_written() {
+        let run = [("resultSet", 10u64), ("rowCount", 3), ("executed", 0), ("rowCount", 0)];
+        assert_eq!(history_row_total(run.iter().copied()), 13);
+        assert_eq!(history_row_total([("rowCount", 5u64)].iter().copied()), 5, "an INSERT alone is not 0");
+        assert_eq!(history_row_total(std::iter::empty()), 0);
+    }
+
+    #[test]
+    fn integers_the_page_cannot_hold_exactly_travel_as_text() {
+        assert_eq!(integer_json(42), serde_json::json!(42));
+        assert_eq!(integer_json(9_007_199_254_740_991), serde_json::json!(9_007_199_254_740_991_i64));
+        assert_eq!(integer_json(9_007_199_254_740_992), serde_json::json!("9007199254740992"));
+        assert_eq!(integer_json(-9_007_199_254_740_993), serde_json::json!("-9007199254740993"));
+        assert_eq!(integer_json(i64::MIN), serde_json::json!(i64::MIN.to_string()));
+    }
+
+    #[test]
+    fn decimal_and_timestamp_columns_keep_their_wire_text() {
+        for t in ["DECIMAL(18,0)", "DECIMAL(36,15)", "TIMESTAMP", "TIMESTAMP(9)", "TIMESTAMP WITH LOCAL TIME ZONE"] {
+            assert!(exact_text_type(t), "{t}");
+        }
+        for t in ["DOUBLE", "VARCHAR(10) UTF8", "DATE", "BOOLEAN", "HASHTYPE(16 BYTE)"] {
+            assert!(!exact_text_type(t), "{t}");
+        }
+    }
 
     #[test]
     fn execute_script_is_a_result_set_statement() {

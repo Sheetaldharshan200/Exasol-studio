@@ -35,6 +35,7 @@ mod exapump;
 mod files;
 mod fs;
 mod git;
+mod grid_edits;
 mod history;
 mod local_database;
 mod local_llm;
@@ -195,6 +196,7 @@ pub fn run() {
             market::open_external,
             local_network::open_local_network_settings,
             profiles::set_session_password,
+            grid_edits::apply_row_edits,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,
