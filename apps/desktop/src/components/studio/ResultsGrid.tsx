@@ -8,7 +8,8 @@
  *
  * Extracted from HistoryDock.tsx, which must not grow.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { NullTextContext } from "./null-text";
 import { CircleSlash2, Pencil, Plus, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { cellText, filterRows, resultSummary } from "@/lib/result-stats";
@@ -49,6 +50,7 @@ export function ResultsGrid({
   /** Hide the internal toolbar (Edit data + count) when the parent shows its own. */
   hideToolbar?: boolean;
 }) {
+  const nullText = useContext(NullTextContext);
   const [editing, setEditing] = useState(false);
   // The cell the user double-tapped — edit mode opens with THAT cell focused.
   const [focusCell, setFocusCell] = useState<{ row: number; col: number } | null>(null);
@@ -283,7 +285,7 @@ export function ResultsGrid({
                         selected && selected.row === rowIndex && selected.col === cellIndex && "bg-primary/15 ring-1 ring-inset ring-primary/40",
                       )}
                     >
-                      {cell === null ? <span className="text-muted-foreground italic">null</span> : cellText(cell)}
+                      {cell === null ? <span className="text-muted-foreground italic">{nullText}</span> : cellText(cell)}
                     </td>
                   ))}
                 </tr>

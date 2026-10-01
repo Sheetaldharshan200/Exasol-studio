@@ -11,8 +11,6 @@ import type { ObjectRef } from "@/features/workbench/ObjectDetailPanel";
 import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse } from "@/lib/ipc";
 
-export const MAX_ROWS_OPTIONS = [100, 1000, 10000, 50000, 100000];
-
 /** A workspace tab is a SQL editor, a read-only catalog surface, or the
  * connect-to-database flow (so adding a connection doesn't hide your queries). */
 export type TabView =
@@ -59,7 +57,7 @@ export type SqlTab = {
   resultView?: ResultView;
   /** For "connect" tabs — pre-fill the new-connection form (e.g. the bundled
    *  Exasol Personal profile when a direct connect fell back to the form). */
-  connectDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
+  connectDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint: string; sslCa: string; authMethod: string }>;
   sql: string;
   response: ExecuteResponse | null;
   execError: string | null;

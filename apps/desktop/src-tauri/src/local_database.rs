@@ -500,6 +500,10 @@ fn load_or_create_mcp_identity(
                         driver_id: "sqlx-exasol".into(),
                         created_at: None,
                         last_used_at: None,
+                        fingerprint: None,
+                        ssl_ca: None,
+                        auth_method: "password".into(),
+                        network: None,
                     },
                 )?;
                 let identity = McpIdentity {
@@ -578,6 +582,10 @@ fn load_or_create_mcp_identity(
             driver_id: "sqlx-exasol".into(),
             created_at: None,
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
+            network: None,
         },
     )?;
     let identity = McpIdentity {

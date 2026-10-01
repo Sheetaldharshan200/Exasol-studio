@@ -35,6 +35,7 @@ mod exapump;
 mod files;
 mod fs;
 mod git;
+mod grid_edits;
 mod history;
 mod local_database;
 mod local_llm;
@@ -44,15 +45,27 @@ mod market;
 mod metadata;
 mod print;
 mod process;
+mod carrier;
+mod network;
+mod profile_check;
+mod profile_io;
+mod pin_tunnel;
+mod profile_secret;
+mod proxy_tunnel;
+mod safety;
+mod ssh_tunnel;
 mod profiles;
 mod shared_registry;
 mod query;
 mod security;
+mod session;
+mod session_cmd;
 mod settings;
 mod state;
 mod storage;
+mod tls_trust;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::state::AppState;
 
@@ -81,6 +94,8 @@ pub fn run() {
             // override if valid + newer, else baked) BEFORE anything reads it.
             crate::component_lock::init_effective(&data_dir);
             app.manage(AppState::new(data_dir));
+            // Load app settings once, so the backend readers see them from the start.
+            let _ = crate::settings::get_app_settings(app.handle().clone());
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
             app.manage(crate::dash_server::DashServer::default());
@@ -89,6 +104,7 @@ pub fn run() {
             app.manage(crate::cloudflared::CloudflaredProc::default());
             crate::updates::start(app.handle().clone());
             crate::verified_lock::start(app.handle().clone());
+            crate::session_cmd::start_keepalive(app.handle().clone());
             app.manage(crate::local_database::LocalBootstrap::default());
             crate::local_llm::auto_start_if_enabled(app.handle());
             crate::local_database::auto_start_if_installed(app.handle());
@@ -193,6 +209,28 @@ pub fn run() {
             market::market_doc_file,
             market::open_external,
             local_network::open_local_network_settings,
+            profiles::set_session_password,
+            profiles::profile_secret_missing,
+            profiles::duplicate_profile,
+            profile_io::export_connections,
+            profile_io::import_connections,
+            grid_edits::apply_row_edits,
+            files::save_text_as,
+            files::open_text_file,
+            session_cmd::session_info,
+            connection::connection_alive,
+            connection::server_certificate,
+            connection::pick_ca_file,
+            ssh_tunnel::ssh_trust_host_key,
+            connection::pick_ssh_key,
+            session_cmd::session_set_autocommit,
+            session_cmd::session_commit,
+            session_cmd::session_rollback,
+            session_cmd::session_set_schema,
+            session_cmd::session_close,
+            session_cmd::sessions_with_changes,
+            session_cmd::quit_ack,
+            session_cmd::quit_app,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,
@@ -272,6 +310,39 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")
         .run(|app, event| {
+            // Closing the main window with uncommitted changes in a tab's
+            // session asks first (Commit / Roll back / Cancel in the page).
+            if let tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } = &event {
+                use std::sync::atomic::Ordering;
+                if label == "main"
+                    && !crate::session_cmd::QUIT_CONFIRMED.load(Ordering::SeqCst)
+                    && app.state::<AppState>().sessions.might_have_changes_now()
+                {
+                    api.prevent_close();
+                    crate::session_cmd::QUIT_ACKED.store(false, Ordering::SeqCst);
+                    let _ = app.emit("studio:quit-requested", ());
+                    // A page that cannot answer must not keep the app open — nor
+                    // end the work without the person: ask natively instead.
+                    let handle = app.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(4));
+                        if crate::session_cmd::QUIT_ACKED.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+                        let quit = handle
+                            .dialog()
+                            .message("A tab has uncommitted changes and the window is not responding. Roll them back and quit, or cancel and keep working?")
+                            .title("Uncommitted changes")
+                            .kind(MessageDialogKind::Warning)
+                            .buttons(MessageDialogButtons::OkCancelCustom("Roll back and quit".into(), "Cancel".into()))
+                            .blocking_show();
+                        if quit {
+                            crate::session_cmd::rollback_all_and_quit(&handle);
+                        }
+                    });
+                }
+            }
             if let tauri::RunEvent::Exit = event {
                 app.state::<crate::local_llm::LlmEngine>().kill();
                 app.state::<crate::dash_server::DashServer>().kill();

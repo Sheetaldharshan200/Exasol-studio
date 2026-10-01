@@ -104,7 +104,7 @@ export const ChartBoxNode = memo(function ChartBoxNode({ id, selected }: NodePro
         icon: Download,
         side: "top",
         disabled: !hasRows,
-        onClick: () => result && downloadText(fileName(box.name, "csv"), toCsv(result.columns, result.rows), "text/csv;charset=utf-8;"),
+        onClick: () => result && downloadText(fileName(box.name, "csv"), toCsv(result.columns, result.rows, { bom: true }), "text/csv;charset=utf-8;"),
       },
       { id: "sql", label: "Query these rows with SQL", icon: Table2, mark: "SQL", side: "right", onClick: () => store.getState().addQuery([id]) },
       { id: "chart", label: "Another chart of the same rows", icon: BarChart3, side: "right", disabled: !hasRows, onClick: () => store.getState().addChart(box.source) },

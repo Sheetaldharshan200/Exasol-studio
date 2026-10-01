@@ -12,6 +12,16 @@ pub enum AppError {
     Storage(String),
     #[error("assistant error: {0}")]
     Assistant(String),
+    /// The certificate could not be verified and nothing is pinned: the UI
+    /// shows the fingerprint and offers to trust (pin) it.
+    #[error("The server's certificate is not trusted. Its SHA-256 fingerprint is {}.", crate::tls_trust::display_fingerprint(.fingerprint))]
+    UntrustedCertificate { fingerprint: String },
+    /// The server presents a different certificate than the pinned one.
+    #[error("The server's certificate changed. Expected {}, got {}. If the server's certificate was renewed, check the new fingerprint with its administrator before trusting it.", crate::tls_trust::display_fingerprint(.expected), crate::tls_trust::display_fingerprint(.actual))]
+    CertificateChanged { expected: String, actual: String },
+    /// The SSH server's host key is not known (host-key checking "ask").
+    #[error("The SSH host key of {host} is not known yet. Fingerprint: {fingerprint}")]
+    UnknownHostKey { host: String, fingerprint: String },
 }
 
 /// Turn a low-level driver / OS error into a message an end user can act on.
@@ -100,6 +110,20 @@ Check your network connection, VPN, or firewall settings."
         .to_string()
 }
 
+/// Exasol SaaS refuses connections from addresses not on the cluster's allow
+/// list, which looks like an unreachable server. Name that cause for SaaS
+/// hosts (`*.exasol.com`); other messages are returned as they are.
+pub fn with_saas_hint(host: &str, message: String) -> String {
+    let saas = host.trim().split(['/', ':']).next().unwrap_or_default().to_ascii_lowercase().ends_with(".exasol.com");
+    let lower = message.to_ascii_lowercase();
+    let unreachable = ["couldn't reach", "can't be reached", "timed out", "timeout", "connection refused", "did not answer"].iter().any(|p| lower.contains(p));
+    if saas && unreachable {
+        format!("{message} This is an Exasol SaaS database: check that this machine's IP address is on the cluster's allow list in the SaaS console.")
+    } else {
+        message
+    }
+}
+
 impl From<sqlx_exasol::Error> for AppError {
     fn from(err: sqlx_exasol::Error) -> Self {
         match err {
@@ -131,12 +155,41 @@ impl Serialize for AppError {
             AppError::InvalidSettings(_) => "invalid-settings",
             AppError::Storage(_) => "storage",
             AppError::Assistant(_) => "assistant",
+            AppError::UntrustedCertificate { .. } => "untrusted-certificate",
+            AppError::CertificateChanged { .. } => "certificate-changed",
+            AppError::UnknownHostKey { .. } => "unknown-host-key",
         };
-        let mut state = serializer.serialize_struct("AppError", 2)?;
+        let mut state = serializer.serialize_struct("AppError", 4)?;
         state.serialize_field("kind", kind)?;
         state.serialize_field("message", &self.to_string())?;
+        match self {
+            AppError::UntrustedCertificate { fingerprint } => state.serialize_field("fingerprint", fingerprint)?,
+            AppError::CertificateChanged { expected, actual } => {
+                state.serialize_field("expected", expected)?;
+                state.serialize_field("fingerprint", actual)?;
+            }
+            AppError::UnknownHostKey { host, fingerprint } => {
+                state.serialize_field("host", host)?;
+                state.serialize_field("fingerprint", fingerprint)?;
+            }
+            _ => {}
+        }
         state.end()
     }
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::with_saas_hint;
+
+    #[test]
+    fn an_unreachable_saas_cluster_points_at_the_allow_list() {
+        let m = with_saas_hint("abc.clusters.exasol.com", "The connection timed out.".into());
+        assert!(m.contains("allow list"));
+        assert!(with_saas_hint("abc.clusters.exasol.com:8563", "Couldn't reach the database".into()).contains("allow list"));
+        assert_eq!(with_saas_hint("db.example.com", "The connection timed out.".into()), "The connection timed out.", "not SaaS");
+        assert_eq!(with_saas_hint("abc.clusters.exasol.com", "login failed".into()), "login failed", "not an unreachable server");
+    }
+}

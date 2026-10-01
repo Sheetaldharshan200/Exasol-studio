@@ -7,7 +7,8 @@
  * instead of spawning a separate tab. The old "Show in Dashboard" view moved
  * into the per-connection Health tab (issue #45).
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { NullTextContext } from "./null-text";
 import { AlertTriangle, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
@@ -20,6 +21,7 @@ import { QueryPlanTabs } from "./QueryPlanTabs";
 import type { Plan } from "@/lib/plan-model";
 import type { ExecuteResponse, StatementResult } from "@/lib/ipc";
 import type { ResultView } from "./tabs";
+import { planFor } from "./use-result-paging";
 
 const TABS: { id: ResultView; label: string; icon: typeof Table2 }[] = [
   { id: "results", label: "Results", icon: Table2 },
@@ -100,7 +102,9 @@ export function ResultsPanel({
   // keystroke — a huge script must not re-split on every render.
   // Paging belongs to the statement that RAN — see ranSql below.
   const pagedFrom = runMeta?.sql ?? sql;
-  const isSingleSelect = useMemo(() => splitStatements(pagedFrom).length === 1 && /^select/i.test(pagedFrom.trim()), [pagedFrom]);
+  // Pageable: one SELECT/WITH statement whose rows can be ordered for paging
+  // (lib/result-pages.ts), not one with its own LIMIT.
+  const isSingleSelect = useMemo(() => planFor(pagedFrom, response) !== null, [pagedFrom, response]);
   // What actually RAN (a selection, the statement at the cursor, …) — the
   // buffer may have moved on since. Result views must attribute rows to THIS,
   // and each result to ITS statement (statement i produced result i).
@@ -164,7 +168,7 @@ export function ResultsPanel({
                   return (
                     <span
                       className="flex items-center gap-1"
-                      title="Pages beyond the first are ordered by the first column — Exasol requires a deterministic order for OFFSET"
+                      title="Pages follow one fixed order (the statement's own ORDER BY, then every column), so each page continues the last"
                     >
                       Rows {from.toLocaleString()}–{to.toLocaleString()}
                       <button
@@ -463,6 +467,7 @@ function ResultsView({
   fontSize: number;
   zebra: boolean;
 }) {
+  const nullText = useContext(NullTextContext);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<{ value: unknown; column: string; row: number; col: number } | null>(null);
   const [showPanel, setShowPanel] = useState(true);
@@ -477,7 +482,7 @@ function ResultsView({
   const stats = computeStats({ timeMs: result.elapsedMs, rows: displayRows.length, cols: result.columns.length });
 
   function exportCsv() {
-    const csv = toCsv(result.columns, displayRows);
+    const csv = toCsv(result.columns, displayRows, { bom: true });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -552,7 +557,7 @@ function ResultsView({
               <>
                 <p className="mb-1 font-mono text-[10px] text-muted-foreground">{selected.column}</p>
                 <pre className="max-h-40 overflow-auto rounded bg-secondary/50 p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words text-foreground">
-                  {selected.value === null ? "null" : cellText(selected.value)}
+                  {selected.value === null ? <span className="text-muted-foreground italic">{nullText}</span> : cellText(selected.value)}
                 </pre>
               </>
             ) : (

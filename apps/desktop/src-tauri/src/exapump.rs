@@ -90,17 +90,39 @@ fn emit(app: &AppHandle, line: impl Into<String>, level: &str) {
 #[tauri::command]
 pub async fn exapump_upload(
     app: AppHandle,
-    host: String,
-    port: u16,
-    user: String,
-    password: String,
+    profile_id: String,
     schema: Option<String>,
-    tls: bool,
     file: String,
     table: String,
     delimiter: Option<String>,
     dry_run: bool,
 ) -> AppResult<Value> {
+    // Credentials and trust come from the saved connection, never from the
+    // page; a read-only connection is not loaded into (a dry run still is).
+    let (profile, read_only) = {
+        let state = app.state::<crate::state::AppState>();
+        (crate::profiles::find_profile(&state, &profile_id)?, crate::safety::read_only(&state, &profile_id))
+    };
+    if read_only && !dry_run {
+        return Err(AppError::InvalidSettings(format!("\"{}\" is read-only: data cannot be loaded into it.", profile.name)));
+    }
+    if profile.auth_method != "password" {
+        return Err(AppError::InvalidSettings("Loading data signs in with a password; this connection uses a token.".into()));
+    }
+    // Through an SSH tunnel or proxy: the open connection's loopback port.
+    let (host, port) = match &profile.network {
+        Some(_) => {
+            let state = app.state::<crate::state::AppState>();
+            let route = state.carriers.lock().ok().and_then(|c| c.get(&profile.id).and_then(|c| c.route_port()));
+            match route {
+                Some(p) => ("127.0.0.1".to_string(), p),
+                None => return Err(AppError::InvalidSettings("Connect first: this connection runs through an SSH tunnel or proxy.".into())),
+            }
+        }
+        None => (profile.host.clone(), profile.port),
+    };
+    let (user, password) = (profile.username.clone(), profile.password.clone());
+    let (_, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode);
     let bin = exapump_path(&app).ok_or_else(|| {
         AppError::Storage(
             "ExaPump isn't installed. Install it from the Marketplace, then try again.".into(),
@@ -112,13 +134,18 @@ pub async fn exapump_upload(
         .map(|s| format!("/{s}"))
         .unwrap_or_default();
     let dsn = format!(
-        "exasol://{}:{}@{host}:{port}{schema_path}?tls={}&validateservercertificate=0",
+        "exasol://{}:{}@{host}:{port}{schema_path}?tls=true&validateservercertificate={}",
         enc(&user),
         enc(&password),
-        if tls { "true" } else { "false" },
+        // A pin is passed as exapump's own pin (below); else the verify mode.
+        if verify && profile.fingerprint.is_none() { "1" } else { "0" },
     );
 
     let mut args: Vec<String> = vec!["upload".into(), file, "--table".into(), table];
+    if let Some(fp) = &profile.fingerprint {
+        args.push("--certificate-fingerprint".into());
+        args.push(fp.clone());
+    }
     if let Some(d) = delimiter.filter(|d| !d.is_empty()) {
         args.push("--delimiter".into());
         args.push(d);
