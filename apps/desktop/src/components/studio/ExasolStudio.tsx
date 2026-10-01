@@ -83,6 +83,7 @@ import { useResultPaging } from "./use-result-paging";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 import { sqlBehindGrid } from "@/lib/run-meta";
+import { closeQuestion } from "@/lib/tab-close";
 
 export function ExasolStudio({
   connection,
@@ -1478,8 +1479,11 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Closing never loses SQL silently: a tab with unsaved changes asks first.
   function closeTab(id: string) {
     const list = tabsFor(connKey);
+    const q = closeQuestion(list.filter((t) => t.id === id));
+    if (q && !window.confirm(q)) return;
     const next = list.filter((t) => t.id !== id);
     updateTabs(connKey, () => next);
     // Closing the last tab is allowed — the workspace falls back to Welcome.
@@ -1495,6 +1499,8 @@ export function ExasolStudio({
 
   // Bulk tab actions for the tab-bar overflow menu. Pinned tabs are always kept.
   function closeAllTabs() {
+    const q = closeQuestion(tabsFor(connKey).filter((t) => !t.pinned));
+    if (q && !window.confirm(q)) return;
     const kept = tabsFor(connKey).filter((t) => t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(kept[kept.length - 1]?.id ?? "");
@@ -1502,6 +1508,8 @@ export function ExasolStudio({
     setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
   }
   function closeOtherTabs(keepId: string) {
+    const q = closeQuestion(tabsFor(connKey).filter((t) => t.id !== keepId && !t.pinned));
+    if (q && !window.confirm(q)) return;
     const kept = tabsFor(connKey).filter((t) => t.id === keepId || t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(keepId);
@@ -2354,8 +2362,8 @@ export function ExasolStudio({
           list.map((t) => (t.id === activeTab.id ? { ...t, fileMissing: false, savedSql: t.sql } : t)),
         );
         setFilesRefresh((n) => n + 1);
-      } catch {
-        /* ignore write error */
+      } catch (e) {
+        pushNotification("warning", "Could not save", errorMessage(e));
       }
       return;
     }
@@ -2368,8 +2376,8 @@ export function ExasolStudio({
         await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
         patchTab(activeTab.id, { title: fileName, savedSql: activeTab.sql, filePath: `${wsPath}/${fileName}` });
         setFilesRefresh((n) => n + 1);
-      } catch {
-        /* ignore write error */
+      } catch (e) {
+        pushNotification("warning", "Could not save", errorMessage(e));
       }
       return;
     }
@@ -2392,8 +2400,8 @@ export function ExasolStudio({
       await ipc.writeTextFile(`${wsPath}/${file}`, activeTab.sql);
       patchTab(activeTab.id, { title: file, savedSql: activeTab.sql, filePath: `${wsPath}/${file}` });
       setFilesRefresh((n) => n + 1);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      pushNotification("warning", "Could not save", errorMessage(e));
     }
   }
 

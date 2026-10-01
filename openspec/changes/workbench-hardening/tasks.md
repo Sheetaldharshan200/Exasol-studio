@@ -30,11 +30,11 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 - [x] 1.3.4 Edits on a truncated or paged result are keyed by the row's own key values only (`edit-dml.ts`; test: `edit-dml.test.ts`).
 
 ### 1.4 Files and tabs
-- [ ] 1.4.1 `write_text_file` only writes under the workspace folder or a path picked in a save dialog this session (`files.rs`; test: `files.rs` path-allow tests incl. `..` and symlinks).
-- [ ] 1.4.2 Closing a tab with unsaved SQL asks: Save / Discard / Cancel; also for close-others / close-all (`ExasolStudio.tsx::closeTab` via `lib/tab-close.ts`; test: `lib/tab-close.test.ts`).
-- [ ] 1.4.3 Save failures are shown, not swallowed (`ExasolStudio.tsx` save paths).
-- [ ] 1.4.4 `savedSql` persisted, so restored tabs are not all marked modified (`lib/workspace-persist.ts`; test: `workspace-persist.test.ts`).
-- [ ] 1.4.5 Strip-comments keeps `--/ … /` script blocks intact (`lib/sql-text.ts::stripSqlComments`; test: `sql-text.test.ts`).
+- [x] 1.4.1 `write_text_file` refuses relative paths, `..`, hidden files/folders, ~/Library and system folders, non-text types, also through a symlinked folder (`files.rs::write_permitted`; test: `files.rs`).
+- [x] 1.4.2 Closing a tab with unsaved SQL asks before discarding (names the tabs); also for close-others / close-all (`ExasolStudio.tsx::closeTab` via `lib/tab-close.ts`; test: `lib/tab-close.test.ts`).
+- [x] 1.4.3 Save failures are shown, not swallowed (`ExasolStudio.tsx` save paths).
+- [x] 1.4.4 `savedSql` persisted, so restored tabs are not all marked modified (`lib/workspace-persist.ts`; test: `workspace-persist.test.ts`).
+- [x] 1.4.5 Strip-comments keeps `--/ … /` script blocks intact (`lib/sql-text.ts::stripSqlComments`; test: `sql-text.test.ts`).
 
 ## Phase 2 — One session per editor tab
 

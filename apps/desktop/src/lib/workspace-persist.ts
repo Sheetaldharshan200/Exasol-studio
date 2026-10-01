@@ -50,6 +50,7 @@ const KEEP: readonly (keyof SqlTab)[] = [
   "sql",
   "pinned",
   "filePath",
+  "savedSql",
   "fileMissing",
   "groupId",
   "mcpPreset",

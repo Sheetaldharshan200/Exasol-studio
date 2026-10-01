@@ -9,7 +9,57 @@ use tauri::Manager;
 /// Write UTF-8 text to an absolute path chosen by the user in a save dialog.
 #[tauri::command]
 pub async fn write_text_file(path: String, contents: String) -> AppResult<()> {
-    std::fs::write(&path, contents)?;
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from);
+    let target = std::path::PathBuf::from(&path);
+    write_permitted(&target, home.as_deref()).map_err(crate::error::AppError::InvalidSettings)?;
+    // A symlinked folder must not lead somewhere the rules forbid.
+    if let Some(real_parent) = target.parent().and_then(|p| std::fs::canonicalize(p).ok()) {
+        let real = real_parent.join(target.file_name().unwrap_or_default());
+        write_permitted(&real, home.as_deref()).map_err(crate::error::AppError::InvalidSettings)?;
+    }
+    std::fs::write(&target, contents)?;
+    Ok(())
+}
+
+/// File types the page may write: documents and data, never anything a
+/// shell, launchd or an app would load and run.
+const WRITABLE_EXTENSIONS: &[&str] = &[
+    "sql", "txt", "md", "markdown", "html", "htm", "csv", "tsv", "json", "jsonl", "ndjson", "log", "yaml", "yml", "xml",
+];
+
+/// Whether the page may write `path`. The page can name any path, so a
+/// compromised page must not be able to plant a login item, a shell profile
+/// or a key: absolute paths only, no `..`, no hidden folder or file (`~/.ssh`,
+/// `~/.zshrc`), nothing under `~/Library` or system folders, text types only.
+pub(crate) fn write_permitted(path: &std::path::Path, home: Option<&std::path::Path>) -> Result<(), String> {
+    use std::path::Component;
+    let shown = path.display();
+    if !path.is_absolute() {
+        return Err(format!("Refusing to write {shown}: the path is not absolute."));
+    }
+    for c in path.components() {
+        match c {
+            Component::ParentDir | Component::CurDir => return Err(format!("Refusing to write {shown}: the path contains `..` or `.`.")),
+            Component::Normal(part) if part.to_string_lossy().starts_with('.') => {
+                return Err(format!("Refusing to write {shown}: hidden files and folders are off limits."))
+            }
+            _ => {}
+        }
+    }
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if !WRITABLE_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(format!("Refusing to write {shown}: only text documents ({}) can be saved here.", WRITABLE_EXTENSIONS.join(", ")));
+    }
+    let lower = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let system = ["/system/", "/library/", "/usr/", "/bin/", "/sbin/", "/etc/", "/private/etc/", "/private/var/db/", "c:/windows/", "c:/program files"];
+    if system.iter().any(|p| lower.starts_with(p)) {
+        return Err(format!("Refusing to write {shown}: system folders are off limits."));
+    }
+    if let Some(home) = home {
+        if path.starts_with(home.join("Library")) || path.starts_with(home.join("AppData")) {
+            return Err(format!("Refusing to write {shown}: application support folders are off limits."));
+        }
+    }
     Ok(())
 }
 
@@ -144,4 +194,36 @@ pub async fn save_attachment(
         .map_err(|e| AppError::Storage(format!("invalid attachment payload: {e}")))?;
     std::fs::write(&file, bytes)?;
     Ok(file.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod write_guard_tests {
+    use super::write_permitted;
+    use std::path::Path;
+
+    fn ok(p: &str) -> bool {
+        write_permitted(Path::new(p), Some(Path::new("/Users/ada"))).is_ok()
+    }
+
+    #[test]
+    fn documents_the_user_saves_are_allowed() {
+        assert!(ok("/Users/ada/ExasolStudio/queries/sales.sql"));
+        assert!(ok("/Users/ada/Desktop/notebook.html"));
+        assert!(ok("/Users/ada/Documents/recovery-keys.TXT"));
+        assert!(ok("/Volumes/USB/export.csv"));
+    }
+
+    #[test]
+    fn nothing_that_could_run_or_steal_is_allowed() {
+        assert!(!ok("/Users/ada/.zshrc"), "shell profile");
+        assert!(!ok("/Users/ada/.ssh/authorized_keys.txt"), "hidden folder");
+        assert!(!ok("/Users/ada/Library/LaunchAgents/evil.plist"), "launch agent");
+        assert!(!ok("/Users/ada/Library/Notes/x.txt"), "anything under ~/Library");
+        assert!(!ok("/Users/ada/ExasolStudio/../.bashrc.sql"), "parent components");
+        assert!(!ok("/Users/ada/run.sh"), "not a document type");
+        assert!(!ok("/Users/ada/noext"), "no extension");
+        assert!(!ok("relative/file.sql"), "relative path");
+        assert!(!ok("/etc/hosts.txt"), "system folder");
+        assert!(!ok("/Library/LaunchDaemons/x.xml"), "system library");
+    }
 }

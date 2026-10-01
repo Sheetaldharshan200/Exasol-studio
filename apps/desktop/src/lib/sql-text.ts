@@ -201,6 +201,42 @@ export function pickRunSql(scope: RunScope, full: string, selection: string, cur
 
 /** Strip line (--) and block comments, preserving string literals. */
 export function stripSqlComments(sql: string): string {
+  // A `--/` line opens an Exasol script block that runs to a line holding only
+  // `/`. Its body is script code (Lua, Python, …) where comments are code, and
+  // the `--/` marker itself is what keeps the server from splitting the body
+  // on its `;` — so blocks pass through untouched and only the SQL around them
+  // loses its comments.
+  const lines = sql.split("\n");
+  const out: string[] = [];
+  let plain: string[] = [];
+  let i = 0;
+  const flush = () => {
+    if (plain.length) out.push(stripCommentsOutsideBlocks(plain.join("\n")));
+    plain = [];
+  };
+  while (i < lines.length) {
+    if (lines[i].trimStart().startsWith("--/")) {
+      flush();
+      const block: string[] = [];
+      while (i < lines.length) {
+        block.push(lines[i]);
+        if (block.length > 1 && lines[i].trim() === "/") {
+          i++;
+          break;
+        }
+        i++;
+      }
+      out.push(block.join("\n"));
+    } else {
+      plain.push(lines[i]);
+      i++;
+    }
+  }
+  flush();
+  return out.join("\n");
+}
+
+function stripCommentsOutsideBlocks(sql: string): string {
   let out = "";
   let inSingle = false;
   let inDouble = false;
