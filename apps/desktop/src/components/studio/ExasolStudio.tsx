@@ -1235,9 +1235,10 @@ export function ExasolStudio({
       password: final.password,
       schema: final.schema,
       notes: final.notes,
-      // The agent cannot answer "Trust this certificate?", so a connection it
-      // creates encrypts without verifying; a person can pin it in the form.
-      sslMode: existing?.sslMode ?? "required",
+      // Verified like any new connection. The agent cannot answer "Trust this
+      // certificate?": an untrusted one fails here, and the person trusts it
+      // in the connection form — never the agent on their behalf.
+      sslMode: existing?.sslMode ?? "verify_identity",
       compression: existing?.compression ?? false,
       driverId: existing?.driverId ?? "sqlx-exasol",
     });

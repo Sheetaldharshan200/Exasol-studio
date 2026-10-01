@@ -128,14 +128,17 @@ pub fn build_connect_options(profile: &ConnectionProfile) -> AppResult<ExaConnec
 /// `access-token` / `refresh-token`.
 pub(crate) fn connect_url(profile: &ConnectionProfile) -> String {
     let token = matches!(profile.auth_method.as_str(), "access_token" | "refresh_token");
+    // An IPv6 address goes in brackets in a URL.
+    let host = profile.host.trim();
+    let host = if host.contains(':') && !host.starts_with('[') { format!("[{host}]") } else { host.to_string() };
     let mut url = if token {
-        format!("exa://{}:{}", profile.host.trim(), profile.port)
+        format!("exa://{}:{}", host, profile.port)
     } else {
         format!(
             "exa://{}:{}@{}:{}",
             percent_encode(&profile.username),
             percent_encode(&profile.password),
-            profile.host.trim(),
+            host,
             profile.port
         )
     };
@@ -145,7 +148,7 @@ pub(crate) fn connect_url(profile: &ConnectionProfile) -> String {
     if ssl_mode != "preferred" {
         params.push(format!("ssl-mode={ssl_mode}"));
     }
-    if let Some(ca) = profile.ssl_ca.as_deref().filter(|_| profile.fingerprint.is_none()) {
+    if let Some(ca) = profile.ssl_ca.as_deref() {
         params.push(format!("ssl-ca={}", percent_encode(ca)));
     }
     match profile.auth_method.as_str() {
@@ -294,8 +297,18 @@ pub async fn server_certificate(state: State<'_, AppState>, host: String, port: 
 /// certificate is checked first; a certificate that fails verification while
 /// nothing is pinned comes back as `UntrustedCertificate` with its
 /// fingerprint, so the person can choose to trust it.
-async fn open_checked(profile: &ConnectionProfile, size: u32, hooks: Vec<String>, timeout: Duration) -> AppResult<(ExaPool, ServerInfo)> {
-    crate::tls_trust::check_pin(&profile.host, profile.port, profile.fingerprint.as_deref(), timeout).await?;
+async fn open_checked(data_dir: &std::path::Path, profile: &ConnectionProfile, size: u32, hooks: Vec<String>, timeout: Duration) -> AppResult<(ExaPool, ServerInfo)> {
+    // A pinned certificate becomes the CA of the connection itself.
+    let pinned;
+    let profile = match profile.fingerprint.as_deref() {
+        Some(pin) => {
+            let mut p = profile.clone();
+            p.ssl_ca = Some(crate::tls_trust::pin_file(data_dir, &profile.host, profile.port, pin, timeout).await?.to_string_lossy().into_owned());
+            pinned = p;
+            &pinned
+        }
+        None => profile,
+    };
     let log = HookLog::default();
     let opened = match open_pool_sized(profile, size, hooks, timeout, &log).await {
         Ok(pool) => match read_server_info(&pool).await {
@@ -330,14 +343,17 @@ pub async fn test_connection(app: tauri::AppHandle, state: State<'_, AppState>, 
     // kept on save); test with the stored one too.
     if profile.password.is_empty() && !profile.id.is_empty() {
         if let Ok(saved) = find_profile(&state, &profile.id) {
-            profile.password = saved.password;
+            // Only to where it was saved for — never to a changed server.
+            if crate::profile_check::may_reuse_secret(&saved, &profile) {
+                profile.password = saved.password;
+            }
         }
     }
     crate::profile_check::validate_profile(&mut profile)?;
     if crate::exarrow_exec::is_exarrow(&profile.driver_id) || crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         return test_with_driver(app, &state, profile).await;
     }
-    let (pool, info) = open_checked(&profile, 4, Vec::new(), connect_timeout(&state)).await?;
+    let (pool, info) = open_checked(&state.data_dir, &profile, 4, Vec::new(), connect_timeout(&state)).await?;
     pool.close().await;
     Ok(info)
 }
@@ -345,10 +361,9 @@ pub async fn test_connection(app: tauri::AppHandle, state: State<'_, AppState>, 
 /// Test with the connection's own driver (exarrow, or a bridge runtime): the
 /// same two reads the native path does, through that driver.
 async fn test_with_driver(app: tauri::AppHandle, state: &AppState, profile: ConnectionProfile) -> AppResult<ServerInfo> {
-    if let Some(why) = crate::tls_trust::bridge_unsupported(profile.ssl_ca.as_deref(), &profile.auth_method) {
+    if let Some(why) = crate::tls_trust::bridge_unsupported(profile.ssl_ca.as_deref(), &profile.auth_method, profile.fingerprint.is_some()) {
         return Err(AppError::InvalidSettings(why));
     }
-    crate::tls_trust::check_pin(&profile.host, profile.port, profile.fingerprint.as_deref(), connect_timeout(state)).await?;
     let stmts = vec![SESSION_SQL.to_string(), META_SQL.to_string()];
     let stop = crate::query::StopPolicy::default();
     let resp = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
@@ -399,7 +414,7 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
             Vec::new()
         };
 
-    let (pool, info) = open_checked(&profile, pool_size, connect_hooks, connect_timeout(&state)).await?;
+    let (pool, info) = open_checked(&state.data_dir, &profile, pool_size, connect_hooks, connect_timeout(&state)).await?;
 
     // Connection Keep-Alive: validate on an interval while the pool lives.
     // The task holds only a pool clone; pool.close() (disconnect) ends it.
@@ -570,6 +585,11 @@ mod tests {
     fn the_driver_url_carries_the_sign_in_and_the_trust_settings() {
         let p = draft("password", "verify_identity");
         assert_eq!(super::connect_url(&p), "exa://sys:p%40ss%2Fword@db.example.com:8563?ssl-mode=verify_identity&compression=disabled");
+        assert!(super::connect_url(&draft("password", "preferred")).contains("ssl-mode=required"), "no plaintext fallback");
+        let mut v6 = draft("password", "required");
+        v6.host = "::1".into();
+        assert!(super::connect_url(&v6).contains("@[::1]:8563"), "IPv6 in brackets");
+        assert!(super::build_connect_options(&v6).is_ok());
         let mut t = draft("access_token", "verify_identity");
         t.password = "tok.en".into();
         let u = super::connect_url(&t);
@@ -584,7 +604,7 @@ mod tests {
         let mut pinned = ca.clone();
         pinned.fingerprint = Some("AB".repeat(32));
         let u = super::connect_url(&pinned);
-        assert!(u.contains("ssl-mode=required") && !u.contains("ssl-ca"), "the pin replaces the CA check: {u}");
+        assert!(u.contains("ssl-mode=verify_identity"), "a pin is verified with the host name: {u}");
         assert!(super::build_connect_options(&pinned).is_ok());
         assert!(super::build_connect_options(&t).is_ok());
     }
@@ -696,8 +716,9 @@ mod live_trust {
             auth_method: "password".into(),
         };
         let t = Duration::from_secs(15);
+        let dir = std::env::temp_dir().join(format!("studio-pins-{}", std::process::id()));
         // Verify, nothing pinned: a self-signed local database is offered for trust.
-        let fp = match super::open_checked(&p, 1, Vec::new(), t).await {
+        let fp = match super::open_checked(&dir, &p, 1, Vec::new(), t).await {
             Err(AppError::UntrustedCertificate { fingerprint }) => fingerprint,
             other => panic!("expected an untrusted certificate, got {:?}", other.map(|_| ())),
         };
@@ -705,12 +726,12 @@ mod live_trust {
         assert_eq!(crate::tls_trust::server_fingerprint("127.0.0.1", port, t).await.unwrap(), fp, "stable");
         // Trusted: pinned, it connects.
         p.fingerprint = Some(fp.clone());
-        let (pool, info) = super::open_checked(&p, 1, Vec::new(), t).await.expect("pinned connect");
+        let (pool, info) = super::open_checked(&dir, &p, 1, Vec::new(), t).await.expect("pinned connect");
         assert!(info.version.is_some());
         pool.close().await;
         // A different pin: the change is reported, nothing connects.
         p.fingerprint = Some("00".repeat(32));
-        match super::open_checked(&p, 1, Vec::new(), t).await {
+        match super::open_checked(&dir, &p, 1, Vec::new(), t).await {
             Err(AppError::CertificateChanged { actual, .. }) => assert_eq!(actual, fp),
             other => panic!("expected a changed certificate, got {:?}", other.map(|_| ())),
         }

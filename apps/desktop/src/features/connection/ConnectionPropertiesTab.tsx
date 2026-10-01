@@ -452,8 +452,10 @@ export function ConnectionPropertiesTab({
           fingerprint: profileDraft.fingerprint?.trim() || null,
           sslCa: profileDraft.sslCa?.trim() || null,
           authMethod: profileDraft.authMethod || "password",
-          // Blank keeps the stored password (server-side rule).
-          password: settings.auth.passwordPolicy === "session" ? "" : profileDraft.password,
+          // Blank keeps the stored password, unless the server, user or
+          // sign-in changed (server-side rule). "This session only" moves the
+          // typed one to memory right after (setSessionPassword clears it).
+          password: profileDraft.password,
         });
         setProfile(saved);
         // "This session only": the typed password lives in memory for this run

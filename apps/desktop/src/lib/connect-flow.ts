@@ -22,7 +22,9 @@ export function displayFingerprint(fp: string): string {
 /** The encryption choices: always encrypted (Exasol 8.19+ refuses plain). */
 export const ENCRYPTION_MODES: { value: string; label: string }[] = [
   { value: "verify_identity", label: "Verify certificate and host (recommended)" },
-  { value: "verify_ca", label: "Verify certificate" },
+  // The driver checks the chain but not the name, against the public roots
+  // too: any publicly trusted certificate passes. Kept for existing setups.
+  { value: "verify_ca", label: "Verify certificate, not host name (weak)" },
   { value: "required", label: "Encrypt without verifying" },
 ];
 

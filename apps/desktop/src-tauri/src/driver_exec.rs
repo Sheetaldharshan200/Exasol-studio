@@ -697,7 +697,7 @@ fn execute_bridge(
         (py.clone(), Some(p))
     };
 
-    let (tls, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode, profile.fingerprint.is_some());
+    let (tls, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode);
     let jar = if needs_python { jdbc_jar(app)?.to_string_lossy().to_string() } else { String::new() };
     // A Marketplace-installed ODBC library is used by PATH (pyodbc accepts a
     // driver file path), so no OS-level driver registration is ever required.

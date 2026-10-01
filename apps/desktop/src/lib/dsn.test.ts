@@ -66,3 +66,9 @@ test("anything else is not an address", () => {
   assert.equal(parseDsn("select * from t"), null);
   assert.equal(parseDsn("just-a-host"), null, "too little to call it a DSN");
 });
+
+test("IPv6 addresses in brackets", () => {
+  assert.deepEqual(parseDsn("[::1]:8563"), { host: "::1", port: "8563" });
+  assert.deepEqual(parseDsn("jdbc:exa:[fe80::1]:8563;schema=S"), { host: "fe80::1", port: "8563", schema: "S" });
+  assert.deepEqual(checkHost("::1"), { ok: true, hosts: ["::1"] });
+});

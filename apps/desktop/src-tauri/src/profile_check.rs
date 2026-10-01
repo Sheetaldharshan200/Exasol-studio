@@ -66,6 +66,17 @@ pub fn same_connection(p: &ConnectionProfile, new: &ConnectionProfile) -> bool {
         && p.driver_id == new.driver_id
 }
 
+/// Whether an edit that leaves the secret blank may keep the stored one: only
+/// while it goes to the same server, as the same user, the same way. Anything
+/// else could hand the old password to a different host — or send it as a
+/// token.
+pub fn may_reuse_secret(old: &ConnectionProfile, new: &ConnectionProfile) -> bool {
+    old.host.trim().eq_ignore_ascii_case(new.host.trim())
+        && old.port == new.port
+        && old.username == new.username
+        && old.auth_method == new.auth_method
+}
+
 /// A name for a copy that no other profile has: "X (copy)", "X (copy 2)", …
 pub fn copy_name(name: &str, taken: &[String]) -> String {
     let base = format!("{} (copy)", name.trim());
@@ -78,7 +89,7 @@ pub fn copy_name(name: &str, taken: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_name, same_connection, validate_profile};
+    use super::{copy_name, may_reuse_secret, same_connection, validate_profile};
     use crate::profiles::ConnectionProfile;
 
     fn draft() -> ConnectionProfile {
@@ -116,6 +127,25 @@ mod tests {
         d.host = "DB.EXAMPLE.COM".into();
         d.name = "X".into();
         assert!(same_connection(&a, &d), "host and name ignore case");
+    }
+
+    #[test]
+    fn a_stored_secret_never_follows_a_changed_server_user_or_sign_in() {
+        let old = draft();
+        let mut same = draft();
+        same.name = "renamed".into();
+        same.notes = Some("new notes".into());
+        assert!(may_reuse_secret(&old, &same), "renaming keeps it");
+        for change in [
+            |p: &mut ConnectionProfile| p.host = "other.example.com".into(),
+            |p: &mut ConnectionProfile| p.port = 8564,
+            |p: &mut ConnectionProfile| p.username = "admin".into(),
+            |p: &mut ConnectionProfile| p.auth_method = "access_token".into(),
+        ] {
+            let mut p = draft();
+            change(&mut p);
+            assert!(!may_reuse_secret(&old, &p));
+        }
     }
 
     #[test]
