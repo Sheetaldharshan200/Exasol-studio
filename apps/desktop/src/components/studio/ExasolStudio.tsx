@@ -74,6 +74,7 @@ import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
 import { nullLabel } from "@/lib/null-label";
 import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
+import { installSqlFormatting } from "./sql-formatting";
 import { useConnSettings } from "./use-conn-settings";
 import { EnvBadge, envOf } from "./EnvBadge";
 import { DEFAULT_CONN_SETTINGS } from "@/lib/conn-settings";
@@ -3780,6 +3781,7 @@ export function ExasolStudio({
                 <Editor
                   beforeMount={(m) => {
                     applyMonacoThemes(m);
+                    installSqlFormatting(m);
                     // A UDF body is written in whatever language its header
                     // names — tokenize it as that, not as SQL. Which
                     // languages exist comes from the server (SCRIPT_LANGUAGES).
