@@ -74,9 +74,12 @@ import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
 import { nullLabel } from "@/lib/null-label";
 import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
+import { useShortcuts } from "./use-shortcuts";
+import { ShortcutSheet } from "./ShortcutSheet";
 import { ParamsDialog, askParams } from "./ParamsDialog";
 import { findParams, substituteParams } from "@/lib/sql-params";
 import { installSqlFormatting } from "./sql-formatting";
+import { installSqlSignatureHelp } from "./sql-signature-help";
 import { useConnSettings } from "./use-conn-settings";
 import { EnvBadge, envOf } from "./EnvBadge";
 import { DEFAULT_CONN_SETTINGS } from "@/lib/conn-settings";
@@ -90,7 +93,7 @@ import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
-import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, newTab, tabHasWork, type SqlTab, type TabGroup } from "./tabs";
+import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, fileName, newTab, tabHasWork, tabTarget, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { createSerialQueue } from "@/lib/serial-queue";
@@ -1455,7 +1458,7 @@ export function ExasolStudio({
       const opened = await ipc.openTextFile();
       if (!opened) return;
       const [picked, text] = opened;
-      openFile(picked.split("/").pop() ?? "query.sql", text, picked);
+      openFile(fileName(picked), text, picked);
     } catch (e) {
       pushNotification("warning", "Could not open the file", errorMessage(e));
     }
@@ -2427,9 +2430,14 @@ export function ExasolStudio({
 
   // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).
   const [stopping, setStopping] = useState(false);
+  const stoppingRef = useRef(false);
+  const stoppedPid = useRef<string | null>(null);
   const cancelRunning = useCallback(async () => {
     const pid = runningProgressId.current;
-    if (!pid || stopping) return;
+    // One KILL per run: a held key or a second click sends no more.
+    if (!pid || stoppingRef.current || stoppedPid.current === pid) return;
+    stoppingRef.current = true;
+    stoppedPid.current = pid;
     setStopping(true);
     try {
       const killed = await ipc.cancelQuery(pid);
@@ -2438,12 +2446,54 @@ export function ExasolStudio({
         killed ? "Stopping query" : "Nothing to stop",
         killed ? "Cancelling the running statement…" : "The query already finished.",
       );
+      if (!killed) stoppedPid.current = null;
     } catch (e) {
+      stoppedPid.current = null;
       pushNotification("warning", "Could not stop the query", errorMessage(e));
     } finally {
+      stoppingRef.current = false;
       setStopping(false);
     }
-  }, [stopping]);
+  }, []);
+  const cancelRunningRef = useRef(cancelRunning);
+  cancelRunningRef.current = cancelRunning;
+
+  /** Save the tab's SQL to a file chosen in the save dialog. */
+  async function saveTabAs() {
+    if (!isTauri()) return void saveTab();
+    const name = activeTab.filePath ? fileName(activeTab.filePath) : `${activeTab.title.replace(/\s+/g, "_").toLowerCase().replace(/\.sql$/, "")}.sql`;
+    try {
+      const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
+      if (!saved) return;
+      patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+      setFilesRefresh((n) => n + 1);
+    } catch (e) {
+      pushNotification("warning", "Could not save", errorMessage(e));
+    }
+  }
+
+  // Keyboard shortcuts (lib/shortcuts.ts); Mod+K search is GlobalSearch's.
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const goToTab = (move: { by: number } | { n: number }) => {
+    const i = tabTarget(tabs.length, tabs.findIndex((t) => t.id === activeTab.id), move);
+    if (i !== null) setActiveTabId(tabs[i].id);
+  };
+  const focusArea = (area: "navigator" | "results") => (document.querySelector(`[data-focus="${area}"]`) as HTMLElement | null)?.focus();
+  useShortcuts({
+    "run.cancel": () => void cancelRunning(),
+    "tab.new": () => openSqlTab("", "SQL"),
+    "tab.close": () => closeTab(activeTab.id),
+    "tab.next": () => goToTab({ by: 1 }),
+    "tab.prev": () => goToTab({ by: -1 }),
+    ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab.${i + 1}`, () => goToTab({ n: i + 1 })])),
+    "file.save": () => void (activeTab.view === "sql" ? saveTab() : undefined),
+    "file.saveAs": () => void (activeTab.view === "sql" ? saveTabAs() : undefined),
+    "file.open": () => void openSqlFile(),
+    "focus.tree": () => focusArea("navigator"),
+    "focus.editor": () => editorRef.current?.focus(),
+    "focus.results": () => focusArea("results"),
+    "help.shortcuts": () => setShowShortcuts(true),
+  });
 
   async function saveTab() {
     // A tab opened from an existing file saves back to that same file.
@@ -2459,9 +2509,9 @@ export function ExasolStudio({
         // A file Studio may not write back to (opened from the file tree, not
         // picked in a dialog): offer the save dialog rather than failing.
         try {
-          const name = activeTab.filePath.split("/").pop() ?? "query.sql";
+          const name = fileName(activeTab.filePath);
           const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
-          if (saved) patchTab(activeTab.id, { title: saved.split("/").pop() ?? name, savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+          if (saved) patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
         } catch (e2) {
           pushNotification("warning", "Could not save", errorMessage(e2 ?? e));
         }
@@ -2469,13 +2519,13 @@ export function ExasolStudio({
       return;
     }
     const base = activeTab.title.replace(/\s+/g, "_").toLowerCase().replace(/\.sql$/, "");
-    const fileName = `${base}.sql`;
+    const newName = `${base}.sql`;
     // Save straight into the workspace folder (shown in the Files panel) —
     // no separate save window. Fall back to a download in the browser preview.
     if (isTauri() && wsPath) {
       try {
-        await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
-        patchTab(activeTab.id, { title: fileName, savedSql: activeTab.sql, filePath: `${wsPath}/${fileName}` });
+        await ipc.writeTextFile(`${wsPath}/${newName}`, activeTab.sql);
+        patchTab(activeTab.id, { title: newName, savedSql: activeTab.sql, filePath: `${wsPath}/${newName}` });
         setFilesRefresh((n) => n + 1);
       } catch (e) {
         pushNotification("warning", "Could not save", errorMessage(e));
@@ -2486,7 +2536,7 @@ export function ExasolStudio({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = fileName;
+    a.download = newName;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -2970,6 +3020,7 @@ export function ExasolStudio({
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <UncommittedDialog pending={tabSession.pending} />
       <ParamsDialog />
+      <ShortcutSheet open={showShortcuts} onClose={() => setShowShortcuts(false)} />
       <TitleBar
         env={safety.env}
         connection={connection}
@@ -3792,6 +3843,7 @@ export function ExasolStudio({
                   beforeMount={(m) => {
                     applyMonacoThemes(m);
                     installSqlFormatting(m);
+                    installSqlSignatureHelp(m, () => sqlCatalogRef.current, loadCatalogSchemas);
                     // A UDF body is written in whatever language its header
                     // names — tokenize it as that, not as SQL. Which
                     // languages exist comes from the server (SCRIPT_LANGUAGES).
@@ -3951,6 +4003,11 @@ export function ExasolStudio({
                       });
                     };
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => openQuickAccess(""));
+                    // Cmd/Ctrl+. runs the current statement, so Quick Fix is
+                    // Alt+Enter here; Stop must work while typing, too.
+                    // Alt+Enter in the Find widget stays "select all matches".
+                    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => editor.trigger("keyboard", "editor.action.quickFix", null), "editorTextFocus && !findWidgetVisible");
+                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Period, () => void cancelRunningRef.current());
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, () => openQuickAccess(">"));
                   }}
                   options={{
