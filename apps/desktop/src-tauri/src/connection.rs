@@ -175,6 +175,7 @@ pub(crate) fn connect_url(profile: &ConnectionProfile) -> String {
     url
 }
 
+#[cfg(test)]
 pub(crate) async fn open_pool(profile: &ConnectionProfile) -> AppResult<ExaPool> {
     open_pool_sized(profile, 4, Vec::new(), connect_timeout_from(None), &HookLog::default()).await
 }
