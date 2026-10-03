@@ -74,6 +74,8 @@ import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
 import { nullLabel } from "@/lib/null-label";
 import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
+import { ParamsDialog, askParams } from "./ParamsDialog";
+import { findParams, substituteParams } from "@/lib/sql-params";
 import { installSqlFormatting } from "./sql-formatting";
 import { useConnSettings } from "./use-conn-settings";
 import { EnvBadge, envOf } from "./EnvBadge";
@@ -2301,6 +2303,13 @@ export function ExasolStudio({
       const unstripped = sqlToRun;
       if (execSettings.stripComments) sqlToRun = stripSqlComments(sqlToRun);
       if (!sqlToRun.trim()) return;
+      // Placeholders (&name, :name) are filled in before anything runs.
+      const params = findParams(sqlToRun);
+      if (params.length) {
+        const values = await askParams(params);
+        if (!values) return;
+        sqlToRun = substituteParams(sqlToRun, values);
+      }
 
       // "buffer" runs everything as a single statement; others split unless
       // splitting is off (Settings → Execution, or the toolbar).
@@ -2960,6 +2969,7 @@ export function ExasolStudio({
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <UncommittedDialog pending={tabSession.pending} />
+      <ParamsDialog />
       <TitleBar
         env={safety.env}
         connection={connection}
