@@ -41,10 +41,14 @@ test("dialect shapes Exasol rejects are errors", () => {
   assert.equal("SELECT * FROM S.T FETCH FIRST 10 ROWS ONLY".slice(out[0].start, out[0].end), "FETCH FIRST");
 });
 
-test("SELECT TOP, ISNULL, GETDATE and NOW are each caught", () => {
-  for (const sql of ["SELECT TOP 5 a FROM S.T", "SELECT ISNULL(a,0) FROM S.T", "SELECT GETDATE()", "SELECT NOW()"]) {
+test("SELECT TOP, ISNULL and GETDATE are each caught", () => {
+  for (const sql of ["SELECT TOP 5 a FROM S.T", "SELECT ISNULL(a,0) FROM S.T", "SELECT GETDATE()"]) {
     assert.equal(lintSql(sql).filter((l) => l.severity === "error").length, 1, sql);
   }
+});
+
+test("NOW() is valid Exasol and is not flagged", () => {
+  assert.deepEqual(lintSql("SELECT NOW() FROM DUAL"), []);
 });
 
 test("a dialect shape inside a string or comment is not flagged", () => {
@@ -109,7 +113,7 @@ test("CREATE SCRIPT with no language named is Lua, which every server has", () =
 });
 
 test("findings come back in buffer order", () => {
-  const out = lintSql("SELECT NOW() FROM S.T WHERE x IN (SELECT ISNULL(y,0) FROM S.T)");
+  const out = lintSql("SELECT GETDATE() FROM S.T WHERE x IN (SELECT ISNULL(y,0) FROM S.T)");
   assert.ok(out.length >= 2);
   assert.ok(out.every((l, i) => i === 0 || out[i - 1].start <= l.start));
 });
@@ -128,10 +132,10 @@ test("an INDENTED --/ still opens a block, so its body is not linted as SQL", ()
 });
 
 test("a user script named like a missing builtin is not a dialect error", () => {
-  assert.deepEqual(lintSql("SELECT S.NOW()"), []);
+  assert.deepEqual(lintSql("SELECT S.GETDATE()"), []);
   assert.deepEqual(lintSql("SELECT S.ISNULL(a, 0) FROM S.T"), []);
   // Unqualified, it really is the builtin Exasol lacks.
-  assert.equal(lintSql("SELECT NOW()").length, 1);
+  assert.equal(lintSql("SELECT GETDATE()").length, 1);
 });
 
 test("a comment in the header does not supply the language", () => {
