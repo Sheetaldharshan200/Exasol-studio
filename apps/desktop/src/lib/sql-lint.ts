@@ -115,13 +115,13 @@ function blockEnd(sql: string, from: number): number {
 /** Words between CREATE and SCRIPT that are grammar, not a language name. */
 const GRAMMAR = new Set(["OR", "REPLACE", "SCALAR", "SET", "ADAPTER", "AGGREGATE"]);
 
-/** Shapes Exasol rejects that other dialects accept. Each is certain. */
+/** Shapes Exasol rejects that other dialects accept. Each is certain —
+ *  checked against a live Exasol 8 (NOW() is accepted, so it is not here). */
 const DIALECT: { re: RegExp; message: string }[] = [
   { re: /\bFETCH\s+(?:FIRST|NEXT)\b/gi, message: "Exasol has no FETCH FIRST — use LIMIT n." },
   { re: /\bSELECT\s+TOP\s+\d+/gi, message: "Exasol has no SELECT TOP — use LIMIT n." },
   { re: /\bISNULL\s*\(/gi, message: "Exasol has no ISNULL — use NVL or COALESCE." },
   { re: /\bGETDATE\s*\(\s*\)/gi, message: "Exasol has no GETDATE() — use CURRENT_TIMESTAMP." },
-  { re: /\bNOW\s*\(\s*\)/gi, message: "Exasol has no NOW() — use CURRENT_TIMESTAMP." },
 ];
 
 /** `FROM`/`JOIN`/`INTO`/`UPDATE` followed by a possibly-qualified name. */
@@ -136,7 +136,7 @@ export function lintSql(sql: string, ctx: LintContext = {}): Lint[] {
   for (const { re, message } of DIALECT) {
     re.lastIndex = 0;
     for (const m of code.matchAll(re)) {
-      // `S.NOW()` is a user script called NOW, not the function Exasol lacks.
+      // `S.GETDATE()` is a user script called GETDATE, not the function Exasol lacks.
       // The qualifier makes it somebody else's name, so it is left alone.
       if (code[m.index - 1] === ".") continue;
       out.push({ start: m.index, end: m.index + m[0].length, message, severity: "error" });
