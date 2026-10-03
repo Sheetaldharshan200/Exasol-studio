@@ -495,8 +495,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/lib.rs": {
-    "mtime": 1790884399.7396986,
-    "ast_hash": "76e57b55148b02ed8abe9b4870af7dc5",
+    "mtime": 1791055641.648859,
+    "ast_hash": "fe8ae9c8e910c3945d785f497536bd5d",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/local_database.rs": {
@@ -660,8 +660,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ExasolStudio.tsx": {
-    "mtime": 1790882073.257597,
-    "ast_hash": "6208d4636f46762faf13d018c179e9a6",
+    "mtime": 1791056801.571611,
+    "ast_hash": "b7c04d9de0583f270cae364e2397ad84",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ThemeCustomizer.tsx": {
@@ -1155,8 +1155,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/sql-completion.ts": {
-    "mtime": 1790749705.6481898,
-    "ast_hash": "e54d1478fc35f044e94174ac63334271",
+    "mtime": 1791055122.402606,
+    "ast_hash": "34bf84f68349a0d936b6f6fc82a0f63b",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/term-bus.ts": {
@@ -2690,8 +2690,8 @@
     "semantic_hash": ""
   },
   "knowledge/wiki/log.md": {
-    "mtime": 1790885560.630638,
-    "ast_hash": "6782015664057cceae8f072a92f6a4d6",
+    "mtime": 1791056830.0924995,
+    "ast_hash": "d1994ade5f3692d21af1e33f3194a01e",
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/ai-integrations.md": {
@@ -2795,8 +2795,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/tabs.ts": {
-    "mtime": 1790878227.8093286,
-    "ast_hash": "65b00bd387fa2c320cecfd0858b1d584",
+    "mtime": 1791056347.7761893,
+    "ast_hash": "14a4456cdd42c7690cbd193612696ece",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/sql-text.test.ts": {
@@ -2820,8 +2820,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/Sidebar.tsx": {
-    "mtime": 1790883721.4087553,
-    "ast_hash": "f2327d58ce4f5f821bdf8b3cb69b338e",
+    "mtime": 1791055507.107174,
+    "ast_hash": "ad02397560c3369fa550c4546a73413a",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/TitleBar.tsx": {
@@ -3050,8 +3050,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/ResultsPanel.tsx": {
-    "mtime": 1790875556.9292078,
-    "ast_hash": "537b370a8dd919ac15fac1a0068ba466",
+    "mtime": 1791055507.106744,
+    "ast_hash": "edab559fc676bc115d5fd4a7aefe01ab",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/plan-format.test.ts": {
@@ -3655,8 +3655,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/GlobalSearch.tsx": {
-    "mtime": 1788281712.7319329,
-    "ast_hash": "b69af62d6b19f9a10171d6d133cc3e53",
+    "mtime": 1791056789.3691657,
+    "ast_hash": "040d618702c1bd9ee98404de463ae6c2",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/ui/app-select.tsx": {
@@ -24060,8 +24060,8 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/tabs.test.ts": {
-    "mtime": 1790749705.5708027,
-    "ast_hash": "1c4056c70c6a1eeba823d3c8a7c609b9",
+    "mtime": 1791056407.642811,
+    "ast_hash": "bfae0bb1f50a78329e741c112bba3a0c",
     "semantic_hash": ""
   },
   "apps/desktop/src/components/studio/udf-hints.ts": {
@@ -24220,13 +24220,13 @@
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/sql-lint.test.ts": {
-    "mtime": 1790749705.6486895,
-    "ast_hash": "c6ad0c26c099bfcca51d05aefe16cda9",
+    "mtime": 1791054791.9184966,
+    "ast_hash": "5472370713c2615f5bda98baaa46c375",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/sql-lint.ts": {
-    "mtime": 1790749705.6488953,
-    "ast_hash": "b5faefedac8bda1943ed6e2019c3545b",
+    "mtime": 1791054791.917813,
+    "ast_hash": "c27c80dcd21e0a28e9d5b551abadb8dc",
     "semantic_hash": ""
   },
   "apps/desktop/src/lib/sql-udf-embedding.test.ts": {
@@ -24295,8 +24295,8 @@
     "semantic_hash": ""
   },
   "knowledge/wiki/pages/editor-intelligence-and-the-8mb-chunk.md": {
-    "mtime": 1790749705.691397,
-    "ast_hash": "f39790f605d7c8764238e6388843064c",
+    "mtime": 1791054811.8993492,
+    "ast_hash": "8d0f797c36d7548e323856b5e0a2094e",
     "semantic_hash": ""
   },
   "apps/desktop/src-tauri/src/github_auth.rs": {
@@ -25025,13 +25025,103 @@
     "semantic_hash": ""
   },
   "openspec/changes/workbench-hardening/tasks.md": {
-    "mtime": 1790883768.5773592,
-    "ast_hash": "6022a0ae2c7e8cf74e1beeed19e3bce9",
+    "mtime": 1791056830.0793839,
+    "ast_hash": "c09f28a0b8c61dec20a5be024b95d481",
     "semantic_hash": ""
   },
   "openspec/specs/marketplace-installs/spec.md": {
     "mtime": 1790749705.7176764,
     "ast_hash": "3fe6cb4a09605fb64cb52dece1e0e168",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src-tauri/src/app_menu.rs": {
+    "mtime": 1791055641.6036296,
+    "ast_hash": "2b5927d0b19653c5554153630f256f68",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/ParamsDialog.tsx": {
+    "mtime": 1791055329.2797503,
+    "ast_hash": "d78f38899da3731c31ecd4afd7c82117",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/ShortcutSheet.tsx": {
+    "mtime": 1791055473.7444968,
+    "ast_hash": "f6f7edd6807284952585c919eb218b05",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/sql-formatting.ts": {
+    "mtime": 1791055260.3836236,
+    "ast_hash": "8c705dec37a076b554cb884029916bb9",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/sql-signature-help.ts": {
+    "mtime": 1791056789.36884,
+    "ast_hash": "30fb53a51224ed2157362ada6eea990a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/components/studio/use-shortcuts.ts": {
+    "mtime": 1791056382.9413857,
+    "ast_hash": "c0243fde47d75143c8be93c96d0af6c3",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/shortcuts.test.ts": {
+    "mtime": 1791056407.6423705,
+    "ast_hash": "d7872bd9c5079e00c080b5a4a4169fa0",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/shortcuts.ts": {
+    "mtime": 1791056382.9410853,
+    "ast_hash": "8fcbeca35e2506ac8d2f4eb441d0ef0e",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-catalog.test.ts": {
+    "mtime": 1791055029.895086,
+    "ast_hash": "7b45ca3c2d7b9fcf1ec47d046a89be0b",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-catalog.ts": {
+    "mtime": 1791055029.8844535,
+    "ast_hash": "6c59c0593cfa1b2a062d239191e24692",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-completion-scope.test.ts": {
+    "mtime": 1791054883.2720168,
+    "ast_hash": "b495488adf7f013b487153a6d63ed00a",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-completion-scope.ts": {
+    "mtime": 1791056302.414696,
+    "ast_hash": "e3a7993fcd7e820f936deee9dc2a0050",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-format.test.ts": {
+    "mtime": 1791055223.3386776,
+    "ast_hash": "307425ef381c86a87b5663dcc4c41d0f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-format.ts": {
+    "mtime": 1791055233.5116656,
+    "ast_hash": "952878eb996b51ed4d769f7297bc965e",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-params.test.ts": {
+    "mtime": 1791055304.1333535,
+    "ast_hash": "c4e682d19ec7bd92b05f712d03a3940f",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-params.ts": {
+    "mtime": 1791055304.1275635,
+    "ast_hash": "acda852c25c596bf4ad6fc70b8b775f0",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-signatures.test.ts": {
+    "mtime": 1791056801.5934992,
+    "ast_hash": "bea4fe5894ea96470458c1af24330330",
+    "semantic_hash": ""
+  },
+  "apps/desktop/src/lib/sql-signatures.ts": {
+    "mtime": 1791056789.368197,
+    "ast_hash": "160d6bc494bc7b3f1fb3dd406df4f8d4",
     "semantic_hash": ""
   }
 }
