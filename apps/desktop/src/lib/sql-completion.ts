@@ -2,6 +2,7 @@ import type { Monaco } from "@monaco-editor/react";
 import type { languages } from "monaco-editor";
 import { findScriptBlocks } from "./sql-text.ts";
 import { currentStatement, qualifierBefore, sqlName, tableRefs } from "./sql-completion-scope.ts";
+import { schemasToLoad } from "./sql-catalog.ts";
 
 /**
  * Schema-aware Exasol autocompletion for the Monaco SQL editor.
@@ -15,6 +16,11 @@ export type SqlCatalog = {
   schemas: Map<string, Map<string, { name: string; type: string }[]>>;
   /** User UDFs / Lua / adapter scripts from SYS.EXA_ALL_SCRIPTS. */
   scripts: { schema: string; name: string; type: string }[];
+  /** Every table and view name is here (not cut at the load cap): only
+   *  then may "no such table" be said. */
+  complete?: boolean;
+  /** Schemas whose columns are loaded (sql-catalog.ts loads them on demand). */
+  loaded?: Set<string>;
 };
 
 export const emptyCatalog = (): SqlCatalog => ({ schemas: new Map(), scripts: [] });
@@ -176,6 +182,8 @@ export function registerExasolCompletion(
   /** Script-language aliases the connected server offers (SCRIPT_LANGUAGES).
    *  Omitted, the snippet offers a plain placeholder rather than a guess. */
   getLanguages: () => readonly string[] = () => [],
+  /** Load these schemas' columns (sql-catalog.ts: columns come on demand). */
+  loadSchemas?: (schemas: string[]) => Promise<void>,
 ): void {
   if (registered) return;
   registered = true;
@@ -184,7 +192,7 @@ export function registerExasolCompletion(
   monaco.languages.registerCompletionItemProvider("sql", {
     triggerCharacters: [".", " ", "-", "/"],
     async provideCompletionItems(model: import("monaco-editor").editor.ITextModel, position: import("monaco-editor").Position) {
-      const cat = getCatalog();
+      let cat = getCatalog();
 
       // Inside a `--/ … /` script BODY (past the AS keyword) the language is
       // Lua/Python/Java/R — complete THAT language, not SQL.
@@ -364,6 +372,16 @@ export function registerExasolCompletion(
 
       // `<ident>.` — schema → its tables; alias/table → its columns.
       const ident = qualifierBefore(before.slice(0, before.length - (word.word?.length ?? 0)));
+      // Columns come one schema at a time: load the ones this statement needs.
+      if (loadSchemas) {
+        const wanted = [...refs.values()];
+        if (ident && !cat.schemas.has(ident)) wanted.push(refs.get(ident) ?? refs.get(ident.toUpperCase()) ?? { schema: "", table: ident });
+        const missing = schemasToLoad(cat, wanted);
+        if (missing.length) {
+          await loadSchemas(missing).catch(() => undefined);
+          cat = getCatalog();
+        }
+      }
       if (ident) {
         const tables = cat.schemas.get(ident) ?? cat.schemas.get(ident.toUpperCase());
         if (tables) {
@@ -467,28 +485,3 @@ export function registerExasolCompletion(
     },
   });
 }
-
-/** Parse SYS.EXA_ALL_COLUMNS rows (schema, table, column, type) into a catalog. */
-export function buildCatalog(rows: unknown[][]): SqlCatalog {
-  const cat = emptyCatalog();
-  for (const r of rows) {
-    const [schema, table, column, type] = r.map((v) => String(v ?? ""));
-    if (!schema || !table || !column) continue;
-    let tables = cat.schemas.get(schema);
-    if (!tables) cat.schemas.set(schema, (tables = new Map()));
-    let cols = tables.get(table);
-    if (!cols) tables.set(table, (cols = []));
-    cols.push({ name: column, type });
-  }
-  return cat;
-}
-
-// A process-wide shared catalog so surfaces beyond the main editor (e.g. the
-// dashboard's widget query editor) get the same Exasol completions. The app's
-// catalog refresh writes here; any Monaco editor can register completion against
-// getSharedCatalog without threading the ref through the tree.
-let sharedCatalog: SqlCatalog = emptyCatalog();
-export const getSharedCatalog = (): SqlCatalog => sharedCatalog;
-export const setSharedCatalog = (cat: SqlCatalog): void => {
-  sharedCatalog = cat;
-};
