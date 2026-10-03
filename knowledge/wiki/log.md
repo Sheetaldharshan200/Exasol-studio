@@ -247,3 +247,74 @@ Panorama zooms its canvas on ctrl/⌘ + wheel (Chromium reports a trackpad pinch
 ## [2026-09-30] windows | every child process through `process::command` (CREATE_NO_WINDOW); CI compiles the crate on windows-latest
 A GUI app on Windows flashes a console window for every console child — `VBoxManage list vms`, `exasol slc list`, `python -c`, and a lasting one per sidecar (node, dash-server, llama-server, cloudflared). All 52 `Command::new` sites now go through one constructor that sets `CREATE_NO_WINDOW` on Windows. Cross-checking from macOS is not possible (aws-lc-sys and zstd-sys need a Windows C toolchain), so CI gained a `windows-check` job: `cargo check --tests` on windows-latest with the same stubbed dist as the Linux job.
 
+## [2026-10-01] security+correctness | workbench-hardening phase 1 — credentials, exact results, atomic grid edits, file-write guard
+Audit-driven (openspec/changes/workbench-hardening). Gotchas worth keeping:
+- **Keychain without argv**: `security add-generic-password -w <pw>` shows the password to `ps`. `security -i` reads its command from stdin and keeps /usr/bin/security as the item creator, so the exa CLI still reads it without a prompt. Quote rule in `-i` mode: inside "…" a backslash escapes the next char; `$` and backticks are literal (verified on macOS 26). Windows: read the password from stdin inside the PowerShell script; quote ids with `''`.
+- **No plaintext anywhere**: without a vault key the password goes to the keychain under `studio-<profile id>`, the file holds `keychain:`; the shared exa registry no longer falls back to `~/.exasol/credentials/<id>`.
+- **Exasol paging**: OFFSET over an unordered result is not stable, and `ORDER BY amount` alone lets ties swap. Plan = own ORDER BY + every column as tie breaker (`…\n, 1, 2, …` — the newline ends a trailing `--` comment), else `SELECT * FROM (…) ORDER BY 1..n`. Page 0 is re-fetched under the plan before Next is enabled.
+- **sqlx-exasol decode**: DECIMAL(36,15) through rust_decimal lost 6 digits; chrono formatting cut TIMESTAMP(6) to ms. Read DECIMAL/TIMESTAMP via `try_get_unchecked::<String>` first; ints beyond ±2^53 as JSON strings.
+- **Grid edits**: one `pool.begin()` transaction, each statement must affect exactly 1 row, else rollback; a lost commit reply is "may or may not be saved", never "nothing was saved". The editable table comes from `runMeta.sql`, not the buffer.
+- **File writes**: only the workspace (checked on the canonical path) or a path picked in a Rust-side dialog (`save_text_as`, `open_text_file`); O_NOFOLLOW open; no hidden/Library/system/non-text targets.
+- Two Codex passes (11 + 8 findings), all fixed.
+
+
+## [2026-10-01] correctness | workbench-hardening phase 2 — one session per SQL tab, manual commit without silent loss
+Gotchas worth keeping:
+- **sqlx-exasol autocommit** is `pub(crate)`; only `ExaTransactionManager::begin` turns it off (needs `sqlx_core::transaction::TransactionManager` in scope). The driver's `open_transaction` is literally `!autocommit`.
+- **A COMMIT/ROLLBACK typed as SQL keeps autocommit off**: the server runs the next statement in a new transaction already. Calling `begin` again fails with "transaction already open" — the old code ignored that error, so it looked like it worked. `restart_manual` begins only when no transaction is open (live-tested: `INSERT; COMMIT; INSERT` leaves the second insert uncommitted).
+- **Close is fenced**: `session_close(tab, commit, seen)` waits on the tab's slot lock (a running statement finishes first), refuses if more changes exist than the person was shown, keeps the session when a commit is not confirmed, and removes the map entry only if it still points at the same slot.
+- **The backend is the source of truth** for "what would be lost": close/disconnect/quit call `sessions_with_changes`, never a cached snapshot. `session_info` only peeks, so looking at a tab never connects it.
+- **Empty result headers** are described on the tab's own connection: a table created in an uncommitted transaction is invisible to the pool.
+- Removed the unwired "Ask when auto-commit is off" and "Commit batch size" settings: Studio always asks, grid edits are atomic.
+- Three Codex passes (12 + 9 + 2 findings). The third: close must remove the map entry while still holding the slot lock, and the fence is a monotonic `change_seq`, not a count (COMMIT; INSERT keeps the count the same). One "critical" (mid-batch COMMIT drops manual mode) was disproved by the driver source and a live test; the rest were fixed.
+
+## [2026-10-01] gotcha | tab-session keep-alive — a killed Exasol session reports a TLS EOF, and a slow ping must not drop the session
+- A session killed on the server (`KILL SESSION`) surfaces in sqlx-exasol as `error communicating with database: peer closed connection without sending TLS close_notify … #unexpected-eof`. `is_connection_lost` did not match it, so dead sessions were never detected. It now matches "peer closed connection" and "error communicating with database" (sqlx's transport-error prefix). Live-tested.
+- The keep-alive drops a session only on a closed connection, never on a timeout: dropping closes the socket and the server rolls back the open transaction, so a slow answer would destroy live work. The ping does not touch `last_used`, so the idle-transaction warning still fires.
+- The health dot for a connected profile is `connection_alive` (pool acquire + `SELECT 1`, 5s each). All connections busy counts as alive.
+
+## [2026-10-01] decision | workbench-hardening phase 3 — every setting applied or removed
+- **Inventory test**: `lib/settings-inventory.test.ts` lists the reader of every app setting (`lib/app-settings.ts`) and every per-connection setting (`lib/conn-settings.ts`) and checks the file really reads it. Adding a toggle without behaviour now fails CI.
+- **Retired** ~20 app settings and ~25 connection settings that only stored a value (density, metadata cache, isolation, charset, fetch size, qualifiers, delimiters, SQL templates, query builder, …). `settings.rs` scrubs retired app keys from disk — one was a plaintext `aiApiKey` nothing read. Retired connection keys are dropped on load (`withConnDefaults` keeps only known keys).
+- **`write_private` gotcha**: `OpenOptions::mode(0o600)` applies only when the file is created; an existing 0644 file stayed world-readable. It now calls `set_permissions` on every write.
+- **Fetch size** in sqlx-exasol is a byte budget for the websocket fetch, not a row count — a "rows" setting for it was misleading; max rows already caps a run.
+- **Stop options across drivers**: the native and exarrow loops use `query.rs::StopPolicy`; the bridges (Python, Node, Go, R) get `stopOnError`, a per-statement `stopIfEmpty` list and `lostPatterns` from Rust, so the rule lives in one place. "Executed" results (R reports no write count) never count as "no rows". A lost connection always ends a script.
+- **Error markers**: Exasol reports `[line L, column C]` relative to the statement as sent. The failed statement is located by its index in the run (identical statements are common in scripts); with comments stripped only the whole statement is marked.
+- **Go bridge** was compiled only by the release workflow; CI now vets and builds it on every PR.
+- Two Codex passes (7 + 3 findings), all fixed.
+
+## [2026-10-02] security | workbench-hardening phase 4 — certificate pinning that actually pins
+Three designs, two rejected by review — worth knowing before touching TLS here:
+- **Check, then connect** (read the server certificate, compare the pin, then let the driver connect with `required`) is not pinning: a man in the middle relays the check to the real server and takes the login on the second connection.
+- **Pinned certificate as `ssl-ca` in verify_identity** is not exclusive: sqlx-core's rustls setup ADDS the CA file to its built-in webpki roots, and every sqlx-exasol TLS feature pulls a root store (the no-roots `_tls-rustls` alone does not compile — the crypto provider is chosen by the root features). A publicly trusted certificate for the host name would pass. Also sqlx's `verify_ca` checks the chain but not the name, against those public roots too — labelled "weak" in the UI.
+- **What ships:** a pinned connection's driver talks plaintext to a loopback port (`pin_tunnel.rs`); each relay opens Studio's own TLS with `tls_trust::PinVerifier` (leaf SHA-256 must equal the pin, handshake signatures verified), so nothing leaves the machine unpinned. Tunnel registered with its pool under one lock; dropping it ends every relay (JoinSet); host ranges fail over node by node.
+- Other paths: agent-core checks `fingerprint256` on the ws `upgrade` event, before the driver sends the login; Panorama checks the peer leaf after its handshake; exapump has `--certificate-fingerprint`. Bridge drivers and exarrow refuse pinned / CA-file / token profiles rather than connect less safely.
+- "preferred" falls back to plaintext when TLS fails (a downgrade an attacker can force); it and "disabled" connect as "required".
+- Exasol's self-signed certificates name the node's host names and IPs (SAN), e.g. Personal: localhost, 127.0.0.1, ::1.
+- Four Codex passes (10 + 2 + 5 + earlier); all fixed.
+
+## [2026-10-02] security | workbench-hardening phase 5 — production safety and the limits of a client-side read-only
+- **Read-only is enforced where SQL leaves the app, not at the Run button:** `safety.rs` in `execute_sql` and grid edits; connect/disconnect hooks and the keep-alive statement skip writes; marketplace DB scripts, ExaPump loads (now resolved from the profile in Rust), commits and Admin API jobs that change state are refused. In agent-core, both the write paths and the read paths (`query`/`queryIsolated` — EXECUTE SCRIPT runs through them) check, with one classifier (`sql-kind.ts`).
+- **What it cannot promise:** a SELECT may call a UDF that writes elsewhere, and BucketFS has its own credentials. The UI says so: a SELECT-only database user is the guarantee.
+- **Confirmation at the boundary:** destructive statements (DROP, TRUNCATE, DELETE/UPDATE without a top-level WHERE) are confirmed in `ipc.executeSql` via `lib/run-guard.ts`, with the connection's settings read per run — confirming in the Run button missed notebooks and menu runs, and cached settings raced a connection switch.
+- **The agent's grant is a snapshot:** changing Safety settings re-grants it, Apply waits for that and reports a failure instead of "Applied".
+- Two Codex passes (8 + 3 findings), all fixed.
+
+## [2026-10-02] network | workbench-hardening phase 6 — SSH tunnels and proxies
+- **System OpenSSH, not an SSH library:** ~/.ssh/config (aliases, ProxyJump, ProxyCommand, Match blocks), the agent and known_hosts behave as in a terminal. The host goes after `--` and fields may not start with "-"; secrets go through an askpass helper and the child's environment.
+- **No port handover:** `ssh -L <free port>` leaves a window in which another local process can take the port and receive the login. Studio binds and holds its own loopback port; each database connection is a `ssh -W host:port` channel relayed over stdin/stdout.
+- **One sign-in:** on macOS/Linux an owned master (`-M -S <ctl> -o ControlPersist=no`) signs in once; channels use `-S <ctl> -o ControlMaster=no`. Readiness is `ssh -O check`, not log parsing. The control socket lives in `/tmp/studio-ssh-<uid>` (checked owner + 0700): Unix socket paths are ~104 bytes and ssh appends ~17 characters while creating it, so the data folder and the macOS temp folder are too long. Windows OpenSSH has no multiplexing: one sign-in per channel, with `ControlMaster=no ControlPath=none`.
+- **Gotchas:** tokio's `Child::wait()` closes stdin first — a `-W` channel then ends at once. Alpine's sshd_config already says `AllowTcpForwarding no` and the first match wins (append is ignored; pass `-o` to sshd). A refused forward reads "administratively prohibited" (direct) or "Stdio forwarding request failed: Session open refused" (multiplexed).
+- **Host keys:** "ask" resolves with `ssh -G` (user included, HostKeyAlias honoured), shows `ssh-keyscan` fingerprints, and stores only exactly those into Studio's own known_hosts (read with ~/.ssh/known_hosts). Not possible through a jump host — it says so.
+- **TLS over a route:** the certificate never names 127.0.0.1, so a verify mode leads to trust on first use and the pin tunnel — read through the same route.
+- **Proxies:** SOCKS5 (RFC 1928/1929) and HTTP CONNECT through a loopback relay; database TLS end to end; proxy credentials are plaintext to the proxy (said in the UI).
+- Live-tested against a throwaway Alpine sshd forwarding to Exasol. Three Codex passes; all fixed.
+
+## [2026-10-04] editor | workbench-hardening phase 7.1 — editor polish
+- **NOW() is valid Exasol** (checked live); the dialect lint that flagged it is gone.
+- **Catalog:** table and view names load at once (cap 50,000, then lint stays off — "no such table" only on a complete catalog); columns load per schema when a statement, completion or hover needs them; reload only after DDL (`changesCatalog`), not on a 45 s timer or twice per run.
+- **Completion:** mixed-case names insert quoted (`sqlName`), the scope is the statement from `splitStatements` (a `;` in a comment or string no longer cuts it), comma joins resolve.
+- **Shortcuts** live in one table (`lib/shortcuts.ts`) that the shell matcher and the shortcut sheet (⌘⇧/) share. Gotchas: Tauri's default macOS menu binds ⌘W to Close Window, so the page never sees it — `app_menu.rs` is the default minus that item. ⌘. runs the current statement, so Quick Fix is ⌥⏎ (only with editor text focus: in the Find widget ⌥⏎ stays "select all matches"). ⌘K opens search only outside Monaco (its chords start with ⌘K). While a dialog is open only Stop works; held keys repeat only tab cycling; AltGr (Ctrl+Alt on Windows/Linux) is never a shortcut. Stop sends one KILL per run.
+- **Paths from Rust can be Windows paths:** take file names with `fileName()` (splits on `/` and `\`), not `split("/")`.
+- **Signature help / hover:** built-in signatures checked live (SUBSTRING with commas is valid; RANDOM takes both bounds or none; DECODE repeats search/result pairs). Table hover only in table positions (FROM/JOIN/INTO/UPDATE/TABLE or a FROM list), never in strings/comments, a WITH name shadows a table, `S` in `S.T` is not a table. Monaco providers are registered once; the catalog getter is swapped on remount instead.
+- Two Codex passes (10 + 6 findings), all fixed; one rejected after a live check (SUBSTRING).

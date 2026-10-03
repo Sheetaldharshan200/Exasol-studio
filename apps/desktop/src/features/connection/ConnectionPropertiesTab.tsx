@@ -19,14 +19,22 @@ import {
   Unplug,
 } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { errorMessage, ipc, isTauri, type ConnectionProfile, type DriverInfo, type ServerInfo } from "@/lib/ipc";
+import { errorMessage, ipc, isTauri, type ConnectionProfile, type DriverInfo, type NetworkSettings, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 import { cn } from "@/lib/utils";
+import { connectionUrl } from "@/lib/connection-url";
+import { AUTH_METHODS } from "@/lib/connect-flow";
+import { AddressNote, ConnectionTrustFields, SignInMethodRow, type TrustDraft } from "@/features/connection/ConnectionTrustFields";
+import { ConnectionNetworkFields } from "@/features/connection/ConnectionNetworkFields";
+import { checkHost, checkPort, parseDsn } from "@/lib/dsn";
+import { DEFAULT_CONN_SETTINGS, ENVIRONMENTS, withConnDefaults, type ConnSettings, type Environment } from "@/lib/conn-settings";
+export { DEFAULT_CONN_SETTINGS, type ConnSettings };
 import { DatabaseInfoPanel } from "@/features/workbench/DatabaseInfoPanel";
 import { DataTypesPanel } from "@/features/workbench/DataTypesPanel";
 import { ObjectSearch } from "@/features/workbench/ObjectSearch";
 import { DriversSection, DRIVER_ICON, type DriverReadiness } from "@/features/connection/DriversSection";
-import { openConnectWindow } from "@/lib/connect-window";
+import { EV_TRUSTED, openConnectWindow, type TrustedCertificate } from "@/lib/connect-window";
+import { agent as agentClient } from "@/lib/agent-client";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,115 +42,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/* ────────────────────────────────────────────────────────────────────────
- * Per-connection settings model. Stored as raw JSON per profile id (Rust
- * connection_settings.rs); the backend wires hooks / keep-alive / pool size /
- * password policy, the rest drive frontend behavior.
- * ──────────────────────────────────────────────────────────────────────── */
-
-export type ConnSettings = {
-  auth: { requireUserid: boolean; requirePassword: boolean; passwordPolicy: "save" | "session" | "clear" };
-  driver: { connectionPoolSize: number; queryTimeoutSeconds: number };
-  delimited: { begin: string; end: string; scripting: boolean; autoCompletion: boolean; export: boolean; actions: boolean };
-  qualifiers: {
-    objects: { scripting: boolean; navigator: boolean; autoCompletion: boolean; queryBuilder: boolean; export: boolean };
-    fully: { navigator: boolean; autoCompletion: boolean; queryBuilder: boolean };
-    columns: { scripting: boolean; autoCompletion: boolean; queryBuilder: boolean; export: boolean };
-  };
-  physical: { singleConnection: boolean; validationSql: string; keepAlive: boolean; idleSeconds: number };
-  transaction: {
-    autoCommit: boolean;
-    askAlways: boolean;
-    askWhenUncommitted: boolean;
-    isolation: "none" | "serializable";
-    commitBatchSize: number;
-  };
-  encoding: { textToBinary: string };
-  sqlTemplates: Record<string, string>;
-  hooks: { connectEnabled: boolean; connectSql: string; disconnectEnabled: boolean; disconnectSql: string };
-  color: { accent: string | null; objectTabs: boolean; sqlTabs: boolean; resultTabs: boolean; showInName: boolean };
-  sqlEditor: { initialSchema: "default" | "none" | "recent"; lossHandling: "none" | "reconnect" | "reexecute" };
-  queryBuilder: { autoJoin: boolean; joinType: "fkpk" | "name"; generateJoinClause: boolean; sortColumns: boolean };
-};
-
-export const DEFAULT_TEMPLATES: Record<string, string> = {
-  "SELECT ALL": "SELECT * FROM $$schema$$$$schemaseparator$$$$table$$",
-  "SELECT ALL COLUMNS": "SELECT $$columns$$ FROM $$schema$$$$schemaseparator$$$$table$$",
-  "SELECT ALL WHERE": "SELECT * FROM $$schema$$$$schemaseparator$$$$table$$ WHERE $$where$$",
-  "SELECT COUNT": "SELECT COUNT(*) FROM $$schema$$$$schemaseparator$$$$table$$",
-  "SELECT ROW COUNT": "SELECT COUNT(*) AS ROW_COUNT FROM $$schema$$$$schemaseparator$$$$table$$",
-  "INSERT INTO TABLE": "INSERT INTO $$schema$$$$schemaseparator$$$$table$$ ($$columns$$) VALUES ($$values$$)",
-  "UPDATE WHERE": "UPDATE $$schema$$$$schemaseparator$$$$table$$ SET $$column-values$$ WHERE $$where$$",
-  "DELETE WHERE": "DELETE FROM $$schema$$$$schemaseparator$$$$table$$ WHERE $$where$$",
-  "DROP TABLE": "DROP TABLE $$schema$$$$schemaseparator$$$$table$$",
-};
-
-export const DEFAULT_CONN_SETTINGS: ConnSettings = {
-  auth: { requireUserid: false, requirePassword: false, passwordPolicy: "save" },
-  driver: { connectionPoolSize: 4, queryTimeoutSeconds: 0 },
-  delimited: { begin: '"', end: '"', scripting: true, autoCompletion: true, export: true, actions: true },
-  qualifiers: {
-    objects: { scripting: false, navigator: false, autoCompletion: true, queryBuilder: true, export: false },
-    fully: { navigator: false, autoCompletion: false, queryBuilder: false },
-    columns: { scripting: false, autoCompletion: false, queryBuilder: true, export: true },
-  },
-  physical: { singleConnection: false, validationSql: "", keepAlive: false, idleSeconds: 120 },
-  transaction: { autoCommit: true, askAlways: false, askWhenUncommitted: true, isolation: "none", commitBatchSize: 100 },
-  encoding: { textToBinary: "UTF-8" },
-  sqlTemplates: { ...DEFAULT_TEMPLATES },
-  hooks: { connectEnabled: false, connectSql: "", disconnectEnabled: false, disconnectSql: "" },
-  color: { accent: null, objectTabs: true, sqlTabs: true, resultTabs: true, showInName: true },
-  sqlEditor: { initialSchema: "default", lossHandling: "reexecute" },
-  queryBuilder: { autoJoin: true, joinType: "fkpk", generateJoinClause: true, sortColumns: false },
-};
-
-function deepMerge<T>(base: T, patch: unknown): T {
-  if (patch === null || patch === undefined || typeof patch !== "object" || Array.isArray(patch)) return base;
-  const out = { ...(base as Record<string, unknown>) };
-  for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
-    const cur = out[k];
-    if (cur && typeof cur === "object" && !Array.isArray(cur) && v && typeof v === "object" && !Array.isArray(v)) {
-      out[k] = deepMerge(cur, v);
-    } else if (v !== undefined) {
-      out[k] = v;
-    }
-  }
-  return out as T;
-}
-
 export async function loadConnSettings(profileId: string): Promise<ConnSettings> {
   const raw = await ipc.connectionSettingsGet(profileId).catch(() => null);
-  return deepMerge(structuredClone(DEFAULT_CONN_SETTINGS), raw);
+  return withConnDefaults(raw);
 }
 
 export const ACCENT_PRESETS = ["#e11d48", "#f97316", "#eab308", "#10b981", "#0ea5e9", "#6366f1", "#a855f7", "#64748b"];
 
-const SSL_MODES = ["preferred", "required", "verify_ca", "verify_identity", "disabled"];
-
-/** Driver-aware connection URL for the header — shows WHAT will speak to the
- *  server, not a generic scheme. */
-export function connectionUrl(p: { host: string; port: number | string; driverId?: string }): { url: string; driver: string } {
-  const hp = `${p.host}:${p.port}`;
-  switch (p.driverId) {
-    case "jdbc": return { url: `jdbc:exa:${hp}`, driver: "Exasol JDBC" };
-    case "odbc": return { url: `odbc:exa:${hp}`, driver: "Exasol ODBC" };
-    case "pyexasol": return { url: `pyexasol://${hp}`, driver: "PyExasol" };
-    case "sqlalchemy": return { url: `exa+websocket://${hp}`, driver: "SQLAlchemy" };
-    case "ts-js": return { url: `ws://${hp}`, driver: "Exasol TS driver" };
-    case "exarrow-rs": return { url: `exasol://${hp}`, driver: "exarrow (Arrow)" };
-    case "go": return { url: `exa:${hp}`, driver: "Exasol Go driver" };
-    default: return { url: `exa:ws://${hp}`, driver: "Native websocket" };
-  }
-}
-
-const ENCODINGS = [
-  "UTF-8", "ISO-8859-1", "ISO-8859-15", "US-ASCII", "UTF-16", "UTF-16BE", "UTF-16LE",
-  "windows-1252", "Big5", "GB18030", "GB2312", "GBK", "EUC-JP", "EUC-KR", "Shift_JIS",
-];
 
 /* ── shared building blocks (info-page design language) ─────────────────── */
 
-function SectionCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function SectionCard({ title, description, children }: { title: string; description?: string; children?: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-panel/50 p-4">
       <h3 className="text-[13px] font-semibold text-foreground">{title}</h3>
@@ -234,50 +144,22 @@ function InputRow({ label, value, onChange, type = "text", mono = true, width = 
   );
 }
 
-function PickerRow({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
-  return (
-    <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
-      <span className="w-56 shrink-0 text-[12px] text-muted-foreground">{label}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex h-8 min-w-44 items-center justify-between gap-2 rounded-md border border-border bg-secondary/30 px-2.5 text-[12.5px] text-foreground hover:border-muted-foreground">
-            {value}
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-          {options.map((o) => (
-            <DropdownMenuItem key={o} onClick={() => onChange(o)}>
-              {o === value ? <Check className="h-3.5 w-3.5 text-primary" /> : <span className="w-3.5" />} {o}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  );
-}
-
 /* ── Properties categories ──────────────────────────────────────────────── */
 
 type CategoryId =
   | "dbProfile" | "driverProps"
-  | "authentication" | "delimited" | "qualifiers" | "physical" | "transaction"
-  | "encoding" | "sqlStatements" | "hooks" | "color" | "sqlEditor" | "queryBuilder";
+  | "authentication" | "physical" | "transaction" | "hooks" | "color" | "sqlEditor" | "safety";
 
 const CATEGORIES: { id: CategoryId; label: string; group: "root" | "exasol" }[] = [
   { id: "dbProfile", label: "Database Profile", group: "root" },
   { id: "driverProps", label: "Driver Properties", group: "root" },
+  { id: "safety", label: "Environment and Safety", group: "exasol" },
   { id: "authentication", label: "Authentication", group: "exasol" },
-  { id: "delimited", label: "Delimited Identifiers", group: "exasol" },
-  { id: "qualifiers", label: "Qualifiers", group: "exasol" },
   { id: "physical", label: "Physical Connection", group: "exasol" },
   { id: "transaction", label: "Transaction", group: "exasol" },
-  { id: "encoding", label: "Encoding", group: "exasol" },
-  { id: "sqlStatements", label: "SQL Statements", group: "exasol" },
   { id: "hooks", label: "Connection Hooks", group: "exasol" },
   { id: "color", label: "Color and Border", group: "exasol" },
   { id: "sqlEditor", label: "SQL Editor", group: "exasol" },
-  { id: "queryBuilder", label: "Query Builder", group: "exasol" },
 ];
 
 /** Defaults for one category only (the "Defaults…" button). */
@@ -287,16 +169,12 @@ function categoryDefaults(s: ConnSettings, cat: CategoryId): ConnSettings {
   switch (cat) {
     case "authentication": next.auth = d.auth; break;
     case "driverProps": next.driver = d.driver; break;
-    case "delimited": next.delimited = d.delimited; break;
-    case "qualifiers": next.qualifiers = d.qualifiers; break;
     case "physical": next.physical = d.physical; break;
     case "transaction": next.transaction = d.transaction; break;
-    case "encoding": next.encoding = d.encoding; break;
-    case "sqlStatements": next.sqlTemplates = { ...DEFAULT_TEMPLATES }; break;
     case "hooks": next.hooks = d.hooks; break;
     case "color": next.color = d.color; break;
     case "sqlEditor": next.sqlEditor = d.sqlEditor; break;
-    case "queryBuilder": next.queryBuilder = d.queryBuilder; break;
+    case "safety": next.safety = d.safety; break;
     default: break;
   }
   return next;
@@ -325,7 +203,7 @@ export function ConnectionPropertiesTab({
   profileId: string | null;
   /** New-connection mode: pre-fill these fields over the defaults (e.g. the
    *  bundled Exasol Personal profile when a direct connect couldn't proceed). */
-  initialDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
+  initialDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string; network?: NetworkSettings | null }>;
   initialSection?: ConnectionSection;
   /** Bumped when the host tab is re-targeted at a section while open. */
   sectionNonce?: number;
@@ -346,7 +224,7 @@ export function ConnectionPropertiesTab({
   const [settings, setSettings] = useState<ConnSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string>("");
   const isNew = profileId === null;
-  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "required", compression: false, driverId: "sqlx-exasol" });
+  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string; network?: NetworkSettings | null }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "verify_identity", compression: false, driverId: "sqlx-exasol", fingerprint: "", sslCa: "", authMethod: "password" });
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
   const [driverReady, setDriverReady] = useState<Record<string, DriverReadiness>>({});
   const [testState, setTestState] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
@@ -392,6 +270,25 @@ export function ConnectionPropertiesTab({
     };
   }, [drivers]);
 
+  // A certificate trusted in the connect window is pinned in this form too
+  // (after a Test it is kept by Apply / Save).
+  useEffect(() => {
+    if (!isTauri()) return;
+    let un: UnlistenFn | undefined;
+    let alive = true;
+    void listen<TrustedCertificate>(EV_TRUSTED, ({ payload }) => {
+      setProfileDraft((d) =>
+        d.host.trim() === payload.host.trim() && String(d.port) === String(payload.port) ? { ...d, fingerprint: payload.fingerprint } : d,
+      );
+    })
+      .then((u) => (alive ? (un = u) : u()))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      un?.();
+    };
+  }, []);
+
   const [cat, setCat] = useState<CategoryId>("authentication");
   const [query, setQuery] = useState("");
   const [exasolOpen, setExasolOpen] = useState(true);
@@ -422,7 +319,7 @@ export function ConnectionPropertiesTab({
         // caller arg (e.g. a click event) must not pollute the draft, which
         // would blow up the JSON.stringify snapshots below and black-screen the
         // form. Password is never pre-filled.
-        const d = (initialDraft ?? {}) as Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string }>;
+        const d = (initialDraft ?? {}) as Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string; network?: NetworkSettings | null }>;
         const draft = {
           name: typeof d.name === "string" ? d.name : "New Connection",
           notes: typeof d.notes === "string" ? d.notes : "",
@@ -431,9 +328,14 @@ export function ConnectionPropertiesTab({
           schema: typeof d.schema === "string" ? d.schema : "",
           username: typeof d.username === "string" ? d.username : "sys",
           password: "",
-          sslMode: typeof d.sslMode === "string" ? d.sslMode : "required",
+          // New connections verify the certificate; Exasol's self-signed one
+          // is offered for trust (pinning) on the first connect.
+          sslMode: typeof d.sslMode === "string" ? d.sslMode : "verify_identity",
           compression: typeof d.compression === "boolean" ? d.compression : false,
           driverId: typeof d.driverId === "string" ? d.driverId : "sqlx-exasol",
+          fingerprint: typeof d.fingerprint === "string" ? d.fingerprint : "",
+          sslCa: typeof d.sslCa === "string" ? d.sslCa : "",
+          authMethod: typeof d.authMethod === "string" ? d.authMethod : "password",
         };
         if (dead) return;
         setProfile(null);
@@ -453,6 +355,8 @@ export function ConnectionPropertiesTab({
         name: p?.name ?? "", notes: p?.notes ?? "", host: p?.host ?? "", port: String(p?.port ?? 8563),
         schema: p?.schema ?? "", username: p?.username ?? "", password: "",
         sslMode: p?.sslMode ?? "preferred", compression: p?.compression ?? false, driverId: p?.driverId ?? "sqlx-exasol",
+        fingerprint: p?.fingerprint ?? "", sslCa: p?.sslCa ?? "", authMethod: p?.authMethod ?? "password",
+        network: p?.network ?? null,
       };
       setProfileDraft(draft);
       setProfileSnapshot(JSON.stringify(draft));
@@ -480,7 +384,7 @@ export function ConnectionPropertiesTab({
       id: profile?.id ?? "",
       name: profileDraft.name.trim() || `${profileDraft.username}@${profileDraft.host}`,
       host: profileDraft.host.trim(),
-      port: Number(profileDraft.port) || 8563,
+      port: checkPort(profileDraft.port).ok ? Number(profileDraft.port) : 0,
       username: profileDraft.username.trim(),
       password: profileDraft.password,
       schema: profileDraft.schema.trim() || null,
@@ -488,6 +392,10 @@ export function ConnectionPropertiesTab({
       sslMode: profileDraft.sslMode,
       compression: profileDraft.compression,
       driverId: profileDraft.driverId,
+      fingerprint: profileDraft.fingerprint?.trim() || null,
+      sslCa: profileDraft.sslCa?.trim() || null,
+      authMethod: profileDraft.authMethod || "password",
+      network: profileDraft.network ?? null,
     };
   }
 
@@ -540,21 +448,47 @@ export function ConnectionPropertiesTab({
           name: profileDraft.name.trim() || profile.name,
           notes: profileDraft.notes,
           host: profileDraft.host.trim() || profile.host,
-          port: Number(profileDraft.port) || profile.port,
+          // An invalid port is refused by the backend with the reason.
+          port: checkPort(profileDraft.port).ok ? Number(profileDraft.port) : 0,
           schema: profileDraft.schema.trim() || null,
           username: profileDraft.username.trim() || profile.username,
           sslMode: profileDraft.sslMode,
           compression: profileDraft.compression,
           driverId: profileDraft.driverId,
-          // Blank keeps the stored password (server-side rule).
-          password: settings.auth.passwordPolicy === "session" ? "" : profileDraft.password,
+          fingerprint: profileDraft.fingerprint?.trim() || null,
+          sslCa: profileDraft.sslCa?.trim() || null,
+          authMethod: profileDraft.authMethod || "password",
+          network: profileDraft.network ?? null,
+          // Blank keeps the stored password, unless the server, user or
+          // sign-in changed (server-side rule). "This session only" moves the
+          // typed one to memory right after (setSessionPassword clears it).
+          password: profileDraft.password,
         });
         setProfile(saved);
+        // "This session only": the typed password lives in memory for this run
+        // and every saved copy (file, keychain) is removed.
+        if (settings.auth.passwordPolicy === "session" && profileDraft.password) {
+          await ipc.setSessionPassword(saved.id, profileDraft.password);
+        }
         const draft = { ...profileDraft, password: "" };
         setProfileDraft(draft);
         setProfileSnapshot(JSON.stringify(draft));
       }
       await ipc.connectionSettingsSet(profileId, settings);
+      // The assistant's copy of a connection follows its safety settings
+      // before "Applied" shows (App also re-grants on the event).
+      if (connectedLive) {
+        try {
+          await agentClient.grantConnection(profileId);
+        } catch (e) {
+          // Saved, but the assistant may still hold the old settings: say so
+          // instead of showing "Applied".
+          setSavedSnapshot(JSON.stringify(settings));
+          window.dispatchEvent(new CustomEvent("studio:conn-settings-changed", { detail: { profileId } }));
+          setError(`Saved, but the assistant could not be updated (${errorMessage(e)}). Disconnect and connect again before using the assistant on it.`);
+          return;
+        }
+      }
       setSavedSnapshot(JSON.stringify(settings));
       window.dispatchEvent(new CustomEvent("studio:conn-settings-changed", { detail: { profileId } }));
       onSaved?.();
@@ -605,27 +539,25 @@ export function ConnectionPropertiesTab({
           </SectionCard>
         );
       case "driverProps": {
-        const rows: { param: string; value: string; def: string; edit?: (v: string) => void }[] = [
-          { param: "clientname", value: "Exasol Studio", def: "Exasol Studio" },
+        // Only parameters this connection really sends; encryption and
+        // compression are edited on the Connection tab.
+        const rows: { param: string; value: string; def: string; edit: (v: string) => void }[] = [
           {
             param: "connectionPoolSize", value: String(s.driver.connectionPoolSize), def: "4",
             edit: (v) => patch((n) => { n.driver.connectionPoolSize = Math.max(1, Math.min(16, Number(v) || 4)); }),
           },
-          { param: "encryption", value: profile?.sslMode ?? "preferred", def: "preferred" },
-          { param: "compression", value: profile ? String(Number(profile.compression)) : "0", def: "0" },
           {
             param: "querytimeout", value: String(s.driver.queryTimeoutSeconds), def: "0",
             edit: (v) => patch((n) => { n.driver.queryTimeoutSeconds = Math.max(0, Number(v) || 0); }),
           },
-          { param: "fetchsize", value: "streamed (row cap per run)", def: "streamed" },
         ];
         return (
-          <SectionCard title="Driver Properties" description="Driver-specific properties that fine-tune this connection. Changes override the driver defaults for this connection only and apply on the next connect. Encryption and compression are edited on the Connection tab.">
+          <SectionCard title="Driver Properties" description="Driver parameters for this connection: connectionPoolSize applies on the next connect, querytimeout (seconds, 0 = none) to each new SQL tab session. Encryption and compression are edited on the Connection tab.">
             <div className="overflow-x-auto rounded-lg border border-border/70">
               <table className="w-full text-[12px]">
                 <thead>
                   <tr className="bg-secondary text-left text-muted-foreground">
-                    {["Origin", "Edited", "Parameter", "Value", "Driver Default"].map((h) => (
+                    {["Parameter", "Value", "Driver Default", ""].map((h) => (
                       <th key={h} className="border-b border-border px-2.5 py-1.5 font-medium">{h}</th>
                     ))}
                   </tr>
@@ -635,21 +567,17 @@ export function ConnectionPropertiesTab({
                     const edited = r.value !== r.def;
                     return (
                       <tr key={r.param} className="border-b border-border/60 last:border-0">
-                        <td className="px-2.5 py-1.5"><Plug className="h-3.5 w-3.5 text-muted-foreground" /></td>
-                        <td className="px-2.5 py-1.5"><CheckBox checked={edited} onChange={() => undefined} disabled /></td>
                         <td className="px-2.5 py-1.5 font-mono text-foreground">{r.param}</td>
                         <td className="px-2.5 py-1.5">
-                          {r.edit ? (
-                            <input
-                              value={r.value}
-                              onChange={(e) => r.edit!(e.target.value)}
-                              className="h-7 w-28 rounded border border-border bg-secondary/30 px-2 font-mono text-[12px] text-foreground outline-none focus:border-primary/60"
-                            />
-                          ) : (
-                            <span className="font-mono text-muted-foreground">{r.value}</span>
-                          )}
+                          <input
+                            value={r.value}
+                            aria-label={r.param}
+                            onChange={(e) => r.edit(e.target.value)}
+                            className="h-7 w-28 rounded border border-border bg-secondary/30 px-2 font-mono text-[12px] text-foreground outline-none focus:border-primary/60"
+                          />
                         </td>
                         <td className="px-2.5 py-1.5 font-mono text-muted-foreground/70">{r.def}</td>
+                        <td className="px-2.5 py-1.5 text-[11px] text-primary">{edited ? "Edited" : ""}</td>
                       </tr>
                     );
                   })}
@@ -662,10 +590,6 @@ export function ConnectionPropertiesTab({
       case "authentication":
         return (
           <div className="space-y-4">
-            <SectionCard title="Connection Authentication" description="If Userid or Password is not entered in the connection details, these settings decide whether Studio prompts for them when connecting.">
-              <CheckRow label="Require Userid" checked={s.auth.requireUserid} onChange={(v) => patch((n) => { n.auth.requireUserid = v; })} />
-              <CheckRow label="Require Password" checked={s.auth.requirePassword} onChange={(v) => patch((n) => { n.auth.requirePassword = v; })} />
-            </SectionCard>
             <SectionCard title="Database Password" description="What to do with the connection password. Saved passwords are encrypted with the vault's master password.">
               <RadioRow
                 options={[
@@ -676,47 +600,6 @@ export function ConnectionPropertiesTab({
                 value={s.auth.passwordPolicy}
                 onChange={(v) => patch((n) => { n.auth.passwordPolicy = v; })}
               />
-            </SectionCard>
-          </div>
-        );
-      case "delimited":
-        return (
-          <div className="space-y-4">
-            <SectionCard title="Delimited Identifiers" description={'Delimited identifiers do not need to follow regular identifier rules (reserved words, spaces, mixed case). Exasol delimits with double quotes. Leave both fields empty to disable delimiting when generating SQL.'}>
-              <InputRow label="Begin Identifier" value={s.delimited.begin} onChange={(v) => patch((n) => { n.delimited.begin = v.slice(0, 1); })} width="w-16" />
-              <InputRow label="End Identifier" value={s.delimited.end} onChange={(v) => patch((n) => { n.delimited.end = v.slice(0, 1); })} width="w-16" />
-              <p className="pt-2 text-[11.5px] text-muted-foreground">
-                Example: <span className="font-mono">UPDATE {s.delimited.begin}SCOTT{s.delimited.end}.{s.delimited.begin}Phone #{s.delimited.end} SET {s.delimited.begin}Name{s.delimited.end} = 'Mia' WHERE {s.delimited.begin}Id{s.delimited.end} = 72</span>
-              </p>
-            </SectionCard>
-            <SectionCard title="Use of Delimited Identifiers" description="Where Studio should generate delimited identifiers for schema, table and column names.">
-              <CheckRow label="Scripting" checked={s.delimited.scripting} onChange={(v) => patch((n) => { n.delimited.scripting = v; })} />
-              <CheckRow label="Auto-Completion / Query Builder" checked={s.delimited.autoCompletion} onChange={(v) => patch((n) => { n.delimited.autoCompletion = v; })} />
-              <CheckRow label="Export" checked={s.delimited.export} onChange={(v) => patch((n) => { n.delimited.export = v; })} />
-              <CheckRow label="Actions" checked={s.delimited.actions} onChange={(v) => patch((n) => { n.delimited.actions = v; })} />
-            </SectionCard>
-          </div>
-        );
-      case "qualifiers":
-        return (
-          <div className="space-y-4">
-            <SectionCard title="Qualify Objects with Schema" description="Whether generated object names are qualified with the schema name.">
-              <CheckRow label="Scripting" checked={s.qualifiers.objects.scripting} onChange={(v) => patch((n) => { n.qualifiers.objects.scripting = v; })} />
-              <CheckRow label="References / Navigator Graphs" checked={s.qualifiers.objects.navigator} onChange={(v) => patch((n) => { n.qualifiers.objects.navigator = v; })} />
-              <CheckRow label="Auto-Completion" checked={s.qualifiers.objects.autoCompletion} onChange={(v) => patch((n) => { n.qualifiers.objects.autoCompletion = v; })} />
-              <CheckRow label="Query Builder" checked={s.qualifiers.objects.queryBuilder} onChange={(v) => patch((n) => { n.qualifiers.objects.queryBuilder = v; })} />
-              <CheckRow label="Export" checked={s.qualifiers.objects.export} onChange={(v) => patch((n) => { n.qualifiers.objects.export = v; })} />
-            </SectionCard>
-            <SectionCard title="Fully Qualify Objects" description="Qualify with both database and schema where the database supports both.">
-              <CheckRow label="References / Navigator Graphs" checked={s.qualifiers.fully.navigator} onChange={(v) => patch((n) => { n.qualifiers.fully.navigator = v; })} />
-              <CheckRow label="Auto-Completion" checked={s.qualifiers.fully.autoCompletion} onChange={(v) => patch((n) => { n.qualifiers.fully.autoCompletion = v; })} />
-              <CheckRow label="Query Builder" checked={s.qualifiers.fully.queryBuilder} onChange={(v) => patch((n) => { n.qualifiers.fully.queryBuilder = v; })} />
-            </SectionCard>
-            <SectionCard title="Qualify Columns" description="Whether column names are qualified with the table name. Table aliases always yield qualified columns; ambiguous columns are qualified automatically in auto-completion.">
-              <CheckRow label="Scripting" checked={s.qualifiers.columns.scripting} onChange={(v) => patch((n) => { n.qualifiers.columns.scripting = v; })} />
-              <CheckRow label="Auto-Completion" checked={s.qualifiers.columns.autoCompletion} onChange={(v) => patch((n) => { n.qualifiers.columns.autoCompletion = v; })} />
-              <CheckRow label="Query Builder" checked={s.qualifiers.columns.queryBuilder} onChange={(v) => patch((n) => { n.qualifiers.columns.queryBuilder = v; })} />
-              <CheckRow label="Export" checked={s.qualifiers.columns.export} onChange={(v) => patch((n) => { n.qualifiers.columns.export = v; })} />
             </SectionCard>
           </div>
         );
@@ -738,61 +621,12 @@ export function ConnectionPropertiesTab({
       case "transaction":
         return (
           <div className="space-y-4">
-            <SectionCard title="Auto Commit" description="With auto-commit on, every statement commits as its own transaction. Off, statements group into transactions ended by COMMIT or ROLLBACK. Affects new connections — reconnect to apply.">
+            <SectionCard title="Auto Commit" description="With auto-commit on, every statement commits as its own transaction. Off, statements group into transactions ended by COMMIT or ROLLBACK. This is the default for new SQL tabs; each tab can switch with its own toggle.">
               <CheckRow label="Auto Commit" checked={s.transaction.autoCommit} onChange={(v) => patch((n) => { n.transaction.autoCommit = v; })} />
             </SectionCard>
-            <SectionCard title="Ask when Auto Commit is OFF" description="Whether a confirmation shows after executing requests while auto-commit is off.">
-              <CheckRow label="Always" checked={s.transaction.askAlways} onChange={(v) => patch((n) => { n.transaction.askAlways = v; })} />
-              <CheckRow label="When Uncommitted Updates" checked={s.transaction.askWhenUncommitted} onChange={(v) => patch((n) => { n.transaction.askWhenUncommitted = v; })} />
-            </SectionCard>
-            <SectionCard title="Transaction Isolation" description="Exasol always runs SERIALIZABLE — the strictest level. Shown here so the behavior is explicit; it cannot be lowered.">
-              <PickerRow label="Transaction Isolation" value={s.transaction.isolation === "none" ? "Do not set" : "SERIALIZABLE"} options={["Do not set", "SERIALIZABLE"]} onChange={(v) => patch((n) => { n.transaction.isolation = v === "SERIALIZABLE" ? "serializable" : "none"; })} />
-            </SectionCard>
-            <SectionCard title="Commit Batch Size (rows)" description="After how many rows the data editor issues a COMMIT while saving grid edits. 0 = commit only when the save completes.">
-              <InputRow label="Commit Batch Size (rows)" value={String(s.transaction.commitBatchSize)} onChange={(v) => patch((n) => { n.transaction.commitBatchSize = Math.max(0, Number(v) || 0); })} width="w-24" />
-            </SectionCard>
+            <SectionCard title="Uncommitted changes" description="Closing a tab, disconnecting or quitting with uncommitted changes always asks: Commit, Roll back, or Cancel. Nothing is committed or rolled back without asking. Grid edits join the tab's open transaction; with auto-commit on they save together or not at all." />
+            <SectionCard title="Transaction Isolation" description="Exasol always runs SERIALIZABLE, the strictest level; it cannot be changed." />
           </div>
-        );
-      case "encoding":
-        return (
-          <SectionCard title="Text to Binary Encoding" description="Used when saving plain text into a binary data type in the database.">
-            <PickerRow label="Text to Binary Encoding" value={s.encoding.textToBinary} options={ENCODINGS} onChange={(v) => patch((n) => { n.encoding.textToBinary = v; })} />
-          </SectionCard>
-        );
-      case "sqlStatements":
-        return (
-          <SectionCard title="SQL Templates" description="Statements Studio generates from object menus and grid actions. Variables ($$schema$$, $$table$$, $$columns$$, $$where$$…) are replaced at execution.">
-            <div className="overflow-hidden rounded-lg border border-border/70">
-              {Object.keys(s.sqlTemplates).map((name) => (
-                <button
-                  key={name}
-                  onClick={() => setTpl(name)}
-                  className={cn(
-                    "block w-full border-b border-border/60 px-2.5 py-1.5 text-left font-mono text-[11.5px] last:border-0",
-                    name === tpl ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/50",
-                  )}
-                >
-                  {name}
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={s.sqlTemplates[tpl] ?? ""}
-              onChange={(e) => patch((n) => { n.sqlTemplates[tpl] = e.target.value; })}
-              rows={3}
-              spellCheck={false}
-              className="mt-3 w-full rounded-md border border-border bg-secondary/30 px-2.5 py-2 font-mono text-[12px] text-foreground outline-none focus:border-primary/60"
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <p className="text-[11.5px] text-muted-foreground">Template used for "{tpl}".</p>
-              <button
-                onClick={() => patch((n) => { n.sqlTemplates[tpl] = DEFAULT_TEMPLATES[tpl] ?? ""; })}
-                className="flex h-6 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <RotateCcw className="h-3 w-3" /> Reset template
-              </button>
-            </div>
-          </SectionCard>
         );
       case "hooks":
         return (
@@ -842,11 +676,27 @@ export function ConnectionPropertiesTab({
                 ))}
               </div>
             </div>
-            <CheckRow label="Object View tabs" checked={s.color.objectTabs} onChange={(v) => patch((n) => { n.color.objectTabs = v; })} />
             <CheckRow label="SQL tabs" checked={s.color.sqlTabs} onChange={(v) => patch((n) => { n.color.sqlTabs = v; })} />
-            <CheckRow label="Result Set tabs" checked={s.color.resultTabs} onChange={(v) => patch((n) => { n.color.resultTabs = v; })} />
             <CheckRow label="Show in Database Connection name" checked={s.color.showInName} onChange={(v) => patch((n) => { n.color.showInName = v; })} />
           </SectionCard>
+        );
+      case "safety":
+        return (
+          <div className="space-y-4">
+            <SectionCard title="Environment" description="Tag the connection so its tabs and the title bar show where statements will run. Prod always asks before statements that destroy data, and before saving grid edits.">
+              <RadioRow
+                options={ENVIRONMENTS.map((e) => ({ value: e.value, label: e.label, hint: e.value === "prod" ? "Confirms DROP, TRUNCATE, DELETE/UPDATE without WHERE, and grid edits" : undefined }))}
+                value={s.safety.env}
+                onChange={(v) => patch((n) => { n.safety.env = v as Environment; })}
+              />
+            </SectionCard>
+            <SectionCard title="Read-only connection" description="Only statements that change nothing run: queries, session settings and transaction control. Inserts, updates, DDL, grants, scripts, data loads and grid edits are refused before they reach the server — in the editor, notebooks, object menus and the assistant. A query can still call a UDF that writes elsewhere, and BucketFS uses its own credentials: for a guarantee, sign in with a database user that has only SELECT privileges.">
+              <CheckRow label="Read-only connection" checked={s.safety.readOnly} onChange={(v) => patch((n) => { n.safety.readOnly = v; })} />
+            </SectionCard>
+            <SectionCard title="Confirm destructive statements" description="Ask before running DROP, TRUNCATE, and DELETE or UPDATE without a WHERE clause. Always on for Prod.">
+              <CheckRow label="Confirm destructive statements" checked={s.safety.confirmDangerous || s.safety.env === "prod"} onChange={(v) => patch((n) => { n.safety.confirmDangerous = v; })} />
+            </SectionCard>
+          </div>
         );
       case "sqlEditor":
         return (
@@ -875,36 +725,27 @@ export function ConnectionPropertiesTab({
             </SectionCard>
           </div>
         );
-      case "queryBuilder":
-        return (
-          <div className="space-y-4">
-            <SectionCard title="Query Builder Auto-Join" description="With auto-join enabled, tables added to the visual query builder join automatically to tables already present, by matching keys or column names.">
-              <CheckRow label="Auto-Join Enabled" checked={s.queryBuilder.autoJoin} onChange={(v) => patch((n) => { n.queryBuilder.autoJoin = v; })} />
-              <RadioRow
-                label="Auto-Join Type"
-                options={[
-                  { value: "fkpk", label: "Match columns by FK/PK declarations" },
-                  { value: "name", label: "Match columns with equal names" },
-                ]}
-                value={s.queryBuilder.joinType}
-                onChange={(v) => patch((n) => { n.queryBuilder.joinType = v; })}
-              />
-            </SectionCard>
-            <SectionCard title="Generate JOIN Clause" description="Generate joins as JOIN clauses rather than WHERE conditions.">
-              <CheckRow label="Generate JOIN Clause in Query Builder" checked={s.queryBuilder.generateJoinClause} onChange={(v) => patch((n) => { n.queryBuilder.generateJoinClause = v; })} />
-            </SectionCard>
-            <SectionCard title="Sort the Columns in the Table Windows" description="Sort columns alphabetically in table windows instead of ordinal position.">
-              <CheckRow label="Sort the Columns in the Table Windows" checked={s.queryBuilder.sortColumns} onChange={(v) => patch((n) => { n.queryBuilder.sortColumns = v; })} />
-            </SectionCard>
-          </div>
-        );
     }
   })();
+
+  const trustDraft: TrustDraft = {
+    host: profileDraft.host,
+    port: profileDraft.port,
+    sslMode: profileDraft.sslMode,
+    fingerprint: profileDraft.fingerprint ?? "",
+    sslCa: profileDraft.sslCa ?? "",
+    authMethod: profileDraft.authMethod ?? "password",
+  };
+  const patchTrust = (patch: Partial<TrustDraft>) => setProfileDraft((d) => ({ ...d, ...patch }));
+  const usesToken = (profileDraft.authMethod ?? "password") !== "password";
+  const secretLabel = AUTH_METHODS.find((m) => m.value === (profileDraft.authMethod ?? "password"))?.secret ?? "Password";
+  // What a test or connect needs before it can start.
+  const canTry = checkHost(profileDraft.host).ok && checkPort(profileDraft.port).ok && (usesToken || !!profileDraft.username.trim());
 
   const editRow = (
     label: string,
     key: "name" | "notes" | "host" | "port" | "schema" | "username" | "password",
-    opts?: { type?: string; placeholder?: string },
+    opts?: { type?: string; placeholder?: string; onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void },
   ) => (
     <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
       <span className="w-56 shrink-0 text-[12px] text-muted-foreground">{label}</span>
@@ -913,10 +754,26 @@ export function ConnectionPropertiesTab({
         value={profileDraft[key]}
         placeholder={opts?.placeholder}
         onChange={(e) => setProfileDraft((d) => ({ ...d, [key]: e.target.value }))}
+        onPaste={opts?.onPaste}
         className="h-8 w-full max-w-md rounded-md border border-border bg-secondary/30 px-2.5 font-mono text-[12.5px] text-foreground outline-none focus:border-primary/60"
       />
     </div>
   );
+  /** A pasted JDBC URL / exa:// URL / pyexasol DSN fills the address fields. */
+  function fillFromPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const parsed = parseDsn(e.clipboardData.getData("text"));
+    if (!parsed) return;
+    e.preventDefault();
+    setProfileDraft((d) => ({
+      ...d,
+      host: parsed.host,
+      ...(parsed.port ? { port: parsed.port } : {}),
+      ...(parsed.username ? { username: parsed.username } : {}),
+      ...(parsed.schema ? { schema: parsed.schema } : {}),
+      ...(parsed.fingerprint ? { fingerprint: parsed.fingerprint } : {}),
+      ...(parsed.sslMode ? { sslMode: parsed.sslMode } : {}),
+    }));
+  }
 
   const uptime = (() => {
     if (!connectedLive?.connectedAt) return null;
@@ -940,7 +797,7 @@ export function ConnectionPropertiesTab({
               Database Connection: {isNew ? profileDraft.name || "New Connection" : (profile?.name ?? "Connection")}
             </h2>
             {(() => {
-              const src = isNew ? { host: profileDraft.host, port: profileDraft.port, driverId: profileDraft.driverId } : profile;
+              const src = isNew ? profileDraft : profile;
               if (!src?.host) return null;
               const { url, driver } = connectionUrl(src);
               return (
@@ -1042,8 +899,9 @@ export function ConnectionPropertiesTab({
               {editRow("Notes", "notes", { placeholder: "Optional description" })}
             </SectionCard>
             <SectionCard title="Database">
-              {editRow("Database Server", "host")}
+              {editRow("Database Server", "host", { onPaste: fillFromPaste })}
               {editRow("Database Port", "port")}
+              <AddressNote host={profileDraft.host} port={profileDraft.port} />
               {editRow("Initial Schema", "schema", { placeholder: "Optional" })}
               <div className="flex items-center gap-3 py-2">
                 <span className="w-56 shrink-0 text-[12px] text-muted-foreground">Server Info</span>
@@ -1053,10 +911,11 @@ export function ConnectionPropertiesTab({
               </div>
             </SectionCard>
             <SectionCard title="Authentication">
-              {editRow("Database Userid", "username")}
+              <SignInMethodRow draft={trustDraft} onChange={patchTrust} />
+              {editRow(usesToken ? "Database Userid (not sent with a token)" : "Database Userid", "username")}
               <div className="flex items-center gap-3 border-b border-border/60 py-2 last:border-0">
                 <span className="flex w-56 shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
-                  Database Password
+                  {secretLabel}
                   {/* The two setups people actually hit — spelled out on hover. */}
                   <span
                     className="inline-flex cursor-help"
@@ -1068,7 +927,7 @@ export function ConnectionPropertiesTab({
                 <input
                   type={showPw ? "text" : "password"}
                   value={profileDraft.password}
-                  placeholder={isNew ? "Password" : "Unchanged — type to replace"}
+                  placeholder={isNew ? secretLabel : "Unchanged — type to replace"}
                   onChange={(e) => setProfileDraft((d) => ({ ...d, password: e.target.value }))}
                   className="h-8 w-full max-w-md rounded-md border border-border bg-secondary/30 px-2.5 font-mono text-[12.5px] text-foreground outline-none focus:border-primary/60"
                 />
@@ -1146,8 +1005,11 @@ export function ConnectionPropertiesTab({
                   <span className="text-[11px] text-warning">Runtime not installed — install it in the Drivers tab.</span>
                 ) : null}
               </div>
-              <PickerRow label="Encryption" value={profileDraft.sslMode} options={SSL_MODES} onChange={(v) => setProfileDraft((x) => ({ ...x, sslMode: v }))} />
+              <ConnectionTrustFields draft={trustDraft} onChange={patchTrust} />
               <CheckRow label="Compression" checked={profileDraft.compression} onChange={(v) => setProfileDraft((x) => ({ ...x, compression: v }))} />
+            </SectionCard>
+            <SectionCard title="Network">
+              <ConnectionNetworkFields network={profileDraft.network} isNew={isNew} onChange={(n) => setProfileDraft((x) => ({ ...x, network: n }))} />
             </SectionCard>
           </div>
         </div>
@@ -1198,7 +1060,7 @@ export function ConnectionPropertiesTab({
           <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={() => void testConnection()}
-              disabled={testState.busy || !profileDraft.host.trim() || !profileDraft.username.trim()}
+              disabled={testState.busy || !canTry}
               className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
             >
               {testState.busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
@@ -1211,7 +1073,7 @@ export function ConnectionPropertiesTab({
           </div>
           <button
             onClick={() => void saveAndConnect()}
-            disabled={busy || !profileDraft.host.trim() || !profileDraft.username.trim()}
+            disabled={busy || !canTry}
             className="cta-glow flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-primary px-4 text-[12.5px] font-medium text-primary-foreground hover:bg-primary/85 disabled:opacity-40"
           >
             {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : savedTick ? <Check className="h-3 w-3" /> : null}
@@ -1228,7 +1090,19 @@ export function ConnectionPropertiesTab({
             <RotateCcw className="h-3 w-3" /> Defaults…
           </button>
         ) : (
-          <span className="text-[11.5px] text-muted-foreground">Server-side changes apply on the next connect.</span>
+          <div className="flex min-w-0 items-center gap-2">
+            {/* The draft as edited, with the stored secret if none was typed. */}
+            <button
+              onClick={() => void testConnection()}
+              disabled={testState.busy || !canTry}
+              className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+            >
+              {testState.busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plug className="h-3 w-3" />} Test connection
+            </button>
+            <span className={cn("min-w-0 truncate text-[11.5px]", testState.message ? (testState.ok ? "text-primary" : "text-destructive") : "text-muted-foreground")} title={testState.message}>
+              {testState.message ? (testState.ok ? `Reachable — ${testState.message}` : testState.message) : "Server-side changes apply on the next connect."}
+            </span>
+          </div>
         )}
         <button
           onClick={() => void apply()}

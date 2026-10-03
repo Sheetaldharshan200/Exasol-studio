@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.EXA_DRIVER_BRIDGE_TEST = "1"; // importing must not block on stdin
-const { toRows } = await import("./driver-bridge.ts");
+const { toRows, halts } = await import("./driver-bridge.ts");
 
 test("column-major protocol data becomes rows", () => {
   // Exasol returns data[column][row]; the grid wants row-major.
@@ -75,4 +75,23 @@ test("row counts and result sets map from the protocol's own discrimination", as
   assert.deepEqual(set.rows, [[1, "x"], [2, "y"]]);
   // 5 rows exist but only 2 arrived — truncation must be reported
   assert.equal(set.truncated, true);
+});
+
+test("the bridge stops where the run's execution options say", () => {
+  const err = { error: "object NOPE not found", kind: "rowCount" as const, rowCount: 0 };
+  assert.equal(halts({}, 0, err), true, "stop on error by default");
+  assert.equal(halts({ stopOnError: false }, 0, err), false);
+  const empty = { error: null, kind: "resultSet" as const, rowCount: 0 };
+  assert.equal(halts({}, 0, empty), false);
+  assert.equal(halts({ stopIfEmpty: [true] }, 0, empty), true);
+  assert.equal(halts({ stopIfEmpty: [false, true] }, 0, empty), false, "per statement");
+  assert.equal(halts({ stopIfEmpty: [true] }, 3, empty), false, "past the list");
+  assert.equal(halts({ stopIfEmpty: [true] }, 0, { ...empty, rowCount: 2 }), false);
+});
+
+test("a lost connection ends the bridge's script even with stop on error off", () => {
+  const lost = { error: "WebSocket protocol error: Connection closed", kind: "rowCount" as const, rowCount: 0 };
+  assert.equal(halts({ stopOnError: false, lostPatterns: ["connection closed"] }, 0, lost), true);
+  assert.equal(halts({ stopOnError: false, lostPatterns: ["broken pipe"] }, 0, lost), false);
+  assert.equal(halts({ stopOnError: false }, 0, lost), false, "no patterns sent: an older Studio");
 });

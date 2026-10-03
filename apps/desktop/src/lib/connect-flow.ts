@@ -1,0 +1,80 @@
+// Decisions of the connect / test flow (ConnectRunOverlay), kept pure: what a
+// failure means for the person, and the TLS choices the form offers.
+
+/** What to offer after a failed connect: trust the server's certificate
+ *  (nothing pinned yet), or decide about one that changed. */
+export type TrustOffer = { fingerprint: string; changedFrom?: string };
+
+export function trustOffer(err: unknown): TrustOffer | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as { kind?: unknown; fingerprint?: unknown; expected?: unknown };
+  if (typeof e.fingerprint !== "string" || !/^[0-9A-F]{64}$/.test(e.fingerprint)) return null;
+  if (e.kind === "untrusted-certificate") return { fingerprint: e.fingerprint };
+  if (e.kind === "certificate-changed" && typeof e.expected === "string") return { fingerprint: e.fingerprint, changedFrom: e.expected };
+  return null;
+}
+
+/** Groups of four, so two fingerprints can be compared by eye. */
+export function displayFingerprint(fp: string): string {
+  return fp.replace(/(.{4})(?=.)/g, "$1 ");
+}
+
+/** The encryption choices: always encrypted (Exasol 8.19+ refuses plain). */
+export const ENCRYPTION_MODES: { value: string; label: string }[] = [
+  { value: "verify_identity", label: "Verify certificate and host (recommended)" },
+  // The driver checks the chain but not the name, against the public roots
+  // too: any publicly trusted certificate passes. Kept for existing setups.
+  { value: "verify_ca", label: "Verify certificate, not host name (weak)" },
+  { value: "required", label: "Encrypt without verifying" },
+];
+
+/** A stored mode as one of the offered choices: "disabled" and the old
+ *  "preferred" are both "encrypt without verifying" now. */
+export function encryptionChoice(sslMode: string | undefined): string {
+  return ENCRYPTION_MODES.some((m) => m.value === sslMode) ? (sslMode as string) : "required";
+}
+
+export const AUTH_METHODS: { value: string; label: string; secret: string }[] = [
+  { value: "password", label: "User and password", secret: "Password" },
+  { value: "access_token", label: "OpenID access token", secret: "Access token" },
+  { value: "refresh_token", label: "OpenID refresh token", secret: "Refresh token" },
+];
+
+/** Exasol SaaS hosts, whose sign-in is a personal access token. */
+export function isSaasHost(host: string): boolean {
+  return /\.exasol\.com$/i.test(host.trim().split(/[/:]/)[0] ?? "");
+}
+
+/** The notice for connection hooks that failed (Properties → Connection Hooks). */
+export function hookNotice(errors: readonly string[] | undefined, phase: "connect" | "disconnect"): { title: string; body: string } | null {
+  if (!errors?.length) return null;
+  const n = errors.length;
+  return {
+    title: `${n} connection hook statement${n === 1 ? "" : "s"} failed`,
+    body: `${phase === "connect" ? "Connected, but these SQL-at-connect" : "Disconnected, but these SQL-at-disconnect"} statements failed:\n${errors.join("\n")}`,
+  };
+}
+
+/** What an import did, for the notice. */
+export function importNotice(r: { added: string[]; skipped: string[]; failed: string[] }): { kind: "success" | "warning" | "info"; title: string; body: string } {
+  const parts = [
+    r.added.length ? `Added: ${r.added.join(", ")}.` : "",
+    r.skipped.length ? `Already there: ${r.skipped.join(", ")}.` : "",
+    r.failed.length ? `Not imported: ${r.failed.join("; ")}.` : "",
+    r.added.length ? "Passwords are not in the file — each connection asks on its first connect." : "",
+  ].filter(Boolean);
+  const n = r.added.length;
+  return {
+    kind: r.failed.length ? "warning" : n ? "success" : "info",
+    title: n ? `${n} connection${n === 1 ? "" : "s"} imported` : "Nothing new to import",
+    body: parts.join(" ") || "The file has no connections.",
+  };
+}
+
+/** An SSH host key to decide about (host-key checking "Ask"). */
+export function hostKeyOffer(err: unknown): { host: string; fingerprint: string } | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as { kind?: unknown; host?: unknown; fingerprint?: unknown };
+  if (e.kind !== "unknown-host-key" || typeof e.host !== "string" || typeof e.fingerprint !== "string" || !e.fingerprint.includes("SHA256:")) return null;
+  return { host: e.host, fingerprint: e.fingerprint };
+}
