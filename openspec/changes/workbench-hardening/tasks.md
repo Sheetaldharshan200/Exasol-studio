@@ -106,14 +106,14 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 ## Phase 7 — Daily-use polish
 
 ### 7.1 Editor
-- [ ] 7.1.1 Shortcuts: ⌘S save, cancel, ⌘T / ⌘W, ⌃Tab and ⌘1–9, focus tree/editor/results; a shortcut sheet (`lib/shortcuts.ts`; test: `shortcuts.test.ts`).
-- [ ] 7.1.2 Resolve ⌘. vs Monaco Quick Fix and the global ⌘K vs Monaco chords.
-- [ ] 7.1.3 SQL formatter for Exasol (`lib/sql-format.ts`; test: `sql-format.test.ts`).
-- [ ] 7.1.4 `&var` / `:param` substitution with a prompt (`lib/sql-params.ts`; test: `sql-params.test.ts`).
-- [ ] 7.1.5 Remove the `NOW()` false-positive lint (Exasol accepts it) (`lib/sql-lint.ts`; test: `sql-lint.test.ts`).
-- [ ] 7.1.6 Mixed-case identifiers resolve and insert quoted; completion scope uses `splitStatements`; comma joins resolve (`lib/sql-completion.ts`; test: `sql-completion.test.ts`).
-- [ ] 7.1.7 Catalog loaded per schema on demand; refreshed once after DDL, not twice per run nor every 45 s; lint off while incomplete (`lib/sql-catalog.ts`; test: `sql-catalog.test.ts`).
-- [ ] 7.1.8 Function signature help and hover.
+- [x] 7.1.1 Shortcuts: ⌘S save, cancel, ⌘T / ⌘W, ⌃Tab and ⌘1–9, focus tree/editor/results; a shortcut sheet (`lib/shortcuts.ts`; test: `shortcuts.test.ts`).
+- [x] 7.1.2 Resolve ⌘. vs Monaco Quick Fix and the global ⌘K vs Monaco chords. Quick Fix is ⌥⏎ (⌘. runs the statement); ⌘K searches only outside the editor; the macOS menu has no Close Window on ⌘W.
+- [x] 7.1.3 SQL formatter for Exasol (`lib/sql-format.ts`; test: `sql-format.test.ts`).
+- [x] 7.1.4 `&var` / `:param` substitution with a prompt (`lib/sql-params.ts`; test: `sql-params.test.ts`).
+- [x] 7.1.5 Remove the `NOW()` false-positive lint (Exasol accepts it) (`lib/sql-lint.ts`; test: `sql-lint.test.ts`).
+- [x] 7.1.6 Mixed-case identifiers resolve and insert quoted; completion scope uses `splitStatements`; comma joins resolve (`lib/sql-completion.ts`; test: `sql-completion.test.ts`).
+- [x] 7.1.7 Catalog loaded per schema on demand; refreshed once after DDL, not twice per run nor every 45 s; lint off while incomplete (`lib/sql-catalog.ts`; test: `sql-catalog.test.ts`).
+- [x] 7.1.8 Function signature help and hover (`lib/sql-signatures.ts`; test: `sql-signatures.test.ts`). Signatures checked live on Exasol; table hover only in table positions, CTE names shadow tables.
 
 ### 7.2 Results
 - [ ] 7.2.1 Virtualized grid; column resize, sort, hide.
