@@ -218,3 +218,17 @@ export function adoptPendingTabs(existing: readonly SqlTab[], pending: readonly 
   }
   return [...existing, ...carried];
 }
+
+/** The file name of a path, with `/` or `\` separators (Windows paths). */
+export function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
+}
+
+/** The tab a tab shortcut goes to: `by` steps (wrapping), or tab `n`
+ *  (1-based; 9 is the last tab). Null when there is none. */
+export function tabTarget(count: number, at: number, move: { by: number } | { n: number }): number | null {
+  if (count <= 0) return null;
+  if ("by" in move) return (((Math.max(0, at) + move.by) % count) + count) % count;
+  if (move.n === 9) return count - 1;
+  return move.n >= 1 && move.n <= count ? move.n - 1 : null;
+}

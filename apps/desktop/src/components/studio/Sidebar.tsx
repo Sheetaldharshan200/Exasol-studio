@@ -704,7 +704,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-full min-w-0 flex-col bg-panel">
+    <aside data-focus="navigator" tabIndex={-1} className="flex h-full min-w-0 flex-col bg-panel outline-none">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border pr-1 pl-3">
         <span className="eyebrow-muted">{title}</span>
         <div data-tour="add-connection" className="flex items-center gap-0.5">

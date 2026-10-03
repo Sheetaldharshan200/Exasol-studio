@@ -1,4 +1,6 @@
 mod agent;
+#[cfg(target_os = "macos")]
+mod app_menu;
 mod github_auth;
 mod installers;
 mod limits;
@@ -75,7 +77,10 @@ pub fn run() {
     // picking one. See exarrow_exec::install_crypto_provider.
     crate::exarrow_exec::install_crypto_provider();
     crate::limits::raise_open_files();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu::build);
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())

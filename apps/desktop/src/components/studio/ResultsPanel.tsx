@@ -125,7 +125,7 @@ export function ResultsPanel({
     }
   }, [view, planData, profiling, lastResult, onProfile]);
   return (
-    <div className="flex h-full min-h-0 flex-col bg-panel">
+    <div data-focus="results" tabIndex={-1} className="flex h-full min-h-0 flex-col bg-panel outline-none">
       <div className="flex h-8 shrink-0 items-center gap-0.5 border-y border-border px-2">
         {/* Same selection language as the Marketplace tabs: an underline on
             the active tab, never a colored pill background. */}

@@ -36,7 +36,7 @@ export function currentStatement(before: string): string {
   return before[last.end] === ";" ? "" : before.slice(last.start).trimStart();
 }
 
-const IDENT = String.raw`(?:"(?:[^"]|"")+"|[A-Za-z_][\w$]*)`;
+export const IDENT = String.raw`(?:"(?:[^"]|"")+"|[A-Za-z_][\w$]*)`;
 const STOP = /^(WHERE|ON|USING|SET|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|NATURAL|JOIN|GROUP|ORDER|HAVING|LIMIT|UNION|MINUS|EXCEPT|INTERSECT|VALUES|SELECT|WINDOW|QUALIFY|CONNECT|START|PREFERRING)$/i;
 
 export type TableRef = { schema: string; table: string };
