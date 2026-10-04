@@ -2,7 +2,6 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::error::{AppError, AppResult};
-use crate::security;
 use crate::state::AppState;
 use crate::storage::{read_json, write_json};
 
@@ -43,6 +42,24 @@ pub struct ConnectionProfile {
     pub created_at: Option<String>,
     #[serde(default)]
     pub last_used_at: Option<String>,
+    /// Pinned TLS certificate (SHA-256, 64 upper-case hex). When set, the
+    /// server must present exactly this certificate (tls_trust.rs).
+    #[serde(default)]
+    pub fingerprint: Option<String>,
+    /// A CA certificate file to verify the server against (verify modes).
+    #[serde(default)]
+    pub ssl_ca: Option<String>,
+    /// password | access_token | refresh_token. For a token the secret sits
+    /// where the password does (keychain / vault), and no user is sent.
+    #[serde(default = "default_auth_method")]
+    pub auth_method: String,
+    /// An SSH tunnel or proxy to reach the database (network.rs).
+    #[serde(default)]
+    pub network: Option<crate::network::NetworkSettings>,
+}
+
+fn default_auth_method() -> String {
+    "password".to_string()
 }
 
 fn default_port() -> u16 {
@@ -72,9 +89,70 @@ pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionP
         .ok_or_else(|| {
             AppError::InvalidSettings(format!("unknown connection profile `{profile_id}`"))
         })?;
-    // Decrypt the stored password for actual use (connect / driver bridges).
-    profile.password = security::decrypt_secret(dek(state).as_ref(), &profile.password)?;
+    // The password for actual use (connect / driver bridges): sealed in the
+    // file, or in the keychain, or — from older files — plaintext, which is
+    // moved off the file now that it has been seen.
+    let key = dek(state);
+    let (plain, legacy) = crate::profile_secret::from_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::read_credential)?;
+    if legacy {
+        let moved = crate::profile_secret::to_store(key.as_ref(), &profile.id, &plain, crate::shared_registry::write_credential);
+        let mut all = load_profiles(state)?;
+        if let Some(p) = all.iter_mut().find(|p| p.id == profile.id) {
+            p.password = moved;
+        }
+        write_json(&profiles_path(state), &all)?;
+    }
+    if let Some(n) = &mut profile.network {
+        crate::network::open(key.as_ref(), &profile.id, n)?;
+    }
+    // "This session only": not on disk, only in memory for this run.
+    profile.password = if plain.is_empty() {
+        state.session_passwords.lock().ok().and_then(|m| m.get(&profile.id).cloned()).unwrap_or_default()
+    } else {
+        plain
+    };
     Ok(profile)
+}
+
+/// Copy a connection — its secret and its Properties settings — under a free
+/// name. The copy is a connection of its own from then on.
+#[tauri::command]
+pub fn duplicate_profile(state: State<'_, AppState>, profile_id: String) -> AppResult<ConnectionProfile> {
+    let src = find_profile(&state, &profile_id)?;
+    let taken: Vec<String> = load_profiles(&state)?.into_iter().map(|p| p.name).collect();
+    let mut copy = src.clone();
+    copy.id = String::new();
+    copy.name = crate::profile_check::copy_name(&src.name, &taken);
+    copy.created_at = None;
+    copy.last_used_at = None;
+    let saved = save_profile(&state, copy)?;
+    let settings = crate::connection_settings::read_settings(&state, &profile_id);
+    if !settings.is_null() {
+        crate::connection_settings::write_settings(&state, &saved.id, settings)?;
+    }
+    Ok(saved)
+}
+
+/// Whether connecting needs the secret asked for: none is stored, and none
+/// is kept for this session.
+#[tauri::command]
+pub fn profile_secret_missing(state: State<'_, AppState>, profile_id: String) -> AppResult<bool> {
+    Ok(find_profile(&state, &profile_id)?.password.is_empty())
+}
+
+/// Keep a password for this run only, and remove any stored copy — file and
+/// keychain — so "this session only" means exactly that. An empty password
+/// forgets it.
+#[tauri::command]
+pub fn set_session_password(state: State<'_, AppState>, profile_id: String, password: String) -> AppResult<()> {
+    clear_profile_password(&state, &profile_id)?;
+    let mut map = state.session_passwords.lock().map_err(|_| AppError::Storage("session password store poisoned".into()))?;
+    if password.is_empty() {
+        map.remove(&profile_id);
+    } else {
+        map.insert(profile_id, password);
+    }
+    Ok(())
 }
 
 /// Blank a profile's stored password (Connection Properties → Authentication
@@ -83,6 +161,16 @@ pub fn clear_profile_password(state: &AppState, profile_id: &str) -> AppResult<(
     let mut profiles = load_profiles(state)?;
     if let Some(profile) = profiles.iter_mut().find(|p| p.id == profile_id) {
         profile.password = String::new();
+        // The copy shared with the exa CLI goes too, or a "cleared" password
+        // would still open the database from a terminal after Studio quits.
+        let shared = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
+        crate::shared_registry::delete_credential(&shared);
+    }
+    // The keychain copy and any in-memory one go too: "cleared" must mean
+    // cleared everywhere.
+    crate::shared_registry::delete_credential(&crate::profile_secret::keychain_account(profile_id));
+    if let Ok(mut map) = state.session_passwords.lock() {
+        map.remove(profile_id);
     }
     write_json(&profiles_path(state), &profiles)
 }
@@ -212,6 +300,9 @@ pub fn list_connection_profiles(
     let mut profiles = load_profiles(&state)?;
     for p in &mut profiles {
         p.password = String::new();
+        if let Some(n) = &mut p.network {
+            crate::network::redact(n);
+        }
     }
     Ok(profiles)
 }
@@ -231,12 +322,7 @@ pub fn save_profile(
     state: &AppState,
     mut profile: ConnectionProfile,
 ) -> AppResult<ConnectionProfile> {
-    if profile.host.trim().is_empty() {
-        return Err(AppError::InvalidSettings("host is required".into()));
-    }
-    if profile.username.trim().is_empty() {
-        return Err(AppError::InvalidSettings("username is required".into()));
-    }
+    crate::profile_check::validate_profile(&mut profile)?;
     if profile.name.trim().is_empty() {
         profile.name = format!("{}@{}", profile.username, profile.host);
     }
@@ -249,36 +335,54 @@ pub fn save_profile(
     let existing_index = if !profile.id.is_empty() {
         profiles.iter().position(|p| p.id == profile.id)
     } else {
-        profiles.iter().position(|p| {
-            p.host.trim().eq_ignore_ascii_case(profile.host.trim())
-                && p.port == profile.port
-                && p.username == profile.username
-                && p.driver_id == profile.driver_id
-        })
+        profiles.iter().position(|p| crate::profile_check::same_connection(p, &profile))
     };
 
     // Encrypt the password at rest (no-op when no vault is configured). If the
     // field is left blank while editing an existing connection, keep the stored
     // one instead of clobbering it.
     let key = dek(state);
+    // Remember the plaintext for publishing before it is stored away.
+    let typed = profile.password.clone();
     match existing_index {
         Some(idx) => {
+            profile.id = profiles[idx].id.clone();
+            // A changed address is a different shared connection: the old one
+            // (registry entry and its secret) goes, or it would come back on
+            // the next list and keep its password usable from the CLI.
+            let old = crate::shared_registry::connection_id(&profiles[idx].host, profiles[idx].port, &profiles[idx].username);
+            let new = crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username);
+            let still_used = profiles.iter().enumerate().any(|(i, p)| i != idx && crate::shared_registry::connection_id(&p.host, p.port, &p.username) == old);
+            if old != new && !still_used {
+                let _ = crate::shared_registry::remove(&old);
+            }
             if profile.password.is_empty() {
+                if !crate::profile_check::may_reuse_secret(&profiles[idx], &profile) {
+                    return Err(AppError::InvalidSettings(
+                        "Enter the password or token again: the server, user or sign-in method changed, and the saved one is not sent anywhere else.".into(),
+                    ));
+                }
                 profile.password = profiles[idx].password.clone();
             } else {
-                profile.password = security::encrypt_secret(key.as_ref(), &profile.password);
+                profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
             }
-            profile.id = profiles[idx].id.clone();
+            match &mut profile.network {
+                Some(n) => crate::network::seal(key.as_ref(), &profile.id, n, profiles[idx].network.as_ref()),
+                None => crate::network::forget_dropped(&profile.id, None, profiles[idx].network.as_ref()),
+            }
             profile.created_at = profiles[idx].created_at.clone();
             profiles[idx] = profile.clone();
         }
         None => {
-            profile.password = security::encrypt_secret(key.as_ref(), &profile.password);
             profile.id = format!(
                 "conn-{}-{}",
                 chrono::Utc::now().timestamp_millis(),
                 profiles.len() + 1
             );
+            profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
+            if let Some(n) = &mut profile.network {
+                crate::network::seal(key.as_ref(), &profile.id, n, None);
+            }
             profile.created_at = Some(chrono::Utc::now().to_rfc3339());
             profiles.push(profile.clone());
         }
@@ -289,11 +393,22 @@ pub fn save_profile(
     // Publish outward so the `exa` CLI sees this database too. Best effort:
     // a shared-registry problem must never fail saving a connection here.
     // Internal AI identities never publish — not even transiently on create.
-    if is_mcp_identity(&profile.username) {
+    // The shared exa registry knows user + password only: a token sign-in is
+    // not published there (it would be read back as a password).
+    if is_mcp_identity(&profile.username) || profile.auth_method != "password" {
         profile.password = String::new();
+        if let Some(n) = &mut profile.network {
+            crate::network::redact(n);
+        }
         return Ok(profile);
     }
-    let plaintext = security::decrypt_secret(key.as_ref(), &profile.password).unwrap_or_default();
+    let plaintext = if typed.is_empty() {
+        crate::profile_secret::from_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::read_credential)
+            .map(|(p, _)| p)
+            .unwrap_or_default()
+    } else {
+        typed
+    };
     let shared = crate::shared_registry::SharedConnection {
         id: crate::shared_registry::connection_id(&profile.host, profile.port, &profile.username),
         name: profile.name.clone(),
@@ -309,8 +424,11 @@ pub fn save_profile(
         eprintln!("could not publish connection to the shared registry: {err}");
     }
 
-    // Don't echo the stored secret back to the caller.
+    // Don't echo the stored secrets back to the caller.
     profile.password = String::new();
+    if let Some(n) = &mut profile.network {
+        crate::network::redact(n);
+    }
     Ok(profile)
 }
 
@@ -339,13 +457,21 @@ pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
             }
             continue;
         }
+        // A token sign-in is not a password: not published (an entry with
+        // the same address may belong to another, password, connection).
+        if profile.auth_method != "password" {
+            continue;
+        }
         let credential_present = crate::shared_registry::read_credential(&id).is_some();
         // Nothing to do when it is already listed and its secret is shared.
         if known && credential_present {
             continue;
         }
         let password =
-            security::decrypt_secret(key.as_ref(), &profile.password).ok().filter(|p| !p.is_empty());
+            crate::profile_secret::from_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::read_credential)
+                .ok()
+                .map(|(p, _)| p)
+                .filter(|p| !p.is_empty());
         let entry = crate::shared_registry::SharedConnection {
             id,
             name: profile.name.clone(),
@@ -397,6 +523,10 @@ pub fn import_shared_connections(state: &AppState) -> AppResult<usize> {
             driver_id: default_driver(),
             created_at: entry.created_at.clone(),
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
+            network: None,
         };
         if save_profile(state, profile).is_ok() {
             imported += 1;
@@ -458,6 +588,10 @@ pub fn ensure_local_profile(
             driver_id: default_driver(),
             created_at: None,
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
+            network: None,
         },
     )
 }
@@ -467,10 +601,8 @@ pub async fn delete_connection_profile(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> AppResult<()> {
-    // Close the pool if this profile is currently connected.
-    if let Some(pool) = state.pools.write().await.remove(&profile_id) {
-        pool.close().await;
-    }
+    // End the connection if it is open — sessions, pool and tunnel alike.
+    let _ = crate::connection::close_connection(&state, &profile_id).await;
     let mut profiles = load_profiles(&state)?;
     // Unpublish from the shared registry too — every list re-imports registry
     // entries that are "missing locally", so a delete that only touched
@@ -495,5 +627,7 @@ pub async fn delete_connection_profile(
         }
     }
     profiles.retain(|p| p.id != profile_id);
+    crate::shared_registry::delete_credential(&crate::profile_secret::keychain_account(&profile_id));
+    crate::network::forget(&profile_id);
     write_json(&profiles_path(&state), &profiles)
 }

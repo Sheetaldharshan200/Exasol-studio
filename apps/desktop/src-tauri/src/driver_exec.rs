@@ -630,15 +630,46 @@ async fn download(url: &str, dest: &std::path::Path) -> AppResult<()> {
 
 // ── Execution routing ─────────────────────────────────────────────────────────
 
+/// Wait for the bridge's output, or kill it when Stop is pressed: the driver
+/// connection dies with the process, and the server ends its session.
+fn wait_or_stop(mut child: std::process::Child, cancel: &crate::query::CancelFlag) -> AppResult<std::process::Output> {
+    use std::io::Read;
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut p) = pipe {
+                let _ = p.read_to_end(&mut buf);
+            }
+            buf
+        })
+    };
+    let out = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let err = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if cancel.is_cancelled() {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(AppError::Storage(crate::query::STOPPED.into()));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    Ok(std::process::Output { status, stdout: out.join().unwrap_or_default(), stderr: err.join().unwrap_or_default() })
+}
+
 pub fn execute_via_driver(
     app: &AppHandle,
     profile: &ConnectionProfile,
     statements: &[String],
     max_rows: usize,
+    stop: crate::query::StopPolicy,
+    cancel: &crate::query::CancelFlag,
 ) -> AppResult<ExecuteResponse> {
     let runtime = driver_runtime(&profile.driver_id);
     if uses_bridge_process(runtime) {
-        execute_bridge(app, profile, statements, max_rows)
+        execute_bridge(app, profile, statements, max_rows, stop, cancel)
     } else {
         Err(AppError::Storage(format!("Execution via the {runtime} driver isn’t available yet.")))
     }
@@ -649,6 +680,8 @@ fn execute_bridge(
     profile: &ConnectionProfile,
     statements: &[String],
     max_rows: usize,
+    stop: crate::query::StopPolicy,
+    cancel: &crate::query::CancelFlag,
 ) -> AppResult<ExecuteResponse> {
     if !driver_implemented(&profile.driver_id) {
         return Err(AppError::Storage(unimplemented_driver_message(&profile.driver_id)));
@@ -695,8 +728,7 @@ fn execute_bridge(
         (py.clone(), Some(p))
     };
 
-    let tls = profile.ssl_mode != "disabled";
-    let verify = profile.ssl_mode == "verify_ca" || profile.ssl_mode == "verify_identity";
+    let (tls, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode);
     let jar = if needs_python { jdbc_jar(app)?.to_string_lossy().to_string() } else { String::new() };
     // A Marketplace-installed ODBC library is used by PATH (pyodbc accepts a
     // driver file path), so no OS-level driver registration is ever required.
@@ -717,6 +749,11 @@ fn execute_bridge(
         "driverPath": odbc_lib,
         "statements": statements,
         "expectRows": expect_rows(statements),
+        // The bridge's own loop applies the run's execution options.
+        "stopOnError": stop.on_error,
+        "stopIfEmpty": stop.stop_if_empty(statements),
+        // A lost connection ends the script even with stop-on-error off.
+        "lostPatterns": crate::session::LOST_CONNECTION_PATTERNS,
     });
 
     let mut cmd = crate::process::command(&runtime_bin);
@@ -743,7 +780,7 @@ fn execute_bridge(
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(req.to_string().as_bytes()).map_err(|e| AppError::Storage(e.to_string()))?;
     }
-    let out = child.wait_with_output().map_err(|e| AppError::Storage(e.to_string()))?;
+    let out = wait_or_stop(child, cancel)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let parsed: Value = serde_json::from_str(stdout.trim()).map_err(|_| {
         let err = String::from_utf8_lossy(&out.stderr);
@@ -806,6 +843,26 @@ const PYTHON_BRIDGE: &str = include_str!("../../../../packages/driver-bridges/py
 
 #[cfg(test)]
 mod driver_support_tests {
+    #[cfg(unix)]
+    #[test]
+    fn a_bridge_process_is_killed_on_stop_and_waited_for_otherwise() {
+        use std::process::{Command, Stdio};
+        let piped = |cmd: &mut Command| cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+        let out = super::wait_or_stop(piped(Command::new("sh").args(["-c", "echo out; echo err >&2"])), &crate::query::CancelFlag::new()).unwrap();
+        assert_eq!((out.stdout.as_slice(), out.stderr.as_slice()), (&b"out\n"[..], &b"err\n"[..]));
+
+        let flag = crate::query::CancelFlag::new();
+        let raise = flag.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            raise.cancel();
+        });
+        let started = std::time::Instant::now();
+        let err = super::wait_or_stop(piped(Command::new("sleep").arg("30")), &flag).unwrap_err();
+        assert!(err.to_string().contains("stopped"), "{err}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5), "killed, not waited out");
+    }
+
     use super::{driver_implemented, driver_runtime, expect_rows, unimplemented_driver_message};
 
     #[test]

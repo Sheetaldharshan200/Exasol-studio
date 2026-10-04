@@ -56,6 +56,14 @@ pub fn job_allowed(job: &str) -> bool {
     JOB_ALLOWLIST.contains(&job)
 }
 
+/// The jobs that only look (state, lists, progress): the only ones a
+/// read-only connection's Admin API session may run.
+const READ_JOBS: &[&str] = &["db_list", "db_state", "db_info", "db_backup_list", "db_backup_progress", "st_volume_list"];
+
+pub fn job_reads_only(job: &str) -> bool {
+    READ_JOBS.contains(&job)
+}
+
 // ── XML-RPC codec (pure) ───────────────────────────────────────────────────
 
 fn xml_escape(s: &str) -> String {
@@ -365,6 +373,11 @@ pub async fn confd_job(
     if !job_allowed(&job) {
         return Err(AppError::Storage(format!("ConfD job '{job}' is not allowed from the UI.")));
     }
+    // A read-only connection does not start, stop, back up, restore or
+    // delete either — through the Admin API as little as through SQL.
+    if !job_reads_only(&job) && crate::safety::read_only(&state, &profile_id) {
+        return Err(AppError::InvalidSettings("This connection is read-only: the database cannot be started, stopped, backed up or restored from it.".into()));
+    }
     let session = session_for(&state, &profile_id)?;
     call(&session, "job_exec", vec![Value::String(job), json!({ "params": params })]).await
 }
@@ -373,6 +386,17 @@ pub async fn confd_job(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_looking_jobs_run_on_a_read_only_connection() {
+        use super::{job_allowed, job_reads_only};
+        for j in ["db_state", "db_backup_list", "st_volume_list"] {
+            assert!(job_allowed(j) && job_reads_only(j), "{j}");
+        }
+        for j in ["db_stop", "db_start", "db_restore", "db_backups_delete", "db_backup_start", "db_backup_add_schedule"] {
+            assert!(job_allowed(j) && !job_reads_only(j), "{j}");
+        }
+    }
+
     use super::*;
 
     #[test]

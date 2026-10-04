@@ -90,35 +90,25 @@ fn emit(app: &AppHandle, line: impl Into<String>, level: &str) {
 #[tauri::command]
 pub async fn exapump_upload(
     app: AppHandle,
-    host: String,
-    port: u16,
-    user: String,
-    password: String,
+    profile_id: String,
     schema: Option<String>,
-    tls: bool,
     file: String,
     table: String,
     delimiter: Option<String>,
     dry_run: bool,
 ) -> AppResult<Value> {
-    let bin = exapump_path(&app).ok_or_else(|| {
-        AppError::Storage(
-            "ExaPump isn't installed. Install it from the Marketplace, then try again.".into(),
-        )
-    })?;
-
-    let schema_path = schema
-        .filter(|s| !s.is_empty())
-        .map(|s| format!("/{s}"))
-        .unwrap_or_default();
-    let dsn = format!(
-        "exasol://{}:{}@{host}:{port}{schema_path}?tls={}&validateservercertificate=0",
-        enc(&user),
-        enc(&password),
-        if tls { "true" } else { "false" },
-    );
+    // A read-only connection is not loaded into (a dry run still is).
+    let read_only = crate::safety::read_only(&app.state::<crate::state::AppState>(), &profile_id);
+    if read_only && !dry_run {
+        let name = crate::profiles::find_profile(&app.state::<crate::state::AppState>(), &profile_id)?.name;
+        return Err(AppError::InvalidSettings(format!("\"{name}\" is read-only: data cannot be loaded into it.")));
+    }
+    let schema_path = schema.filter(|s| !s.is_empty()).map(|s| format!("/{s}")).unwrap_or_default();
+    let target = pump_target(&app, &profile_id, &schema_path)?;
+    let (bin, dsn) = (target.bin, target.dsn);
 
     let mut args: Vec<String> = vec!["upload".into(), file, "--table".into(), table];
+    args.extend(target.pin_args);
     if let Some(d) = delimiter.filter(|d| !d.is_empty()) {
         args.push("--delimiter".into());
         args.push(d);
@@ -126,7 +116,56 @@ pub async fn exapump_upload(
     if dry_run {
         args.push("--dry-run".into());
     }
+    run_upload(app, bin, dsn, args, dry_run)
+}
 
+/// How to run exapump against a saved connection: the binary, the DSN (for
+/// the environment, never argv) and the certificate pin arguments.
+struct PumpTarget {
+    bin: String,
+    dsn: String,
+    pin_args: Vec<String>,
+}
+
+/// Credentials and trust come from the saved connection, never from the page.
+fn pump_target(app: &AppHandle, profile_id: &str, schema_path: &str) -> AppResult<PumpTarget> {
+    let profile = crate::profiles::find_profile(&app.state::<crate::state::AppState>(), profile_id)?;
+    if profile.auth_method != "password" {
+        return Err(AppError::InvalidSettings("ExaPump signs in with a password; this connection uses a token.".into()));
+    }
+    // Through an SSH tunnel or proxy: the open connection's loopback port.
+    let (host, port) = match &profile.network {
+        Some(_) => {
+            let state = app.state::<crate::state::AppState>();
+            let route = state.carriers.lock().ok().and_then(|c| c.get(&profile.id).and_then(|c| c.route_port()));
+            match route {
+                Some(p) => ("127.0.0.1".to_string(), p),
+                None => return Err(AppError::InvalidSettings("Connect first: this connection runs through an SSH tunnel or proxy.".into())),
+            }
+        }
+        None => (profile.host.clone(), profile.port),
+    };
+    let (user, password) = (profile.username.clone(), profile.password.clone());
+    let (_, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode);
+    let bin = exapump_path(app).ok_or_else(|| {
+        AppError::Storage(
+            "ExaPump isn't installed. Install it from the Marketplace, then try again.".into(),
+        )
+    })?;
+
+    let dsn = format!(
+        "exasol://{}:{}@{host}:{port}{schema_path}?tls=true&validateservercertificate={}",
+        enc(&user),
+        enc(&password),
+        // A pin is passed as exapump's own pin (below); else the verify mode.
+        if verify && profile.fingerprint.is_none() { "1" } else { "0" },
+    );
+
+    let pin_args = profile.fingerprint.iter().flat_map(|fp| ["--certificate-fingerprint".to_string(), fp.clone()]).collect();
+    Ok(PumpTarget { bin, dsn, pin_args })
+}
+
+fn run_upload(app: AppHandle, bin: String, dsn: String, args: Vec<String>, dry_run: bool) -> AppResult<Value> {
     emit(
         &app,
         if dry_run {
@@ -196,4 +235,54 @@ pub async fn exapump_upload(
             "ExaPump upload failed — see the log.".into(),
         ))
     }
+}
+
+/// Export a whole query result (not just the fetched rows) to a CSV or
+/// Parquet file the person picks. Returns the path, or None when cancelled.
+#[tauri::command]
+pub async fn exapump_export(app: AppHandle, profile_id: String, query: String, format: String) -> AppResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    if !["csv", "parquet"].contains(&format.as_str()) {
+        return Err(AppError::InvalidSettings("Export as CSV or Parquet.".into()));
+    }
+    // An export reads; a statement that writes is not exported, read-only connection or not.
+    if crate::safety::is_write(&query) {
+        return Err(AppError::InvalidSettings("Only a query's result can be exported.".into()));
+    }
+    let query = query.trim().trim_end_matches(';').trim().to_string();
+    let target = pump_target(&app, &profile_id, "")?;
+    let name = format!("result.{format}");
+    let filter = if format == "csv" { "CSV" } else { "Parquet" };
+    let dialog = app.clone();
+    let wanted = format.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.dialog().file().set_file_name(&name).add_filter(filter, &[wanted.as_str()]).blocking_save_file())
+        .await
+        .map_err(|e| AppError::Storage(e.to_string()))?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    crate::files::write_permitted(&path, crate::files::home_dir().as_deref()).map_err(AppError::InvalidSettings)?;
+    // The file is what the format says it is: a typed-in other extension is refused, not mislabelled.
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if ext != format {
+        return Err(AppError::InvalidSettings(format!("Save the export as a .{format} file.")));
+    }
+    let mut args: Vec<String> = vec!["export".into(), "--query".into(), query, "--output".into(), path.to_string_lossy().into_owned(), "--format".into(), format];
+    args.extend(target.pin_args);
+    let (bin, dsn) = (target.bin, target.dsn);
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = crate::process::command(&bin);
+        cmd.args(&args).env("EXAPUMP_DSN", &dsn).stdin(Stdio::null());
+        if std::env::consts::OS != "windows" {
+            cmd.env("PATH", augmented_path());
+        }
+        cmd.output()
+    })
+    .await
+    .map_err(|e| AppError::Storage(e.to_string()))?
+    .map_err(|e| AppError::Storage(format!("Could not run exapump: {e}")))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr);
+        let last = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("exapump failed").trim();
+        return Err(AppError::Storage(format!("Export failed: {last}")));
+    }
+    Ok(Some(path.to_string_lossy().into_owned()))
 }

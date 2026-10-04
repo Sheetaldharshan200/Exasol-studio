@@ -348,3 +348,36 @@ describe("script blocks (--/ … /)", () => {
     assert.equal(scriptLanguage("--/\ncreate r scalar script r1 (x double) returns double as"), "R");
   });
 });
+
+describe("stripSqlComments keeps Exasol script blocks whole", () => {
+  test("a --/ block and its body comments survive; the SQL around it is stripped", () => {
+    const sql = [
+      "SELECT 1 -- gone",
+      "--/",
+      "CREATE OR REPLACE LUA SCRIPT s.x() AS",
+      "  -- this is Lua, it stays",
+      "  local a = 1; return a",
+      "/",
+      "SELECT 2 /* gone too */",
+    ].join("\n");
+    assert.equal(
+      stripSqlComments(sql),
+      ["SELECT 1 ", "--/", "CREATE OR REPLACE LUA SCRIPT s.x() AS", "  -- this is Lua, it stays", "  local a = 1; return a", "/", "SELECT 2 "].join("\n"),
+    );
+  });
+
+  test("an unterminated block keeps everything to the end", () => {
+    assert.equal(stripSqlComments("--/\nlocal x -- keep"), "--/\nlocal x -- keep");
+  });
+});
+
+describe("stripSqlComments and string literals", () => {
+  test("a --/ line inside a multi-line string is string content, not a script block", () => {
+    const sql = "SELECT 'line one\n--/ still the string' AS s -- gone\nFROM t";
+    assert.equal(stripSqlComments(sql), "SELECT 'line one\n--/ still the string' AS s \nFROM t");
+  });
+
+  test("a --/ line inside a block comment is comment, not a script block", () => {
+    assert.equal(stripSqlComments("/* note\n--/\nignored\n/\n*/\nSELECT 1"), "\nSELECT 1");
+  });
+});

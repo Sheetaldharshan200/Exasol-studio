@@ -1,6 +1,8 @@
 import type { Monaco } from "@monaco-editor/react";
 import type { languages } from "monaco-editor";
 import { findScriptBlocks } from "./sql-text.ts";
+import { currentStatement, qualifierBefore, sqlName, tableRefs } from "./sql-completion-scope.ts";
+import { schemasToLoad } from "./sql-catalog.ts";
 
 /**
  * Schema-aware Exasol autocompletion for the Monaco SQL editor.
@@ -14,6 +16,11 @@ export type SqlCatalog = {
   schemas: Map<string, Map<string, { name: string; type: string }[]>>;
   /** User UDFs / Lua / adapter scripts from SYS.EXA_ALL_SCRIPTS. */
   scripts: { schema: string; name: string; type: string }[];
+  /** Every table and view name is here (not cut at the load cap): only
+   *  then may "no such table" be said. */
+  complete?: boolean;
+  /** Schemas whose columns are loaded (sql-catalog.ts loads them on demand). */
+  loaded?: Set<string>;
 };
 
 export const emptyCatalog = (): SqlCatalog => ({ schemas: new Map(), scripts: [] });
@@ -175,6 +182,8 @@ export function registerExasolCompletion(
   /** Script-language aliases the connected server offers (SCRIPT_LANGUAGES).
    *  Omitted, the snippet offers a plain placeholder rather than a guess. */
   getLanguages: () => readonly string[] = () => [],
+  /** Load these schemas' columns (sql-catalog.ts: columns come on demand). */
+  loadSchemas?: (schemas: string[]) => Promise<void>,
 ): void {
   if (registered) return;
   registered = true;
@@ -183,7 +192,7 @@ export function registerExasolCompletion(
   monaco.languages.registerCompletionItemProvider("sql", {
     triggerCharacters: [".", " ", "-", "/"],
     async provideCompletionItems(model: import("monaco-editor").editor.ITextModel, position: import("monaco-editor").Position) {
-      const cat = getCatalog();
+      let cat = getCatalog();
 
       // Inside a `--/ … /` script BODY (past the AS keyword) the language is
       // Lua/Python/Java/R — complete THAT language, not SQL.
@@ -303,8 +312,9 @@ export function registerExasolCompletion(
         endLineNumber: position.lineNumber,
         endColumn: position.column,
       });
-      // Work on the CURRENT statement only.
-      const stmt = before.split(";").pop() ?? before;
+      // Work on the CURRENT statement only (a ";" in a string or comment
+      // does not end it).
+      const stmt = currentStatement(before);
       const word = model.getWordUntilPosition(position);
       const range = {
         startLineNumber: position.lineNumber,
@@ -338,46 +348,49 @@ export function registerExasolCompletion(
       };
       const pushScripts = (prefix: string) => {
         for (const s of cat.scripts) {
-          push(`${s.schema}.${s.name}`, K.Function, `${s.schema}.${s.name}(`, `${s.type} script/UDF`, prefix);
+          push(`${s.schema}.${s.name}`, K.Function, `${sqlName(s.schema)}.${sqlName(s.name)}(`, `${s.type} script/UDF`, prefix);
         }
       };
 
-      // Tables referenced in this statement: FROM/JOIN/INTO/UPDATE targets
-      // with optional aliases → alias/table → columns.
-      const refs = new Map<string, { schema: string; table: string }>();
-      const refRe = /\b(?:FROM|JOIN|INTO|UPDATE)\s+(?:"?([A-Za-z_][\w$]*)"?\.)?"?([A-Za-z_][\w$]*)"?(?:\s+(?:AS\s+)?"?([A-Za-z_][\w$]*)"?)?/gi;
-      let m: RegExpExecArray | null;
-      while ((m = refRe.exec(stmt))) {
-        const schema = (m[1] ?? "").toUpperCase();
-        const table = (m[2] ?? "").toUpperCase();
-        if (!table || KEYWORDS.includes(table)) continue;
-        const key = { schema, table };
-        refs.set(table, key);
-        if (m[3] && !/^(WHERE|ON|SET|LEFT|RIGHT|INNER|OUTER|CROSS|JOIN|GROUP|ORDER)$/i.test(m[3])) {
-          refs.set(m[3].toUpperCase(), key);
-        }
-      }
+      // Tables referenced in this statement (aliases, quoted names and
+      // comma joins included), in catalog spelling.
+      const refs = tableRefs(stmt);
+      // Exact spelling first (a quoted mixed-case name), then upper case.
       const columnsOf = (schema: string, table: string) => {
-        if (schema) return cat.schemas.get(schema)?.get(table) ?? [];
+        const inSchema = (s: string) => cat.schemas.get(s) ?? cat.schemas.get(s.toUpperCase());
+        const pick = (tables: Map<string, { name: string; type: string }[]>) => tables.get(table) ?? tables.get(table.toUpperCase());
+        if (schema) {
+          const tables = inSchema(schema);
+          return (tables && pick(tables)) ?? [];
+        }
         for (const tables of cat.schemas.values()) {
-          const cols = tables.get(table);
+          const cols = pick(tables);
           if (cols) return cols;
         }
         return [];
       };
 
       // `<ident>.` — schema → its tables; alias/table → its columns.
-      const dot = /"?([A-Za-z_][\w$]*)"?\.$/.exec(before.slice(0, before.length - (word.word?.length ?? 0)));
-      if (dot) {
-        const ident = dot[1].toUpperCase();
-        const tables = cat.schemas.get(ident);
+      const ident = qualifierBefore(before.slice(0, before.length - (word.word?.length ?? 0)));
+      // Columns come one schema at a time: load the ones this statement needs.
+      if (loadSchemas) {
+        const wanted = [...refs.values()];
+        if (ident && !cat.schemas.has(ident)) wanted.push(refs.get(ident) ?? refs.get(ident.toUpperCase()) ?? { schema: "", table: ident });
+        const missing = schemasToLoad(cat, wanted);
+        if (missing.length) {
+          await loadSchemas(missing).catch(() => undefined);
+          cat = getCatalog();
+        }
+      }
+      if (ident) {
+        const tables = cat.schemas.get(ident) ?? cat.schemas.get(ident.toUpperCase());
         if (tables) {
-          for (const [t, cols] of tables) push(t, K.Class, t, `${cols.length} columns`, "1");
+          for (const [t, cols] of tables) push(t, K.Class, sqlName(t), `${cols.length} columns`, "1");
           return { suggestions: S };
         }
-        const ref = refs.get(ident);
+        const ref = refs.get(ident) ?? refs.get(ident.toUpperCase());
         const cols = ref ? columnsOf(ref.schema, ref.table) : columnsOf("", ident);
-        for (const c of cols) push(c.name, K.Field, c.name, c.type, "1");
+        for (const c of cols) push(c.name, K.Field, sqlName(c.name), c.type, "1");
         return { suggestions: S };
       }
 
@@ -388,19 +401,19 @@ export function registerExasolCompletion(
           const s = eng.getSuggestions(model.getValue(), { line: position.lineNumber, column: position.column - 1 });
           if (s.kinds.length || s.keywords.length) {
             if (s.kinds.includes("table") || s.kinds.includes("schema")) {
-              for (const cte of s.ctes) push(cte, K.Class, cte, "CTE", "1");
+              for (const cte of s.ctes) push(cte, K.Class, sqlName(cte), "CTE", "1");
               for (const [schema, tables] of cat.schemas) {
-                push(schema, K.Module, schema, `${tables.size} tables`, "1");
-                if (s.kinds.includes("table")) for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
+                push(schema, K.Module, sqlName(schema), `${tables.size} tables`, "1");
+                if (s.kinds.includes("table")) for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${sqlName(schema)}.${sqlName(t)}`, undefined, "2");
               }
             }
             if (s.kinds.includes("column")) {
               const seenCols = new Set<string>();
               for (const ref of s.tableRefs) {
-                for (const c of columnsOf((ref.schema ?? "").toUpperCase(), ref.table.toUpperCase())) {
+                for (const c of columnsOf(ref.schema ?? "", ref.table)) {
                   if (seenCols.has(c.name)) continue;
                   seenCols.add(c.name);
-                  push(c.name, K.Field, c.name, `${ref.alias ?? ref.table} · ${c.type}`, "0");
+                  push(c.name, K.Field, sqlName(c.name), `${ref.alias ?? ref.table} · ${c.type}`, "0");
                 }
               }
             }
@@ -419,8 +432,8 @@ export function registerExasolCompletion(
       // After FROM/JOIN/INTO/UPDATE → schemas and schema-qualified tables.
       if (/\b(FROM|JOIN|INTO|UPDATE)\s+"?[\w$]*$/i.test(stmt)) {
         for (const [schema, tables] of cat.schemas) {
-          push(schema, K.Module, schema, `${tables.size} tables`, "1");
-          for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
+          push(schema, K.Module, sqlName(schema), `${tables.size} tables`, "1");
+          for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${sqlName(schema)}.${sqlName(t)}`, undefined, "2");
         }
         return { suggestions: S };
       }
@@ -430,8 +443,8 @@ export function registerExasolCompletion(
       if (hints && (hints.keywords.length || hints.table || hints.column || hints.schema || hints.func)) {
         if (hints.table || hints.schema) {
           for (const [schema, tables] of cat.schemas) {
-            push(schema, K.Module, schema, `${tables.size} tables`, "1");
-            if (hints.table) for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${schema}.${t}`, undefined, "2");
+            push(schema, K.Module, sqlName(schema), `${tables.size} tables`, "1");
+            if (hints.table) for (const t of tables.keys()) push(`${schema}.${t}`, K.Class, `${sqlName(schema)}.${sqlName(t)}`, undefined, "2");
           }
         }
         if (hints.column) {
@@ -440,7 +453,7 @@ export function registerExasolCompletion(
             for (const c of columnsOf(schema, table)) {
               if (seen.has(c.name)) continue;
               seen.add(c.name);
-              push(c.name, K.Field, c.name, `${table} · ${c.type}`, "0");
+              push(c.name, K.Field, sqlName(c.name), `${table} · ${c.type}`, "0");
             }
           }
         }
@@ -460,40 +473,15 @@ export function registerExasolCompletion(
         for (const c of columnsOf(schema, table)) {
           if (seen.has(c.name)) continue;
           seen.add(c.name);
-          push(c.name, K.Field, c.name, `${table} · ${c.type}`, "1");
+          push(c.name, K.Field, sqlName(c.name), `${table} · ${c.type}`, "1");
         }
       }
       for (const k of KEYWORDS) push(k, K.Keyword, k, undefined, "3");
       for (const f of FUNCTIONS) push(f, K.Function, `${f}(`, "function", "4");
       pushScripts("4");
-      for (const schema of cat.schemas.keys()) push(schema, K.Module, schema, "schema", "5");
+      for (const schema of cat.schemas.keys()) push(schema, K.Module, sqlName(schema), "schema", "5");
       pushSnippets();
       return { suggestions: S };
     },
   });
 }
-
-/** Parse SYS.EXA_ALL_COLUMNS rows (schema, table, column, type) into a catalog. */
-export function buildCatalog(rows: unknown[][]): SqlCatalog {
-  const cat = emptyCatalog();
-  for (const r of rows) {
-    const [schema, table, column, type] = r.map((v) => String(v ?? ""));
-    if (!schema || !table || !column) continue;
-    let tables = cat.schemas.get(schema);
-    if (!tables) cat.schemas.set(schema, (tables = new Map()));
-    let cols = tables.get(table);
-    if (!cols) tables.set(table, (cols = []));
-    cols.push({ name: column, type });
-  }
-  return cat;
-}
-
-// A process-wide shared catalog so surfaces beyond the main editor (e.g. the
-// dashboard's widget query editor) get the same Exasol completions. The app's
-// catalog refresh writes here; any Monaco editor can register completion against
-// getSharedCatalog without threading the ref through the tree.
-let sharedCatalog: SqlCatalog = emptyCatalog();
-export const getSharedCatalog = (): SqlCatalog => sharedCatalog;
-export const setSharedCatalog = (cat: SqlCatalog): void => {
-  sharedCatalog = cat;
-};

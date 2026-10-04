@@ -24,6 +24,9 @@ import {
   Shapes,
   Shield,
   Trash2,
+  Copy,
+  FileDown,
+  FileUp,
   Unplug,
   Waypoints,
   X,
@@ -77,13 +80,17 @@ function ConnectionSection({
   onRefresh,
   onDisconnect,
   onRemove,
+  onDuplicate,
   onOpenView,
   onNewVs,
   onUploadDriver,
   onContext,
   onOpenDetails,
+  showSystemSchemas,
 }: {
   connection: ActiveConnection;
+  /** Settings → Database Objects Tree → Show system schemas. */
+  showSystemSchemas: boolean;
   focused: boolean;
   /** Server reachability: true = up, false = down, undefined = probing. */
   live?: boolean;
@@ -97,6 +104,7 @@ function ConnectionSection({
   onRefresh: () => void;
   onDisconnect: () => void;
   onRemove: () => void;
+  onDuplicate?: () => void;
   onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
@@ -107,8 +115,8 @@ function ConnectionSection({
   // Stable across refreshes: a refresh reloads IN PLACE via refreshSignal, so
   // roots must NOT change identity (that would remount/flicker the tree).
   const roots = useMemo(
-    () => buildConnectionNodes(connection.profile.id),
-    [connection.profile.id],
+    () => buildConnectionNodes(connection.profile.id, { showSystemSchemas }),
+    [connection.profile.id, showSystemSchemas],
   );
   // Bumped to collapse every expanded node in this connection's tree.
   const [collapseSignal, setCollapseSignal] = useState(0);
@@ -134,10 +142,10 @@ function ConnectionSection({
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
           title={`${connection.profile.host}:${connection.profile.port}`}
         >
-          {/* Status dot = liveness, not focus: solid green while the server
-              answers, red if a connected server stops responding. */}
+          {/* Status dot = liveness, not focus: solid green while the database
+              runs a query, red once it stops (checked every 20s). */}
           <span
-            title={live === false ? "Server not responding" : "Connected — server is up"}
+            title={live === false ? "Connected, but the database does not answer queries" : "Connected — the database answers queries"}
             className={cn(
               "h-2 w-2 shrink-0 rounded-full",
               live === false
@@ -214,6 +222,11 @@ function ConnectionSection({
               <DropdownMenuItem onClick={() => onDisconnect()}>
                 <Unplug className="h-3.5 w-3.5" /> Disconnect
               </DropdownMenuItem>
+              {onDuplicate ? (
+                <DropdownMenuItem onClick={() => onDuplicate()}>
+                  <Copy className="h-3.5 w-3.5" /> Duplicate connection
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onClick={() => onRemove()} className="text-destructive focus:text-destructive">
                 <Trash2 className="h-3.5 w-3.5" /> Remove connection
               </DropdownMenuItem>
@@ -342,6 +355,9 @@ export function Sidebar({
   onFocusConnection,
   onDisconnect,
   onRemoveConnection,
+  onDuplicateConnection,
+  onImportConnections,
+  onExportConnections,
   onRefreshConnection,
   onOpenView,
   onNewVirtualSchema,
@@ -362,7 +378,10 @@ export function Sidebar({
   onOpenNewVisualizer,
   onFocusTab,
   onCloseTab,
+  showSystemSchemas = true,
 }: {
+  /** Settings → Database Objects Tree → Show system schemas. */
+  showSystemSchemas?: boolean;
   activity: ActivityId;
   connections: ActiveConnection[];
   profiles: ConnectionProfile[];
@@ -376,6 +395,11 @@ export function Sidebar({
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRemoveConnection: (profileId: string) => void;
+  /** Copy a connection (secret and settings) under a new name. */
+  onDuplicateConnection?: (profileId: string) => void;
+  /** Connections file (JSON, no passwords). */
+  onImportConnections?: () => void;
+  onExportConnections?: () => void;
   onRefreshConnection: (profileId: string) => void;
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVirtualSchema: (profileId: string) => void;
@@ -399,8 +423,9 @@ export function Sidebar({
 }) {
   const [showSearch, setShowSearch] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  // Server reachability per profile id (TCP ping, refreshed every 20s):
-  // green dot = server up, red = a live connection whose server went away,
+  // Server reachability per profile id, refreshed every 20s: a connected
+  // profile must still run a query (login + SELECT 1); a saved one only needs
+  // its port to answer. Green dot = up, red = a live connection that died,
   // grey = saved server that is not running. `undefined` = not probed yet.
   const [reachable, setReachable] = useState<Record<string, boolean>>({});
   // Connection accent colors (Properties → Color and Border → show in name).
@@ -434,10 +459,11 @@ export function Sidebar({
   const pingTargets = useMemo(
     () =>
       [
-        ...connections.map((c) => ({ id: c.profile.id, host: c.profile.host, port: c.profile.port })),
+        ...connections.map((c) => ({ id: c.profile.id, host: c.profile.host, port: c.profile.port, connected: true })),
         ...profiles
-          .filter((p) => !connections.some((c) => c.profile.id === p.id) && !p.username.startsWith("STUDIO_MCP_"))
-          .map((p) => ({ id: p.id, host: p.host, port: p.port })),
+          // A connection behind an SSH tunnel or proxy cannot be pinged directly.
+          .filter((p) => !connections.some((c) => c.profile.id === p.id) && !p.username.startsWith("STUDIO_MCP_") && !p.network)
+          .map((p) => ({ id: p.id, host: p.host, port: p.port, connected: false })),
       ],
     [connections, profiles],
   );
@@ -445,10 +471,9 @@ export function Sidebar({
     let cancelled = false;
     const probe = () => {
       for (const t of pingTargets) {
-        ipc
-          .pingServer(t.host, t.port)
-          .then((r) => {
-            if (!cancelled) setReachable((prev) => (prev[t.id] === r.reachable ? prev : { ...prev, [t.id]: r.reachable }));
+        (t.connected ? ipc.connectionAlive(t.id) : ipc.pingServer(t.host, t.port).then((r) => r.reachable))
+          .then((up) => {
+            if (!cancelled) setReachable((prev) => (prev[t.id] === up ? prev : { ...prev, [t.id]: up }));
           })
           .catch(() => {
             if (!cancelled) setReachable((prev) => (prev[t.id] === false ? prev : { ...prev, [t.id]: false }));
@@ -588,6 +613,16 @@ export function Sidebar({
               connect
             </span>
           </button>
+          {onDuplicateConnection ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDuplicateConnection(p.id); }}
+              title={`Duplicate ${p.name}`}
+              aria-label={`Duplicate ${p.name}`}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
           <button
             onClick={(e) => { e.stopPropagation(); onRemoveConnection(p.id); }}
             title={`Remove ${p.name}`}
@@ -669,13 +704,38 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-full min-w-0 flex-col bg-panel">
+    <aside data-focus="navigator" tabIndex={-1} className="flex h-full min-w-0 flex-col bg-panel outline-none">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border pr-1 pl-3">
         <span className="eyebrow-muted">{title}</span>
         <div data-tour="add-connection" className="flex items-center gap-0.5">
           <IconButton label="Add connection" data-agent-id="sidebar.add-connection" onClick={onConnect}>
             <Plus className="h-3.5 w-3.5" />
           </IconButton>
+          {onImportConnections || onExportConnections ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label="More connection actions"
+                  title="Import or export connections"
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {onImportConnections ? (
+                  <DropdownMenuItem onClick={onImportConnections}>
+                    <FileUp className="h-3.5 w-3.5" /> Import connections…
+                  </DropdownMenuItem>
+                ) : null}
+                {onExportConnections ? (
+                  <DropdownMenuItem onClick={onExportConnections}>
+                    <FileDown className="h-3.5 w-3.5" /> Export connections…
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
           {hasConnections ? (
             <IconButton label="Search objects" active={showSearch} onClick={() => setShowSearch((s) => !s)}>
               <Search className="h-3.5 w-3.5" />
@@ -726,6 +786,7 @@ export function Sidebar({
             <ConnectionSection
               key={conn.profile.id}
               connection={conn}
+              showSystemSchemas={showSystemSchemas}
               focused={conn.profile.id === activeProfileId}
               live={reachable[conn.profile.id]}
               accent={accents[conn.profile.id]}
@@ -754,6 +815,7 @@ export function Sidebar({
               onRefresh={() => onRefreshConnection(conn.profile.id)}
               onDisconnect={() => onDisconnect(conn.profile.id)}
               onRemove={() => onRemoveConnection(conn.profile.id)}
+              onDuplicate={onDuplicateConnection ? () => onDuplicateConnection(conn.profile.id) : undefined}
               onOpenView={(view) => onOpenView(conn.profile.id, view)}
               onNewVs={() => onNewVirtualSchema(conn.profile.id)}
               onUploadDriver={() => onUploadDriver(conn.profile.id)}

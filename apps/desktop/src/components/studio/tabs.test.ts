@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { adoptPendingTabs, newTab, tabHasWork, WELCOME_TAB, type SqlTab } from "./tabs.ts";
+import { adoptPendingTabs, fileName, newTab, tabHasWork, tabTarget, WELCOME_TAB, type SqlTab } from "./tabs.ts";
 
 const sqlTab = (id: string, sql: string): SqlTab => ({ id, title: id, view: "sql", sql, response: null, execError: null });
 
@@ -58,4 +58,22 @@ test("an id collision between DIFFERENT tabs re-ids rather than losing the SQL",
   const out = adoptPendingTabs([sqlTab("tab-100-1", "")], [sqlTab("tab-100-1", "SELECT 42")]);
   assert.deepEqual(out.map((t) => t.sql), ["", "SELECT 42"]);
   assert.equal(new Set(out.map((t) => t.id)).size, 2);
+});
+
+test("fileName takes the last part of a macOS, Linux or Windows path", () => {
+  assert.equal(fileName("/Users/a/q.sql"), "q.sql");
+  assert.equal(fileName("C:\\Users\\a\\q.sql"), "q.sql");
+  assert.equal(fileName("q.sql"), "q.sql");
+  assert.equal(fileName("/dir/"), "/dir/", "no name: the path itself");
+});
+
+test("tabTarget steps with wrap-around, jumps to tab n, and 9 is the last", () => {
+  assert.equal(tabTarget(3, 2, { by: 1 }), 0);
+  assert.equal(tabTarget(3, 0, { by: -1 }), 2);
+  assert.equal(tabTarget(3, -1, { by: 1 }), 1, "no active tab counts as the first");
+  assert.equal(tabTarget(3, 0, { n: 2 }), 1);
+  assert.equal(tabTarget(3, 0, { n: 4 }), null);
+  assert.equal(tabTarget(3, 0, { n: 9 }), 2);
+  assert.equal(tabTarget(0, 0, { by: 1 }), null);
+  assert.equal(tabTarget(0, 0, { n: 9 }), null);
 });
