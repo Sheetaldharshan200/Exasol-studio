@@ -810,6 +810,10 @@ export async function mockInvoke(
     case "exapump_upload":
       await delay(300);
       return { ok: true };
+    // No native save dialog or ExaPump in the browser preview.
+    case "exapump_export":
+    case "save_xlsx_as":
+      return null;
 
     case "fs_search": {
       const q = String(args?.query ?? "").trim().toLowerCase();

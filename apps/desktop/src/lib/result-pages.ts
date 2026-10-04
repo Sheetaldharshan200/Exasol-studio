@@ -83,3 +83,12 @@ export function pageSql(plan: PagePlan, page: number, maxRows: number): string {
   if (plan.kind === "ordered") return `${plan.base}\n, ${columns}\n${window}`;
   return `SELECT * FROM (\n${plan.base}\n) ORDER BY ${columns}\n${window}`;
 }
+
+/** The statement counting every row `base` (one SELECT/WITH) returns, or
+ *  null for anything else. The newline ends a trailing `--` comment. */
+export function countSql(base: string): string | null {
+  const body = base.trim().replace(/;\s*$/, "").trim();
+  const first = topLevelWords(body)[0];
+  if (first !== "SELECT" && first !== "WITH") return null;
+  return `SELECT COUNT(*) FROM (\n${body}\n)`;
+}

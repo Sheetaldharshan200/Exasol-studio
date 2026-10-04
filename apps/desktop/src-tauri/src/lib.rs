@@ -1,4 +1,5 @@
 mod agent;
+mod xlsx;
 #[cfg(target_os = "macos")]
 mod app_menu;
 mod github_auth;
@@ -221,6 +222,8 @@ pub fn run() {
             profile_io::import_connections,
             grid_edits::apply_row_edits,
             files::save_text_as,
+            xlsx::save_xlsx_as,
+            exapump::exapump_export,
             files::open_text_file,
             session_cmd::session_info,
             connection::connection_alive,
