@@ -318,3 +318,13 @@ Three designs, two rejected by review — worth knowing before touching TLS here
 - **Paths from Rust can be Windows paths:** take file names with `fileName()` (splits on `/` and `\`), not `split("/")`.
 - **Signature help / hover:** built-in signatures checked live (SUBSTRING with commas is valid; RANDOM takes both bounds or none; DECODE repeats search/result pairs). Table hover only in table positions (FROM/JOIN/INTO/UPDATE/TABLE or a FROM list), never in strings/comments, a WITH name shadows a table, `S` in `S.T` is not a table. Monaco providers are registered once; the catalog getter is swapped on remount instead.
 - Two Codex passes (10 + 6 findings), all fixed; one rejected after a live check (SUBSTRING).
+
+## [2026-10-04] results | workbench-hardening phase 7.2 — results grid, copy, export, errors, stop
+- **Virtualized grid** (`lib/grid-view.ts`): fixed row height measured from the first row; spacer rows above and below. Width measurement must skip the spacers (`tbody tr[data-row]`), and zebra striping uses the row index — `:nth-child(even)` breaks with a spacer row. Widths are kept for every column (hidden ones too) so unhiding and the editable grid line up.
+- **Sort** is client-side over the fetched rows: NULLs last both ways, exact decimals (strings) by value only in numeric columns, natural collation for text. With a sort the editor still opens on the right row (display index → source index).
+- **Copy formats** (`lib/result-copy.ts`): tab-separated quotes only when needed (pastes into spreadsheets); clipboard CSV has no formula guard, file CSV does; INSERT literals by column type (`DATE '…'`, `TIMESTAMP '…'`, numbers only in numeric columns).
+- **XLSX** is written in Rust with the zip crate (`xlsx.rs`): inline strings (never formulas), numbers only when ≤ 15 digits (else text, exact), control characters dropped, 32,767 characters per cell, 1,048,575 rows. `.xlsx` (no macros) and `.parquet` joined the writable types.
+- **Whole-result export** goes through `exapump export --query`, DSN in the environment; statements that write are refused (`safety::is_write`).
+- **Errors:** sqlx says `Exasol error 42000: …`, exapump `… (SQL state: 42000)`, others `[42000] …` — `lib/exa-error.ts` reads all three.
+- **Stop for exarrow and bridge drivers:** no server session id to KILL, so a `CancelFlag` registered under the progress id: exarrow's run is dropped in a `select!` (the connection closes and the server ends the session), the bridge child is polled and killed (pipes drained on threads so it never blocks on a full pipe).
+- **Local gotcha:** after an Xcode update, `cargo test` cannot link until `sudo xcodebuild -license accept`; `cargo check` still works from cached build scripts, `cargo clippy` does not.

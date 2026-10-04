@@ -116,13 +116,13 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 - [x] 7.1.8 Function signature help and hover (`lib/sql-signatures.ts`; test: `sql-signatures.test.ts`). Signatures checked live on Exasol; table hover only in table positions, CTE names shadow tables.
 
 ### 7.2 Results
-- [ ] 7.2.1 Virtualized grid; column resize, sort, hide.
-- [ ] 7.2.2 Copy cell / row / column / as CSV / Markdown / INSERT (`lib/result-copy.ts`; test: `result-copy.test.ts`).
-- [ ] 7.2.3 Export via save dialog: CSV / XLSX / JSON / SQL INSERT; whole result via exapump.
-- [ ] 7.2.4 Cell viewer: JSON pretty-print, long text, copy.
-- [ ] 7.2.5 Exasol error code and position parsed and marked in the editor (`lib/exa-error.ts`; test: `exa-error.test.ts`).
-- [ ] 7.2.6 Fetch all and optional COUNT(*) when truncated.
-- [ ] 7.2.7 Cancel for exarrow and bridge drivers.
+- [x] 7.2.1 Virtualized grid; column resize, sort, hide (`lib/grid-view.ts`; test: `grid-view.test.ts`). Only the rows in view are in the DOM; sort is client-side over the fetched rows (NULLs last, exact decimals by value).
+- [x] 7.2.2 Copy cell / row / column / as CSV / Markdown / INSERT (`lib/result-copy.ts`; test: `result-copy.test.ts`).
+- [x] 7.2.3 Export via save dialog: CSV / XLSX / JSON / SQL INSERT / Markdown; whole result via exapump (CSV / Parquet). XLSX written in Rust (`xlsx.rs`, tested).
+- [x] 7.2.4 Cell viewer: JSON pretty-print, long text, copy.
+- [x] 7.2.5 Exasol error code and position parsed and marked in the editor (`lib/exa-error.ts`; test: `exa-error.test.ts`).
+- [x] 7.2.6 COUNT(*) of the whole result when truncated (`countSql`; test: `result-pages.test.ts`). "Fetch all" is covered by paging and the whole-result export rather than loading everything into the grid.
+- [x] 7.2.7 Cancel for exarrow and bridge drivers: a cancel flag; exarrow drops its connection, the bridge process is killed (tests in `query.rs`, `driver_exec.rs`).
 
 ### 7.3 Navigator
 - [ ] 7.3.1 Refresh rebuilds expanded folders from fresh nodes (`DatabaseTree.tsx`; test: `tree-model.test.ts`).
