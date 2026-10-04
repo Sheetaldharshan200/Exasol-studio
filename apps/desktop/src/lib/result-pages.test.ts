@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { hasTopLevelLimit, hasTopLevelOrderBy, pagePlan, pageSql, topLevelWords } from "./result-pages.ts";
+import { hasTopLevelLimit, hasTopLevelOrderBy, pagePlan, pageSql, topLevelWords, countSql } from "./result-pages.ts";
 
 test("only top-level clauses count: subqueries, strings, quoted names and comments are skipped", () => {
   assert.equal(hasTopLevelOrderBy("SELECT * FROM t ORDER BY amount DESC"), true);
@@ -37,4 +37,11 @@ test("own LIMIT, duplicate column names (any case) and no columns are not paged"
   assert.equal(pagePlan("SELECT 1", []), null);
   // WITH statements page like SELECT.
   assert.equal(pagePlan("WITH x AS (SELECT 1 AS n) SELECT n FROM x", ["N"])?.kind, "columns");
+});
+
+test("countSql wraps a query and nothing else", () => {
+  assert.equal(countSql("SELECT * FROM t;"), "SELECT COUNT(*) FROM (\nSELECT * FROM t\n)");
+  assert.equal(countSql("with a as (select 1) select * from a -- note"), "SELECT COUNT(*) FROM (\nwith a as (select 1) select * from a -- note\n)");
+  assert.equal(countSql("DELETE FROM t"), null);
+  assert.equal(countSql("  "), null);
 });

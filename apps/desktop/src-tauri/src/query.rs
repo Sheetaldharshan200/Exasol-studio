@@ -548,16 +548,26 @@ pub async fn execute_sql(
             return Err(crate::error::AppError::InvalidSettings(why));
         }
     }
+    // exarrow and bridge runs have no session to KILL a statement in: Stop
+    // raises this flag, and the run ends its own connection or process.
+    let cancel = CancelFlag::new();
+    let _registered = (!native).then(|| RunRegistration::new(&state, progress_id.as_deref(), RunningQuery::Flag(cancel.clone())));
     let (results, success, profile_session, profile_base_stmt) = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
         // exarrow is compiled in, so it runs on this runtime — no child
         // process, no spawn_blocking, and no sqlx pool standing in for it.
-        let resp = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows, stop).await?;
+        // Stopped, the run is dropped with its connection: the server ends
+        // the session and its statement.
+        let resp = tokio::select! {
+            r = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows, stop) => r?,
+            _ = cancel.cancelled() => return Err(crate::error::AppError::Storage(STOPPED.into())),
+        };
         (resp.results, resp.success, None, None)
     } else if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         let stmts = statements.clone();
         let app_for_driver = app.clone();
+        let flag = cancel.clone();
         let resp = tokio::task::spawn_blocking(move || {
-            crate::driver_exec::execute_via_driver(&app_for_driver, &profile, &stmts, max_rows, stop)
+            crate::driver_exec::execute_via_driver(&app_for_driver, &profile, &stmts, max_rows, stop, &flag)
         })
         .await
         .map_err(|e| crate::error::AppError::Storage(e.to_string()))??;
@@ -611,7 +621,7 @@ pub async fn execute_sql(
             profile_session.as_ref(),
         ) {
             if let Ok(mut m) = state.running_queries.lock() {
-                m.insert(pid.clone(), (profile_id.clone(), sid.clone()));
+                m.insert(pid.clone(), RunningQuery::Session { profile_id: profile_id.clone(), session_id: sid.clone() });
             }
         }
 
@@ -799,6 +809,67 @@ pub async fn execute_sql(
     })
 }
 
+/// A run Stop can reach: a native run's server session, or the cancel flag
+/// of an exarrow / bridge run.
+#[derive(Clone)]
+pub enum RunningQuery {
+    Session { profile_id: String, session_id: String },
+    Flag(CancelFlag),
+}
+
+/// What a stopped exarrow or bridge run reports.
+pub const STOPPED: &str = "The query was stopped.";
+
+/// Raised once by Stop; waited on (async) or polled (blocking).
+#[derive(Clone, Default)]
+pub struct CancelFlag(std::sync::Arc<(std::sync::atomic::AtomicBool, tokio::sync::Notify)>);
+
+impl CancelFlag {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn cancel(&self) {
+        self.0 .0.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.0 .1.notify_waiters();
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.0 .0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    pub async fn cancelled(&self) {
+        loop {
+            let notified = self.0 .1.notified();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+/// Registers a run under its progress id for as long as it lives.
+struct RunRegistration<'a> {
+    state: &'a AppState,
+    id: Option<String>,
+}
+
+impl<'a> RunRegistration<'a> {
+    fn new(state: &'a AppState, progress_id: Option<&str>, run: RunningQuery) -> Self {
+        let id = progress_id.filter(|p| !p.is_empty()).map(str::to_string);
+        if let (Some(id), Ok(mut m)) = (&id, state.running_queries.lock()) {
+            m.insert(id.clone(), run);
+        }
+        Self { state, id }
+    }
+}
+
+impl Drop for RunRegistration<'_> {
+    fn drop(&mut self) {
+        if let (Some(id), Ok(mut m)) = (&self.id, self.state.running_queries.lock()) {
+            m.remove(id);
+        }
+    }
+}
+
 /// Cancel a running query (the Stop button). Looks up the run registered by
 /// execute_sql under `progress_id`, then cancels its CURRENT statement via
 /// `KILL STATEMENT IN SESSION <id>` on a spare pool connection — the session
@@ -812,7 +883,11 @@ pub async fn cancel_query(state: State<'_, AppState>, progress_id: String) -> Ap
         .ok()
         .and_then(|m| m.get(&progress_id).cloned());
     let (profile_id, session_id) = match target {
-        Some(t) => t,
+        Some(RunningQuery::Session { profile_id, session_id }) => (profile_id, session_id),
+        Some(RunningQuery::Flag(flag)) => {
+            flag.cancel();
+            return Ok(true);
+        }
         None => return Ok(false),
     };
     // The session id is interpolated into SQL — it must be a plain number.
@@ -880,6 +955,22 @@ mod live_decode {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn a_cancel_flag_wakes_its_waiters_and_stays_raised() {
+        let flag = super::CancelFlag::new();
+        assert!(!flag.is_cancelled());
+        let waiter = tokio::spawn({
+            let f = flag.clone();
+            async move { f.cancelled().await }
+        });
+        tokio::task::yield_now().await;
+        flag.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(2), waiter).await.expect("woken").unwrap();
+        assert!(flag.is_cancelled());
+        // Raised before anyone waits: the wait returns at once.
+        tokio::time::timeout(std::time::Duration::from_secs(2), flag.cancelled()).await.expect("already raised");
+    }
+
     fn result(statement: &str, kind: &str, rows: u64, error: Option<&str>) -> super::StatementResult {
         super::StatementResult {
             statement: statement.into(),

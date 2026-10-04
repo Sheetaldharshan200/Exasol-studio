@@ -18,10 +18,10 @@ pub struct AppState {
     /// model): the local Personal database's SYS password is kept equal to
     /// it, so setup after unlock can apply it. Never persisted anywhere.
     pub master_secret: std::sync::RwLock<Option<String>>,
-    /// In-flight, cancellable queries: `progress_id -> (profile_id, session_id)`.
-    /// execute_sql registers a run once it knows the executing session; Stop
-    /// (cancel_query) looks it up to KILL the running statement.
-    pub running_queries: std::sync::Mutex<HashMap<String, (String, String)>>,
+    /// In-flight, cancellable queries by progress id. execute_sql registers a
+    /// run; Stop (cancel_query) KILLs the native run's statement in its
+    /// session, or raises the flag of an exarrow / bridge run.
+    pub running_queries: std::sync::Mutex<HashMap<String, crate::query::RunningQuery>>,
     /// Passwords kept for this run only (policy "this session only"):
     /// `profile_id -> password`. Never written anywhere; gone on quit.
     pub session_passwords: std::sync::Mutex<HashMap<String, String>>,
