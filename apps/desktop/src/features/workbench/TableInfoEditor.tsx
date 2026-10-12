@@ -1,9 +1,7 @@
 import { useMemo, useState } from "react";
 import { Code2, Loader2, RotateCcw, Save, ShieldOff, X } from "lucide-react";
+import { qualify } from "@/lib/sql-ident";
 
-function qualify(schema: string | undefined, name: string): string {
-  return schema ? `"${schema}"."${name}"` : `"${name}"`;
-}
 
 export type InfoEditKind = "table" | "view" | "schema" | "user";
 

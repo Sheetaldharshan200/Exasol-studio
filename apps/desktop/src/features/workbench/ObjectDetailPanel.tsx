@@ -6,35 +6,13 @@ import { TableStructureEditor, ColumnsColgroup } from "./TableStructureEditor";
 import { TableKeysEditor } from "./TableKeysEditor";
 import { ObjectInfoEditor, type InfoEditKind } from "./TableInfoEditor";
 import { UserPrivilegesEditor } from "./UserPrivilegesEditor";
+import { qualify } from "@/lib/sql-ident";
+import { ddlExtrasSql, tableDdl, tableExtrasFromRows, viewDdl, type TableExtras } from "@/lib/ddl";
 
 export type ObjectRef = { type: "schema" | "virtual-schema" | "table" | "view" | "user"; schema?: string; name: string };
 
 type SubTab = { id: string; label: string; icon: typeof Info };
 
-function qualify(schema: string | undefined, name: string): string {
-  return schema ? `"${schema}"."${name}"` : `"${name}"`;
-}
-
-/** Generate a CREATE TABLE statement from column + constraint metadata. */
-function tableDdl(schema: string | undefined, name: string, cols: ColumnInfo[], cons: ConstraintInfo[]): string {
-  const lines = cols.map((c) => {
-    let l = `  "${c.name}" ${c.dataType}`;
-    if (c.default) l += ` DEFAULT ${c.default}`;
-    if (c.nullable === false) l += " NOT NULL";
-    return l;
-  });
-  const pk = cons.find((c) => c.constraintType === "PRIMARY KEY");
-  if (pk) lines.push(`  CONSTRAINT "${pk.name}" PRIMARY KEY (${pk.columns.map((c) => `"${c.column}"`).join(", ")})`);
-  const fks = cons.filter((c) => c.constraintType === "FOREIGN KEY");
-  for (const fk of fks) {
-    const cols2 = fk.columns.map((c) => `"${c.column}"`).join(", ");
-    const ref = fk.columns[0];
-    lines.push(
-      `  CONSTRAINT "${fk.name}" FOREIGN KEY (${cols2}) REFERENCES ${qualify(ref?.referencedSchema ?? undefined, ref?.referencedTable ?? "?")} (${fk.columns.map((c) => `"${c.referencedColumn}"`).join(", ")})`,
-    );
-  }
-  return `CREATE TABLE ${qualify(schema, name)} (\n${lines.join(",\n")}\n);`;
-}
 
 /**
  * Object detail tab (double-click / "Open details"): Info, Columns, Keys,
@@ -100,6 +78,24 @@ export function ObjectDetailPanel({
   }, [editingUserPrivs]);
   // Bumped after a successful ALTER so the panel re-reads the table's shape.
   const [reloadKey, setReloadKey] = useState(0);
+  // The DDL tab's extras (partition keys and comment, or the view's text), loaded when it opens.
+  const [ddlExtras, setDdlExtras] = useState<{ table?: TableExtras; viewText?: string | null } | null>(null);
+  useEffect(() => setDdlExtras(null), [profileId, object.type, object.schema, object.name, reloadKey]);
+  useEffect(() => {
+    if (tab !== "ddl" || !isTable || !object.schema || ddlExtras) return;
+    let alive = true;
+    const kind = object.type === "view" ? "view" : "table";
+    ipc
+      .executeSql(profileId, connectionName, ddlExtrasSql(kind, object.schema, object.name), 1000, false, false)
+      .then((r) => {
+        const rows = (r.results.find((x) => x.kind === "resultSet" && !x.error)?.rows ?? []) as unknown[][];
+        if (alive) setDdlExtras(kind === "view" ? { viewText: (rows[0]?.[0] as string | null) ?? null } : { table: tableExtrasFromRows(rows) });
+      })
+      .catch(() => alive && setDdlExtras(kind === "view" ? { viewText: null } : { table: {} }));
+    return () => {
+      alive = false;
+    };
+  }, [tab, isTable, object.type, object.schema, object.name, profileId, connectionName, ddlExtras]);
 
   // Deep-link: jump to the requested sub-tab (and open its editor) whenever the
   // navigation nonce changes — e.g. a right-click "Edit structure" in the tree.
@@ -477,7 +473,7 @@ export function ObjectDetailPanel({
           )
         ) : tab === "ddl" ? (
           <pre className="overflow-auto rounded-lg border border-border bg-panel p-3 font-mono text-[12px] text-foreground [scrollbar-width:thin]">
-            {tableDdl(object.schema, object.name, cols, cons)}
+            {!ddlExtras ? "Loading…" : object.type === "view" ? viewDdl(object.schema, object.name, ddlExtras.viewText) : tableDdl(object.schema, object.name, cols, cons, ddlExtras.table)}
           </pre>
         ) : (
           <PropTable

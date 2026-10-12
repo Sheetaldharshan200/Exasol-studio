@@ -2,10 +2,8 @@ import { useMemo, useState } from "react";
 import { Code2, KeyRound, Link2, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ConstraintInfo } from "@/lib/ipc";
+import { qualify } from "@/lib/sql-ident";
 
-function qualify(schema: string | undefined, name: string): string {
-  return schema ? `"${schema}"."${name}"` : `"${name}"`;
-}
 
 /** A constraint the user is adding in this session. */
 type NewCon = {

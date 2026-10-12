@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
-import { AlertTriangle, Check, Loader2, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Star, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NodeCtx } from "@/features/workbench/tree-model";
+import { qualify as q } from "@/lib/sql-ident";
 
 /**
  * A destructive/DDL action rendered as a **confirmation** (never a form or a
@@ -25,9 +26,6 @@ type Item =
   | { label: string; kind: "nav"; navTab: string; navEdit?: boolean }
   | { label: string; kind: "action"; danger?: boolean; action: ObjectAction };
 
-function q(schema: string | undefined, name: string): string {
-  return schema ? `"${schema}"."${name}"` : `"${name}"`;
-}
 
 function label(schema: string | undefined, name: string): string {
   return schema ? `${schema}.${name}` : name;
@@ -397,9 +395,9 @@ export function ObjectContextMenu({
               onFavorite();
               onClose();
             }}
-            className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
           >
-            ★ Add to Favorites
+            <Star className="h-3.5 w-3.5 text-muted-foreground" /> Add to Favorites
           </button>
         </>
       ) : null}

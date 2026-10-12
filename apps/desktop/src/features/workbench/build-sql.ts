@@ -1,5 +1,6 @@
 import type { GraphLink } from "@/lib/ipc";
 import { splitColKey, splitTableId } from "./visualizer/connection-graph.ts";
+import { quoteIdent } from "../../lib/sql-ident.ts";
 
 /**
  * The visual query builder's SQL — pure, so every quoting and join decision
@@ -28,7 +29,7 @@ export type BuildSqlInput = {
 };
 
 export const linkKey = (l: GraphLink) => `${l.source}.${l.sourceColumn}>${l.target}.${l.targetColumn}`;
-const q = (id: string) => `"${id}"`;
+const q = quoteIdent;
 /** `SCHEMA.TABLE` → `"SCHEMA"."TABLE"` */
 const qualifyTable = (id: string) => {
   const { schema, table } = splitTableId(id);
