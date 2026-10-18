@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, type PanelImperativeHandle } from "@/components/ui/resizable";
+import { useDefaultLayout } from "react-resizable-panels";
+import { safeStorage } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
 import { ConnectionPropertiesTab } from "@/features/connection/ConnectionPropertiesTab";
 import { WelcomeScreen } from "@/features/workbench/WelcomeScreen";
@@ -76,6 +78,7 @@ import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
 import { useShortcuts } from "./use-shortcuts";
 import { ShortcutSheet } from "./ShortcutSheet";
+import { AboutDialog } from "./AboutDialog";
 import { ParamsDialog, askParams } from "./ParamsDialog";
 import { findParams, substituteParams } from "@/lib/sql-params";
 import { installSqlFormatting } from "./sql-formatting";
@@ -94,6 +97,7 @@ import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/com
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel, type ResultActions } from "./ResultsPanel";
 import { countSql } from "@/lib/result-pages";
+import { isSqlFile, loadRecentFiles, pushRecent, saveRecentFiles } from "@/lib/recent-files";
 import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, fileName, newTab, tabHasWork, tabTarget, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
@@ -422,6 +426,9 @@ export function ExasolStudio({
   // Imperative handles for the collapsible side panels.
   const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
   const aiPanelRef = useRef<PanelImperativeHandle | null>(null);
+  // Pane sizes are remembered (only sizes the person dragged, not window resizes).
+  const mainLayout = useDefaultLayout({ id: "studio.layout.main", storage: safeStorage, onlySaveAfterUserInteractions: true });
+  const editorLayout = useDefaultLayout({ id: "studio.layout.editor", storage: safeStorage, onlySaveAfterUserInteractions: true });
   // Stable fallback tab per connection, used for the first render before the
   // bucket is committed to state (avoids identity churn / remounts).
   // A bucket may legitimately have zero tabs — the workspace then shows the
@@ -1466,7 +1473,53 @@ export function ExasolStudio({
   }
 
   // Open a local file's contents as a new query tab in the current workspace.
+  // Recently opened or saved files (the Welcome page lists them).
+  const [recentFiles, setRecentFiles] = useState<string[]>(() => loadRecentFiles());
+  const rememberFile = useCallback((path: string) => {
+    setRecentFiles((list) => {
+      const next = pushRecent(list, path);
+      saveRecentFiles(next);
+      return next;
+    });
+  }, []);
+  /** Open a file by path in a SQL tab: from the recent list (approved again
+   *  by the backend, so it can be saved back), or dropped on the window. */
+  const openFilePath = async (path: string, recent = false) => {
+    try {
+      openFile(fileName(path), recent ? await ipc.reopenPickedFile(path) : await ipc.fsReadText(path), path);
+    } catch (e) {
+      setRecentFiles((list) => {
+        const next = list.filter((p) => p !== path);
+        saveRecentFiles(next);
+        return next;
+      });
+      pushNotification("warning", `Could not open ${fileName(path)}`, errorMessage(e));
+    }
+  };
+  const openFilePathRef = useRef(openFilePath);
+  openFilePathRef.current = openFilePath;
+  // .sql / .txt files dropped on the window open in tabs.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let off: (() => void) | undefined;
+    let gone = false;
+    void import("@tauri-apps/api/webview")
+      .then(({ getCurrentWebview }) =>
+        getCurrentWebview().onDragDropEvent((e) => {
+          if (e.payload.type !== "drop") return;
+          for (const p of e.payload.paths.filter(isSqlFile)) void openFilePathRef.current(p);
+        }),
+      )
+      .then((unlisten) => (gone ? unlisten() : (off = unlisten)))
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+
   function openFile(name: string, content: string, path?: string) {
+    if (path) rememberFile(path);
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-file-${Date.now()}-${tabCounter.current}`,
@@ -1594,6 +1647,34 @@ export function ExasolStudio({
       <div
         key={tab.id}
         data-tab-id={tab.id}
+        role="tab"
+        aria-selected={tab.id === activeTabId}
+        // One tab in the Tab order; arrows move between tabs (tablist pattern).
+        tabIndex={tab.id === activeTabId ? 0 : -1}
+        onKeyDown={(e) => {
+          if (isEditing) return;
+          const move =
+            e.key === "ArrowRight" ? { by: 1 } : e.key === "ArrowLeft" ? { by: -1 } : e.key === "Home" ? { n: 1 } : e.key === "End" ? { n: 9 } : null;
+          if (move) {
+            e.preventDefault();
+            // The strip as shown (pinned first, collapsed groups hidden), not the list order.
+            const shown = Array.from(e.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []);
+            const i = tabTarget(shown.length, shown.indexOf(e.currentTarget), move);
+            const next = i === null ? null : shown[i];
+            if (!next?.dataset.tabId) return;
+            setActiveTabId(next.dataset.tabId);
+            next.focus();
+          } else if (e.key === "F2" && (tab.view === "sql" || tab.view === "visualizer")) {
+            e.preventDefault();
+            startRename(tab.id, tab.title);
+          } else if (e.key === "Delete") {
+            e.preventDefault();
+            closeTab(tab.id);
+          } else if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setActiveTabId(tab.id);
+          }
+        }}
         // Pointer-based drag reorder — HTML5 DnD is unreliable inside the
         // WKWebView titlebar region, so we track the pointer ourselves.
         onPointerDown={(e) => {
@@ -1623,7 +1704,7 @@ export function ExasolStudio({
         title={tab.view === "sql" || tab.view === "visualizer" ? "Double-click to rename · right-click to group" : "Right-click to group"}
         style={tabEdge ? { boxShadow: `inset 0 2px 0 0 ${tabEdge}` } : undefined}
         className={cn(
-          "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
+          "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] outline-none select-none focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:ring-inset",
           grouped && "border-r-0",
           tab.id === activeTabId
             ? "bg-editor text-foreground"
@@ -2490,6 +2571,7 @@ export function ExasolStudio({
       const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
       if (!saved) return;
       patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+      rememberFile(saved);
       setFilesRefresh((n) => n + 1);
     } catch (e) {
       pushNotification("warning", "Could not save", errorMessage(e));
@@ -2498,6 +2580,12 @@ export function ExasolStudio({
 
   // Keyboard shortcuts (lib/shortcuts.ts); Mod+K search is GlobalSearch's.
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+  useEffect(() => {
+    const open = () => setShowAbout(true);
+    window.addEventListener("studio:about", open);
+    return () => window.removeEventListener("studio:about", open);
+  }, []);
   const goToTab = (move: { by: number } | { n: number }) => {
     const i = tabTarget(tabs.length, tabs.findIndex((t) => t.id === activeTab.id), move);
     if (i !== null) setActiveTabId(tabs[i].id);
@@ -2535,7 +2623,10 @@ export function ExasolStudio({
         try {
           const name = fileName(activeTab.filePath);
           const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
-          if (saved) patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+          if (saved) {
+            patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+            rememberFile(saved);
+          }
         } catch (e2) {
           pushNotification("warning", "Could not save", errorMessage(e2 ?? e));
         }
@@ -3045,6 +3136,7 @@ export function ExasolStudio({
       <UncommittedDialog pending={tabSession.pending} />
       <ParamsDialog />
       <ShortcutSheet open={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
       <TitleBar
         env={safety.env}
         connection={connection}
@@ -3114,9 +3206,10 @@ export function ExasolStudio({
           onToggleAi={toggleAi}
         />
 
-        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1" defaultLayout={mainLayout.defaultLayout} onLayoutChanged={mainLayout.onLayoutChanged}>
           {/* Left navigator — resizable + collapsible */}
           <ResizablePanel
+            id="sidebar"
             panelRef={sidebarPanelRef}
             collapsible
             collapsedSize="0px"
@@ -3204,12 +3297,14 @@ export function ExasolStudio({
           <ResizableHandle groupDirection="horizontal" />
 
           {/* Editor column */}
-          <ResizablePanel minSize="360px" className="min-w-0">
+          <ResizablePanel id="workspace" minSize="360px" className="min-w-0">
             <div className="relative flex h-full min-w-0 flex-col bg-editor">
           <>
           {/* Tab strip */}
           <div data-tour="tabbar" className="flex h-9 shrink-0 items-center border-b border-border bg-titlebar pr-1">
             <div
+              role="tablist"
+              aria-label="Open tabs"
               className="flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               onDoubleClick={(e) => {
                 // Double-click empty tab-bar space opens a new query (VS Code style).
@@ -3681,6 +3776,8 @@ export function ExasolStudio({
                 onMarketplace={openMarketplace}
                 onGuides={(path) => openDocsTab(path)}
                 onOpenRecent={(id) => void connectSaved(id)}
+                recentFiles={recentFiles}
+                onOpenRecentFile={(p) => void openFilePath(p, true)}
               />
             </div>
           ) : activeTab.view === "marketplace" ? (
@@ -3762,6 +3859,7 @@ export function ExasolStudio({
           ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (
             <div className="min-h-0 flex-1">
               <ObjectDetailPanel
+                openRows={maxRows}
                 profileId={activeTab.objectProfileId}
                 connectionName={connections.find((c) => c.profile.id === activeTab.objectProfileId)?.profile.name ?? ""}
                 object={activeTab.objectRef}
@@ -3840,8 +3938,8 @@ export function ExasolStudio({
               )}
             </div>
           ) : (
-            <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-              <ResizablePanel defaultSize="55%" minSize="120px" className="relative flex min-h-0 flex-col">
+            <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1" defaultLayout={editorLayout.defaultLayout} onLayoutChanged={editorLayout.onLayoutChanged}>
+              <ResizablePanel id="editor" defaultSize="55%" minSize="120px" className="relative flex min-h-0 flex-col">
                 {inlineDiff ? (
                   <InlineSqlDiff
                     state={inlineDiff}
@@ -4062,7 +4160,7 @@ export function ExasolStudio({
                 <EditorStatusBar editor={statusEditor} sql={activeTab.sql} />
               </ResizablePanel>
               <ResizableHandle groupDirection="vertical" />
-              <ResizablePanel defaultSize="45%" minSize="80px" className="min-h-0">
+              <ResizablePanel id="results" defaultSize="45%" minSize="80px" className="min-h-0">
                 <NullTextContext.Provider value={nullText}>
                 <ResultsPanel
                   view={activeTab.resultView ?? "results"}
@@ -4106,6 +4204,7 @@ export function ExasolStudio({
           {/* Exa (opencode) assistant — resizable + collapsible. Same panel as
               the full "Exa" tab, so both surfaces are one agent. */}
           <ResizablePanel
+            id="ai"
             panelRef={aiPanelRef}
             collapsible
             collapsedSize="0px"
@@ -4215,6 +4314,18 @@ export function ExasolStudio({
 
       {ctxMenu && ctxMenu.node.ctx ? (
         <ObjectContextMenu
+          openRows={maxRows}
+          onExport={
+            isTauri()
+              ? (sql) => {
+                  const id = ctxMenu.profileId;
+                  void ipc
+                    .exapumpExport(id, sql, "csv")
+                    .then((path) => path && pushNotification("success", "Exported", path))
+                    .catch((e) => pushNotification("warning", "Could not export", errorMessage(e)));
+                }
+              : undefined
+          }
           ctx={ctxMenu.node.ctx}
           x={ctxMenu.x}
           y={ctxMenu.y}

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
-import { AlertTriangle, Check, Loader2, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Star, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NodeCtx } from "@/features/workbench/tree-model";
+import { qualify as q, quoteIdent } from "@/lib/sql-ident";
 
 /**
  * A destructive/DDL action rendered as a **confirmation** (never a form or a
@@ -21,26 +22,24 @@ export type ObjectAction = {
 
 type Item =
   | { sep: true }
-  | { label: string; kind: "run" | "gen" | "copy"; sql?: string; text?: string }
+  | { label: string; kind: "run" | "gen" | "copy" | "export"; sql?: string; text?: string }
   | { label: string; kind: "nav"; navTab: string; navEdit?: boolean }
   | { label: string; kind: "action"; danger?: boolean; action: ObjectAction };
 
-function q(schema: string | undefined, name: string): string {
-  return schema ? `"${schema}"."${name}"` : `"${name}"`;
-}
 
 function label(schema: string | undefined, name: string): string {
   return schema ? `${schema}.${name}` : name;
 }
 
 /** Build the right-click menu for an object, based on its type. */
-function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
+function itemsFor(ctx: NodeCtx, defaultSchema?: string, openRows = 1000): Item[] {
   const schema = ctx.schema ?? defaultSchema;
   switch (ctx.type) {
     case "table": {
       const t = q(schema, ctx.name);
       return [
-        { label: "Open data", kind: "run", sql: `SELECT * FROM ${t} LIMIT 1000;` },
+        { label: "Open data", kind: "run", sql: `SELECT * FROM ${t} LIMIT ${openRows};` },
+        { label: "Export data…", kind: "export", sql: `SELECT * FROM ${t}` },
         { label: "Generate SELECT", kind: "gen", sql: `SELECT * FROM ${t};` },
         { label: "Generate INSERT", kind: "gen", sql: `INSERT INTO ${t} (/* columns */) VALUES (/* values */);` },
         { label: "Generate UPDATE", kind: "gen", sql: `UPDATE ${t} SET /* col = value */ WHERE /* condition */;` },
@@ -56,13 +55,15 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Drop — generate SQL", kind: "gen", sql: `DROP TABLE ${t};` },
         { sep: true },
         { label: "Copy name", kind: "copy", text: ctx.name },
+        { label: "Copy qualified name", kind: "copy", text: q(schema, ctx.name) },
         { label: "Copy path", kind: "copy", text: label(schema, ctx.name) },
       ];
     }
     case "view": {
       const v = q(schema, ctx.name);
       return [
-        { label: "Open data", kind: "run", sql: `SELECT * FROM ${v} LIMIT 1000;` },
+        { label: "Open data", kind: "run", sql: `SELECT * FROM ${v} LIMIT ${openRows};` },
+        { label: "Export data…", kind: "export", sql: `SELECT * FROM ${v}` },
         { label: "Generate SELECT", kind: "gen", sql: `SELECT * FROM ${v};` },
         { sep: true },
         // Editing opens as reviewable SQL in a query tab (no dialog).
@@ -71,6 +72,7 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Drop — generate SQL", kind: "gen", sql: `DROP VIEW ${v};` },
         { sep: true },
         { label: "Copy name", kind: "copy", text: ctx.name },
+        { label: "Copy qualified name", kind: "copy", text: q(schema, ctx.name) },
       ];
     }
     case "schema":
@@ -121,12 +123,13 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
     }
     case "column": {
       const t = q(schema, ctx.table ?? "");
-      const c = `"${ctx.name}"`;
+      const c = quoteIdent(ctx.name);
       return [
         // Column edits live in the table's Details → Columns editor; here we
         // only generate SQL (no dialog).
-        { label: "Rename — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} RENAME COLUMN ${c} TO "${ctx.name}_NEW";` },
-        { label: "Change type — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} MODIFY COLUMN ${c} VARCHAR(200);` },
+        { label: "Rename — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} RENAME COLUMN ${c} TO ${quoteIdent(`${ctx.name}_NEW`)};` },
+        // Proposes the column's current type, ready to edit.
+        { label: "Change type — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} MODIFY COLUMN ${c} ${ctx.dataType || "VARCHAR(200)"};` },
         { label: "Comment — generate SQL", kind: "gen", sql: `COMMENT ON COLUMN ${t}.${c} IS '/* description */';` },
         {
           // Destructive → keep the confirmation model.
@@ -302,6 +305,8 @@ export function ObjectContextMenu({
   onDetails,
   onEditInDetails,
   onFavorite,
+  openRows,
+  onExport,
 }: {
   ctx: NodeCtx;
   x: number;
@@ -318,8 +323,12 @@ export function ObjectContextMenu({
   onEditInDetails?: (tab: string, edit?: boolean) => void;
   /** Add this object to Favorites. */
   onFavorite?: () => void;
+  /** Rows "Open data" fetches: the Row limit setting. */
+  openRows?: number;
+  /** Export every row of a query to a file (ExaPump). */
+  onExport?: (sql: string) => void;
 }) {
-  const items = itemsFor(ctx, defaultSchema);
+  const items = itemsFor(ctx, defaultSchema, openRows).filter((it) => !("kind" in it) || it.kind !== "export" || onExport);
   const canDetail =
     onDetails &&
     (ctx.type === "schema" || ctx.type === "virtual-schema" || ctx.type === "table" || ctx.type === "view" || ctx.type === "user");
@@ -376,6 +385,7 @@ export function ObjectContextMenu({
                 );
               }
               else if (it.kind === "action") onAction(it.action);
+              else if (it.kind === "export") onExport?.(it.sql ?? "");
               else if (it.kind === "nav") onEditInDetails?.(it.navTab, it.navEdit);
               else onEditorSql(it.sql ?? "", it.kind === "run");
               onClose();
@@ -397,9 +407,9 @@ export function ObjectContextMenu({
               onFavorite();
               onClose();
             }}
-            className="flex w-full items-center px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] text-foreground hover:bg-secondary"
           >
-            ★ Add to Favorites
+            <Star className="h-3.5 w-3.5 text-muted-foreground" /> Add to Favorites
           </button>
         </>
       ) : null}

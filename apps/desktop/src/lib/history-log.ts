@@ -73,3 +73,31 @@ export function sortEntries(keyed: KeyedEntry[], key: LogSortKey, dir: 1 | -1): 
     return a.k.localeCompare(b.k);
   });
 }
+
+/** The connections the history has runs for, by name. */
+export function connectionsOf(entries: readonly HistoryEntry[]): string[] {
+  return [...new Set(entries.map((e) => e.connectionName).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+/** Entries of one connection (empty = all) whose SQL or error contains
+ *  `text`, case-insensitively. */
+export function searchEntries(entries: readonly HistoryEntry[], text: string, connection = ""): HistoryEntry[] {
+  const needle = text.trim().toLowerCase();
+  return entries.filter(
+    (e) =>
+      (!connection || e.connectionName === connection) &&
+      (!needle || e.sql.toLowerCase().includes(needle) || (e.error ?? "").toLowerCase().includes(needle)),
+  );
+}
+
+const EXPORT_COLUMNS = ["executedAt", "connectionName", "success", "elapsedMs", "rowCount", "error", "sql"] as const;
+
+/** History as CSV (a header row, RFC 4180) or JSON, for a file. */
+export function historyExport(entries: readonly HistoryEntry[], format: "csv" | "json"): string {
+  if (format === "json") return JSON.stringify(entries.map((e) => Object.fromEntries(EXPORT_COLUMNS.map((k) => [k, e[k] ?? null]))), null, 2);
+  const field = (v: unknown) => {
+    const t = v === null || v === undefined ? "" : String(v);
+    return /[",\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
+  return [EXPORT_COLUMNS.join(","), ...entries.map((e) => EXPORT_COLUMNS.map((k) => field(e[k])).join(","))].join("\r\n");
+}

@@ -17,6 +17,8 @@ export function WelcomeScreen({
   onMarketplace,
   onGuides,
   onOpenRecent,
+  recentFiles = [],
+  onOpenRecentFile,
 }: {
   connected: boolean;
   recents: Recent[];
@@ -26,6 +28,8 @@ export function WelcomeScreen({
   onMarketplace: () => void;
   onGuides: (path: string) => void;
   onOpenRecent: (id: string) => void;
+  recentFiles?: string[];
+  onOpenRecentFile?: (path: string) => void;
 }) {
   const start: { icon: IconName; label: string; onClick: () => void }[] = [
     { icon: "querytab", label: "New query", onClick: onNewQuery },
@@ -96,6 +100,19 @@ export function WelcomeScreen({
               </div>
             )}
           </div>
+          {recentFiles.length && onOpenRecentFile ? (
+            <div className="mt-8">
+              <h2 className="mb-1 text-[15px] font-medium text-foreground/90">Recent files</h2>
+              <div className="flex flex-col">
+                {recentFiles.map((p) => (
+                  <button key={p} onClick={() => onOpenRecentFile(p)} title={p} className="group flex items-baseline gap-2 py-1 text-left outline-none">
+                    <span className="text-[13px] text-primary group-hover:underline group-focus-visible:underline">{p.split(/[\\/]/).pop()}</span>
+                    <span className="truncate text-[12px] text-muted-foreground">{p}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {/* Right: Guides */}

@@ -99,18 +99,25 @@ export function ObjectSearch({
       return;
     }
     setLoading(true);
+    // A newer query (or another connection) makes this one's answer stale,
+    // even when it is already on its way.
+    let current = true;
     const handle = setTimeout(() => {
       ipc
         .searchObjects(profileId, term, 200)
         .then((res) => {
+          if (!current) return;
           setHits(res.results);
           setSelected(0);
           setError(null);
         })
-        .catch((err) => setError(errorMessage(err)))
-        .finally(() => setLoading(false));
+        .catch((err) => current && setError(errorMessage(err)))
+        .finally(() => current && setLoading(false));
     }, 180);
-    return () => clearTimeout(handle);
+    return () => {
+      current = false;
+      clearTimeout(handle);
+    };
   }, [query, profileId]);
 
   const open = (hit: SearchHit) => {

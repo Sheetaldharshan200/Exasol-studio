@@ -1,4 +1,6 @@
+mod about;
 mod agent;
+mod load_prep;
 mod xlsx;
 #[cfg(target_os = "macos")]
 mod app_menu;
@@ -99,6 +101,7 @@ pub fn run() {
             // Resolve the effective verified component lock (signed remote
             // override if valid + newer, else baked) BEFORE anything reads it.
             crate::component_lock::init_effective(&data_dir);
+            crate::files::init_picked_store(&data_dir);
             app.manage(AppState::new(data_dir));
             // Load app settings once, so the backend readers see them from the start.
             let _ = crate::settings::get_app_settings(app.handle().clone());
@@ -222,7 +225,13 @@ pub fn run() {
             profile_io::import_connections,
             grid_edits::apply_row_edits,
             files::save_text_as,
+            files::reopen_picked_file,
             xlsx::save_xlsx_as,
+            about::about_info,
+            about::open_logs_dir,
+            about::recent_log,
+            load_prep::prepare_csv_load,
+            load_prep::discard_prepared_load,
             exapump::exapump_export,
             files::open_text_file,
             session_cmd::session_info,
@@ -318,6 +327,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")
         .run(|app, event| {
+            // A .sql / .txt file dropped on the window opens in a tab (the page
+            // listens for the drop); it may then be saved back, like one picked
+            // in the open dialog.
+            if let tauri::RunEvent::WindowEvent { event: tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }), .. } = &event {
+                for p in paths.iter().filter(|p| files::droppable(p)) {
+                    files::approve_path(p);
+                }
+            }
             // Closing the main window with uncommitted changes in a tab's
             // session asks first (Commit / Roll back / Cancel in the page).
             if let tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } = &event {

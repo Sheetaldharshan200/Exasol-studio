@@ -125,18 +125,18 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 - [x] 7.2.7 Cancel for exarrow and bridge drivers: a cancel flag; exarrow drops its connection, the bridge process is killed (tests in `query.rs`, `driver_exec.rs`).
 
 ### 7.3 Navigator
-- [ ] 7.3.1 Refresh rebuilds expanded folders from fresh nodes (`DatabaseTree.tsx`; test: `tree-model.test.ts`).
-- [ ] 7.3.2 View DDL is the view's text; DDL includes DISTRIBUTE/PARTITION/COMMENT (`ObjectDetailPanel.tsx`, `lib/ddl.ts`; test: `ddl.test.ts`).
-- [ ] 7.3.3 Quoted copy name; `q()` / `qualify()` escape `"` (`lib/sql-ident.ts`; test: `sql-ident.test.ts`).
-- [ ] 7.3.4 ObjectSearch request token (no stale results).
-- [ ] 7.3.5 Keyboard navigation and row virtualization in the tree.
-- [ ] 7.3.6 Open-data row count configurable; "Change type" proposes the current type.
-- [ ] 7.3.7 Replace the ★ glyph with an icon.
+- [x] 7.3.1 Refresh rebuilds expanded folders from fresh nodes (`DatabaseTree.tsx`; test: `tree-model.test.ts`).
+- [x] 7.3.2 View DDL is the view's text; DDL includes DISTRIBUTE/PARTITION/COMMENT (`ObjectDetailPanel.tsx`, `lib/ddl.ts`; test: `ddl.test.ts`).
+- [x] 7.3.3 Quoted copy name; `q()` / `qualify()` escape `"` (`lib/sql-ident.ts`; test: `sql-ident.test.ts`).
+- [x] 7.3.4 ObjectSearch request token (no stale results).
+- [x] 7.3.5 Keyboard navigation and row virtualization in the tree (`tree-keys.ts`; test: `tree-keys.test.ts`). Rows render in a window of the sidebar scroller; arrows, Home/End, Enter, Menu / Shift+F10.
+- [x] 7.3.6 Open-data row count configurable; "Change type" proposes the current type. Open data follows the Row limit setting.
+- [x] 7.3.7 Replace the ★ glyph with an icon.
 
 ### 7.4 History, files, monitoring, diagnostics
-- [ ] 7.4.1 History per connection, searchable, exportable; dashboard runs do not crowd it out (`history.rs`; test: `history.rs`).
-- [ ] 7.4.2 Save As via the native save dialog; OS drag-drop of .sql files; recent files.
-- [ ] 7.4.3 Monitoring: locks / transaction conflicts, long-running statements, kill one statement.
-- [ ] 7.4.4 About dialog with versions, "Open logs", "Copy diagnostics".
-- [ ] 7.4.5 Pane sizes remembered; tab controls keyboard-operable.
-- [ ] 7.4.6 Import wizard: column mapping, row preview, reject file; export a whole table.
+- [x] 7.4.1 History per connection, searchable, exportable; dashboard runs do not crowd it out (`lib/history-log.ts`; test: `history-log.test.ts`). Background panels (health, logs, DBA) no longer record.
+- [x] 7.4.2 Save As via the native save dialog; OS drag-drop of .sql files; recent files (`lib/recent-files.ts`; test: `recent-files.test.ts`).
+- [x] 7.4.3 Monitoring: locks / transaction conflicts, long-running statements, kill one statement (`DbaMonitor.tsx`, `dba-sql.ts`; test: `dba-sql.test.ts`).
+- [x] 7.4.4 About dialog with versions, "Open logs", "Copy diagnostics" (`about.rs`, `lib/diagnostics.ts`; tests in both).
+- [x] 7.4.5 Pane sizes remembered; tab controls keyboard-operable.
+- [x] 7.4.6 Import wizard: column mapping, row preview, reject file; export a whole table (`load_prep.rs`, `lib/load-mapping.ts`; tests in both). Rejects are rows with the wrong number of fields; type errors still fail the load at the server.

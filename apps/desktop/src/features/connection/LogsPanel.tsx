@@ -71,14 +71,14 @@ export function LogsPanel({ profileId, connectionName }: { profileId: string; co
       inflight.current = true;
       setLoading(true);
       try {
-        if (flush) await ipc.executeSql(profileId, connectionName, "FLUSH STATISTICS", 1, false).catch(() => null);
+        if (flush) await ipc.executeSql(profileId, connectionName, "FLUSH STATISTICS", 1, false, false).catch(() => null);
         const hours = RANGES.find((r) => r.id === range)?.hours ?? 1;
         const attempts = ATTEMPTS[source];
         const startAt = workingAttempt.current[source] ?? 0;
         let lastErr = "";
         for (let i = startAt; i < attempts.length; i++) {
           const sql = attempts[i].replaceAll("{H}", String(hours));
-          const res = await ipc.executeSql(profileId, connectionName, sql, 1000, false).catch((e) => {
+          const res = await ipc.executeSql(profileId, connectionName, sql, 1000, false, false).catch((e) => {
             lastErr = errorMessage(e);
             return null;
           });

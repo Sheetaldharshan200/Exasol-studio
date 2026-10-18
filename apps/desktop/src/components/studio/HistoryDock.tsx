@@ -7,7 +7,7 @@
  * ~5,000-line shell. They depend on the shell only through props plus the
  * shared SqlTab type and IconButton, so they move as a unit.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
@@ -42,6 +42,7 @@ import { TerminalView } from "@/features/workbench/TerminalView";
 import { ipc , isTauri } from "@/lib/ipc";
 import type { ExecuteResponse, HistoryEntry, StatementResult } from "@/lib/ipc";
 import { GitLogTab } from "./GitLogTab";
+import { useHistoryFilter } from "./HistoryToolbar";
 import { filterEntries, keyEntries, sortEntries, verbOf, type LogSortKey } from "@/lib/history-log";
 import { fmtClock } from "@/lib/sql-text";
 import { cellText, filterRows, resultSummary, rowTotal } from "@/lib/result-stats";
@@ -52,7 +53,7 @@ import { IconButton } from "./IconButton";
 import type { SqlTab } from "./tabs";
 
 
-function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
+function LogTable({ entries, onOpenSql, onShown }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void; onShown?: (shown: HistoryEntry[]) => void }) {
   const [sort, setSort] = useState<{ key: LogSortKey; dir: 1 | -1 }>({ key: "time", dir: -1 });
   const [detail, setDetail] = useState<{ label: string; value: string; mono: boolean; sql?: string } | null>(null);
   // Value filters (empty set = show everything). Status and Command filter by
@@ -65,11 +66,12 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
   // duplicate-id-safe render keys).
   const verb = verbOf;
   const commandOptions = [...new Set(entries.map(verbOf))].sort();
-  const sorted = sortEntries(
-    filterEntries(keyEntries(entries), statusFilter, commandFilter),
-    sort.key,
-    sort.dir,
+  const sorted = useMemo(
+    () => sortEntries(filterEntries(keyEntries(entries), statusFilter, commandFilter), sort.key, sort.dir),
+    [entries, statusFilter, commandFilter, sort],
   );
+  // The toolbar exports exactly what is listed (column filters included).
+  useEffect(() => onShown?.(sorted.map((k) => k.e)), [sorted, onShown]);
   const flip = (key: LogSortKey) =>
     setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: key === "time" ? -1 : 1 }));
   const toggleIn = (set: Set<string>, value: string): Set<string> => {
@@ -392,6 +394,7 @@ export function HistoryDock({
   onRefresh: () => void;
 }) {
   const [mode, setMode] = useState<"terminal" | "history" | "gitlog">("history");
+  const history = useHistoryFilter(entries);
   // Armed state for the destructive clear-history action; disarms on its own.
   const [confirmClear, setConfirmClear] = useState(false);
   useEffect(() => {
@@ -514,6 +517,7 @@ export function HistoryDock({
           <div className="flex items-center gap-0.5">
             {mode === "history" ? (
               <>
+                {history.toolbar}
                 <IconButton label="Refresh history" onClick={onRefresh}>
                   <RefreshCcw className="h-3.5 w-3.5" />
                 </IconButton>
@@ -615,7 +619,7 @@ export function HistoryDock({
               // in a proper cell grid. Headers sort (tap toggles asc/desc),
               // the SQL cell opens the statement in a query tab, and every
               // other cell expands into a detail view with the full value.
-              <LogTable entries={entries} onOpenSql={onPick} />
+              <LogTable entries={history.shown} onOpenSql={onPick} onShown={history.setListed} />
             )}
           </div>
         )}

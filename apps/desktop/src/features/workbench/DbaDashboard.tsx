@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookUser, Boxes, ChevronRight, GaugeCircle, HardDrive, KeyRound, Loader2, Lock, Pencil, Plug, Plus, RotateCcw, Save, Shield, ShieldCheck, ShieldOff, Trash2, Users, X } from "lucide-react";
+import { Activity, BookUser, Boxes, ChevronRight, GaugeCircle, HardDrive, KeyRound, Loader2, Lock, Pencil, Plug, Plus, RotateCcw, Save, Shield, ShieldCheck, ShieldOff, Trash2, Users, X } from "lucide-react";
 import { errorMessage, ipc, type DbaOverview, type UserDetails } from "@/lib/ipc";
 import { ALL_SYS_PRIVS, dbaSql, ident, OBJ_PRIVS_SCHEMA, OBJ_PRIVS_TABLE, SYS_PRIVS } from "@/features/workbench/dba-sql";
 import { cn } from "@/lib/utils";
 import { AppSelect } from "@/components/ui/app-select";
+import { DbaMonitor } from "./DbaMonitor";
 
-type Section = "users" | "roles" | "consumerGroups" | "connections" | "sessions" | "dbSize";
+type Section = "users" | "roles" | "consumerGroups" | "connections" | "sessions" | "running" | "locks" | "dbSize";
 const TABS: { id: Section; label: string; icon: typeof Users }[] = [
   { id: "sessions", label: "Sessions", icon: GaugeCircle },
+  { id: "running", label: "Running", icon: Activity },
+  { id: "locks", label: "Locks", icon: Lock },
   { id: "users", label: "Users", icon: Users },
   { id: "roles", label: "Roles", icon: Shield },
   { id: "consumerGroups", label: "Consumer Groups", icon: Boxes },
@@ -58,7 +61,7 @@ export function DbaDashboard({ profileId, connectionName, onOpenSql }: { profile
 
   const col1 = useCallback(
     async (sql: string): Promise<string[]> => {
-      const res = await ipc.executeSql(profileId, connectionName, sql, 5000, false);
+      const res = await ipc.executeSql(profileId, connectionName, sql, 5000, false, false);
       const first = res.results.find((r) => r.kind === "resultSet");
       return first && !first.error ? first.rows.map((r) => String(r[0] ?? "")) : [];
     },
@@ -148,7 +151,7 @@ export function DbaDashboard({ profileId, connectionName, onOpenSql }: { profile
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {TABS.map((t) => {
           const Icon = t.icon;
-          const n = dba ? (t.id === "dbSize" ? undefined : (dba[t.id] as unknown[]).length) : undefined;
+          const n = dba && t.id !== "dbSize" && t.id !== "running" && t.id !== "locks" ? (dba[t.id] as unknown[]).length : undefined;
           return (
             <button key={t.id} onClick={() => setTab(t.id)} className={cn("flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[12.5px] transition-colors", tab === t.id ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
               <Icon className="h-3.5 w-3.5" /> {t.label}
@@ -164,6 +167,14 @@ export function DbaDashboard({ profileId, connectionName, onOpenSql }: { profile
             <div className="flex items-center gap-2 text-[13px] text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
           ) : error ? (
             <div className="max-w-lg rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-[12.5px] text-muted-foreground">{error}</div>
+          ) : tab === "running" || tab === "locks" ? (
+            <DbaMonitor
+              profileId={profileId}
+              connectionName={connectionName}
+              kind={tab}
+              canKill={Boolean(canKill)}
+              onKill={(sql, title) => ask({ kind: "kill", title, after: tab === "running" && sql.startsWith("KILL STATEMENT") ? "The statement stops; the session and its transaction stay." : "The session is terminated and its open transaction is rolled back.", recoverable: true, sql: [sql] })}
+            />
           ) : !dba ? null : tab === "dbSize" ? (
             <Grid columns={["Measure time", "Raw size", "Mem size", "Auxiliary", "Statistics", "Recommended RAM"]} rows={dba.dbSize ? [[dba.dbSize.measureTime, dba.dbSize.rawObjectSize, dba.dbSize.memObjectSize, dba.dbSize.auxiliarySize, dba.dbSize.statisticsSize, dba.dbSize.recommendedDbRamSize].map((v) => (v == null ? "" : String(v)))] : []} />
           ) : tab === "users" ? (

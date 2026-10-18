@@ -97,11 +97,59 @@ fn approved_paths() -> &'static std::sync::Mutex<std::collections::HashSet<std::
     PATHS.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
 }
 
-/// Record a path the user chose (opened it, or picked it in a dialog).
+/// Files a drop on the window opens in a tab.
+pub(crate) fn droppable(path: &std::path::Path) -> bool {
+    path.is_file() && path.extension().is_some_and(|e| matches!(e.to_string_lossy().to_ascii_lowercase().as_str(), "sql" | "txt"))
+}
+
+/// Where the paths the person picked are kept across restarts (set at startup).
+static PICKED_STORE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+const PICKED_CAP: usize = 50;
+
+pub(crate) fn init_picked_store(data_dir: &std::path::Path) {
+    let _ = PICKED_STORE.set(data_dir.join("picked-files.json"));
+}
+
+fn read_picked() -> Vec<String> {
+    PICKED_STORE
+        .get()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// `path` first, once, capped.
+fn remember(list: Vec<String>, path: String, cap: usize) -> Vec<String> {
+    let mut next = vec![path.clone()];
+    next.extend(list.into_iter().filter(|p| *p != path));
+    next.truncate(cap);
+    next
+}
+
+/// Record a path the user chose (opened it, or picked it in a dialog). Kept
+/// across restarts, so a recent file the person picked may be saved again.
 pub(crate) fn approve_path(path: &std::path::Path) {
     if let Ok(mut set) = approved_paths().lock() {
         set.insert(path.to_path_buf());
     }
+    if let Some(store) = PICKED_STORE.get() {
+        let next = remember(read_picked(), path.to_string_lossy().into_owned(), PICKED_CAP);
+        if let Ok(json) = serde_json::to_string(&next) {
+            let _ = std::fs::write(store, json);
+        }
+    }
+}
+
+/// Reopen a file from the recent list: only one the person picked or
+/// dropped before (the page cannot add to that list), which it may then save.
+#[tauri::command]
+pub async fn reopen_picked_file(path: String) -> AppResult<String> {
+    if !read_picked().contains(&path) {
+        return Err(AppError::InvalidSettings("Open this file with Open SQL file… first.".into()));
+    }
+    let text = crate::fs::fs_read_text(path.clone()).await?;
+    approve_path(std::path::Path::new(&path));
+    Ok(text)
 }
 
 /// Who may be written: the Studio workspace, or a path the user chose.
@@ -306,6 +354,17 @@ pub async fn save_attachment(
         .map_err(|e| AppError::Storage(format!("invalid attachment payload: {e}")))?;
     std::fs::write(&file, bytes)?;
     Ok(file.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod picked_tests {
+    #[test]
+    fn a_picked_path_goes_first_once_and_the_list_is_capped() {
+        let l = super::remember(vec!["/a".into(), "/b".into()], "/b".into(), 50);
+        assert_eq!(l, vec!["/b".to_string(), "/a".to_string()]);
+        let l = super::remember(vec!["/1".into(), "/2".into()], "/3".into(), 2);
+        assert_eq!(l, vec!["/3".to_string(), "/1".to_string()]);
+    }
 }
 
 #[cfg(test)]

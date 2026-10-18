@@ -3,6 +3,7 @@ import { Code2, KeyRound, Loader2, Plus, RotateCcw, Save, ShieldOff, Trash2, Und
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ColumnInfo, ConstraintInfo } from "@/lib/ipc";
+import { qualify } from "@/lib/sql-ident";
 
 /** Shared, fixed column widths for the columns table. The read-only Columns
  *  view and this editor both render this colgroup, so toggling "Edit structure"
@@ -54,9 +55,6 @@ type Draft = {
   custom: boolean;
 };
 
-function qualify(schema: string | undefined, name: string): string {
-  return schema ? `"${schema}"."${name}"` : `"${name}"`;
-}
 
 /**
  * In-place table-structure editor for the Details → Columns tab. Edits are

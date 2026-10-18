@@ -328,3 +328,16 @@ Three designs, two rejected by review — worth knowing before touching TLS here
 - **Errors:** sqlx says `Exasol error 42000: …`, exapump `… (SQL state: 42000)`, others `[42000] …` — `lib/exa-error.ts` reads all three.
 - **Stop for exarrow and bridge drivers:** no server session id to KILL, so a `CancelFlag` registered under the progress id: exarrow's run is dropped in a `select!` (the connection closes and the server ends the session), the bridge child is polled and killed (pipes drained on threads so it never blocks on a full pipe).
 - **Local gotcha:** after an Xcode update, `cargo test` cannot link until `sudo xcodebuild -license accept`; `cargo check` still works from cached build scripts, `cargo clippy` does not.
+
+## [2026-10-18] navigator+workbench | workbench-hardening phases 7.3 and 7.4
+- **Identifiers:** one `lib/sql-ident.ts` (`quoteIdent`, `qualify`) — six local copies existed and five did not double an embedded `"`, so `a"b` broke or injected into generated SQL. New SQL builders import it.
+- **DDL tab:** Exasol table elements go inside the parentheses (`DISTRIBUTE BY …, PARTITION BY …`), the table comment after (`) COMMENT IS '…'`), column comments inline. Partition order is `EXA_ALL_COLUMNS.COLUMN_PARTITION_KEY_ORDINAL_POSITION`; a view shows `EXA_ALL_VIEWS.VIEW_TEXT`.
+- **Tree refresh** must go top-down from fresh nodes (`load(node, cascade)`): reloading every expanded id from the node objects captured before the refresh reloads dropped objects and races parents against children.
+- **Tree virtualization** windows against the nearest scrolling ancestor (the sidebar), not the tree element; keyboard logic is the pure `tree-keys.ts`.
+- **Debounced fetches** need a "still current" flag in the effect cleanup, not only `clearTimeout` — a request already in flight still lands (ObjectSearch).
+- **History crowding:** `ipc.executeSql` records by default; background panels (health, logs, DBA, role lookups) must pass `addHistory = false`.
+- **Drops:** Tauri's `WindowEvent::DragDrop` is handled in Rust to approve the dropped paths (so Save can write back); the page opens them via `getCurrentWebview().onDragDropEvent`.
+- **Monitoring:** conflicts are `EXA_STATISTICS.EXA_DBA_TRANSACTION_CONFLICTS` (not SYS); waiting ones have `STOP_TIME IS NULL`. `KILL STATEMENT IN SESSION n` keeps the session; `KILL SESSION n` rolls it back.
+- **Pane sizes:** react-resizable-panels v4 has no `autoSaveId`; use `useDefaultLayout({ id, storage, onlySaveAfterUserInteractions })` and give every Panel an `id`.
+- **CSV load prep** (`load_prep.rs`): the reject writer must be `flexible(true)` — rejected rows have the wrong field count by definition. exapump has no reject or mapping options, so Studio writes a mapped copy in the data folder.
+- **macOS:** there is no `timeout` command; and after an Xcode update `cargo test` links only once the license is accepted.

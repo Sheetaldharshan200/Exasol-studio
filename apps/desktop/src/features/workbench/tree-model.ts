@@ -28,6 +28,8 @@ export type NodeCtx = {
   table?: string;
   /** The object's own name (or session id). */
   name: string;
+  /** A column's current data type. */
+  dataType?: string;
 };
 
 export type TreeNode = {
@@ -246,7 +248,7 @@ function tableNode(profileId: string, schema: string, table: string): TreeNode {
               meta: col.dataType,
               badge: col.nullable === false ? "NOT NULL" : undefined,
               expandable: false,
-              ctx: { type: "column", schema, table, name: col.name },
+              ctx: { type: "column", schema, table, name: col.name, dataType: col.dataType },
             })),
         },
         {

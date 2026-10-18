@@ -3,6 +3,8 @@
 // grid does the DOM; this decides the writes, so the writes can be tested.
 
 import { isWritten, type Draft } from "./edit-grid-model.ts";
+import { qualify, quoteIdent } from "../../lib/sql-ident.ts";
+export { qualify, quoteIdent };
 
 export type DmlColumn = { name: string; typeName: string };
 
@@ -37,13 +39,6 @@ export function lit(v: unknown, typeName: string): string {
 }
 
 /** A quoted Exasol identifier: the name as the catalog holds it, `"` doubled. */
-export function quoteIdent(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
-}
-
-export function qualify(schema: string | undefined, table: string): string {
-  return schema ? `${quoteIdent(schema)}.${quoteIdent(table)}` : quoteIdent(table);
-}
 
 /** One key column's condition: a NULL key matches with IS NULL — `= NULL` matches no row. */
 export function keyCondition(column: string, literal: string): string {
