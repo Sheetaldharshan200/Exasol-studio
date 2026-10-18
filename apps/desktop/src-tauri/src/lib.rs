@@ -1,3 +1,4 @@
+mod about;
 mod agent;
 mod xlsx;
 #[cfg(target_os = "macos")]
@@ -223,6 +224,9 @@ pub fn run() {
             grid_edits::apply_row_edits,
             files::save_text_as,
             xlsx::save_xlsx_as,
+            about::about_info,
+            about::open_logs_dir,
+            about::recent_log,
             exapump::exapump_export,
             files::open_text_file,
             session_cmd::session_info,

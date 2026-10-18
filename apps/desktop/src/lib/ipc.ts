@@ -559,6 +559,8 @@ export type TablePreview = {
 
 export type ColumnMeta = { name: string; typeName: string };
 
+export type AboutInfo = { appVersion: string; tauriVersion: string; os: string; arch: string; dataDir: string; logsDir: string };
+
 export type StatementResult = {
   statement: string;
   /** "executed" = it ran, but the driver cannot report how many rows it touched. */
@@ -983,6 +985,12 @@ export const ipc = {
    *  to a file picked in the save dialog. Null when cancelled. */
   exapumpExport: (profileId: string, query: string, format: "csv" | "parquet") =>
     call<string | null>("exapump_export", { profileId, query, format }),
+  /** Versions and the system, for the About dialog (no connection details). */
+  aboutInfo: () => call<AboutInfo>("about_info"),
+  /** Open the logs folder in the file manager. */
+  openLogsDir: () => call<void>("open_logs_dir"),
+  /** The last lines of the app's log, for diagnostics. */
+  recentLog: (lines?: number) => call<string>("recent_log", { lines }),
   /** Save rows as an Excel workbook via the save dialog. Null when cancelled. */
   saveXlsxAs: (defaultName: string, columns: ColumnMeta[], rows: unknown[][]) =>
     call<string | null>("save_xlsx_as", { defaultName, columns, rows }),

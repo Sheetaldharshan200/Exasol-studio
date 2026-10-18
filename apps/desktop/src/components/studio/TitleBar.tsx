@@ -4,7 +4,7 @@
  *
  * Extracted from ExasolStudio.tsx.
  */
-import { BookOpen, PlugZap, Search as SearchIcon, Unplug } from "lucide-react";
+import { BookOpen, Info, PlugZap, Search as SearchIcon, Unplug } from "lucide-react";
 
 import { ExasolMark } from "@/components/brand/ExasolMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -89,6 +89,14 @@ export function TitleBar({
         >
           <BookOpen className="h-3.5 w-3.5" />
           Docs
+        </button>
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("studio:about"))}
+          title="About Exasol Studio"
+          aria-label="About Exasol Studio"
+          className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          <Info className="h-3.5 w-3.5" />
         </button>
         <Notifications />
         <ThemeCustomizer />

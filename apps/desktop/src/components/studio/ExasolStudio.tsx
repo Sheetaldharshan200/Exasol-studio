@@ -76,6 +76,7 @@ import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
 import { useShortcuts } from "./use-shortcuts";
 import { ShortcutSheet } from "./ShortcutSheet";
+import { AboutDialog } from "./AboutDialog";
 import { ParamsDialog, askParams } from "./ParamsDialog";
 import { findParams, substituteParams } from "@/lib/sql-params";
 import { installSqlFormatting } from "./sql-formatting";
@@ -2545,6 +2546,12 @@ export function ExasolStudio({
 
   // Keyboard shortcuts (lib/shortcuts.ts); Mod+K search is GlobalSearch's.
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
+  useEffect(() => {
+    const open = () => setShowAbout(true);
+    window.addEventListener("studio:about", open);
+    return () => window.removeEventListener("studio:about", open);
+  }, []);
   const goToTab = (move: { by: number } | { n: number }) => {
     const i = tabTarget(tabs.length, tabs.findIndex((t) => t.id === activeTab.id), move);
     if (i !== null) setActiveTabId(tabs[i].id);
@@ -3095,6 +3102,7 @@ export function ExasolStudio({
       <UncommittedDialog pending={tabSession.pending} />
       <ParamsDialog />
       <ShortcutSheet open={showShortcuts} onClose={() => setShowShortcuts(false)} />
+      <AboutDialog open={showAbout} onClose={() => setShowAbout(false)} />
       <TitleBar
         env={safety.env}
         connection={connection}
