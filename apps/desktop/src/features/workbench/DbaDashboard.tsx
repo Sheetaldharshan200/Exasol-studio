@@ -58,7 +58,7 @@ export function DbaDashboard({ profileId, connectionName, onOpenSql }: { profile
 
   const col1 = useCallback(
     async (sql: string): Promise<string[]> => {
-      const res = await ipc.executeSql(profileId, connectionName, sql, 5000, false);
+      const res = await ipc.executeSql(profileId, connectionName, sql, 5000, false, false);
       const first = res.results.find((r) => r.kind === "resultSet");
       return first && !first.error ? first.rows.map((r) => String(r[0] ?? "")) : [];
     },

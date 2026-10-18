@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { filterEntries, keyEntries, sortEntries, verbOf } from "./history-log.ts";
+import { connectionsOf, filterEntries, historyExport, keyEntries, searchEntries, sortEntries, verbOf } from "./history-log.ts";
 import type { HistoryEntry } from "./ipc.ts";
 
 const mk = (over: Partial<HistoryEntry>): HistoryEntry => ({
@@ -86,4 +86,26 @@ test("unparseable executedAt sorts oldest instead of throwing", () => {
   const entries = [mk({ id: "bad", executedAt: "not-a-date" }), mk({ id: "good" })];
   const sorted = sortEntries(keyEntries(entries), "time", -1);
   assert.deepEqual(sorted.map((x) => x.e.id), ["good", "bad"]);
+});
+
+test("search matches SQL or error text in one connection or all", () => {
+  const list = [
+    mk({ id: "a", connectionName: "prod", sql: "SELECT * FROM orders" }),
+    mk({ id: "b", connectionName: "dev", sql: "DELETE FROM t", error: "insufficient privileges" }),
+    mk({ id: "c", connectionName: "dev", sql: "select 1" }),
+  ];
+  assert.deepEqual(searchEntries(list, "ORDERS").map((e) => e.id), ["a"]);
+  assert.deepEqual(searchEntries(list, "privilege").map((e) => e.id), ["b"], "error text too");
+  assert.deepEqual(searchEntries(list, "select", "dev").map((e) => e.id), ["c"]);
+  assert.deepEqual(searchEntries(list, "  ").map((e) => e.id), ["a", "b", "c"]);
+  assert.deepEqual(connectionsOf([...list, mk({ connectionName: "" })]), ["dev", "prod"]);
+});
+
+test("history exports as CSV with quoting, or JSON", () => {
+  const e = mk({ sql: 'SELECT "a",\n1', error: null, rowCount: 3 });
+  const csv = historyExport([e], "csv").split("\r\n");
+  assert.equal(csv[0], "executedAt,connectionName,success,elapsedMs,rowCount,error,sql");
+  assert.match(csv.slice(1).join("\r\n"), /,3,,"SELECT ""a"",\n1"$/);
+  assert.deepEqual(Object.keys(JSON.parse(historyExport([e], "json"))[0]), ["executedAt", "connectionName", "success", "elapsedMs", "rowCount", "error", "sql"]);
+  assert.equal(historyExport([], "csv"), "executedAt,connectionName,success,elapsedMs,rowCount,error,sql");
 });

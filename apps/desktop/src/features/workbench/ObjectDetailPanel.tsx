@@ -70,7 +70,7 @@ export function ObjectDetailPanel({
   useEffect(() => {
     if (!editingUserPrivs || !isUser || allRoles !== null) return;
     ipc
-      .executeSql(profileId, connectionName, "SELECT ROLE_NAME FROM SYS.EXA_ALL_ROLES ORDER BY 1", 1000, false)
+      .executeSql(profileId, connectionName, "SELECT ROLE_NAME FROM SYS.EXA_ALL_ROLES ORDER BY 1", 1000, false, false)
       .then((r) => {
         const first = r.results.find((x) => x.kind === "resultSet");
         if (first && !first.error) setAllRoles(first.rows.map((row) => String(row[0])));

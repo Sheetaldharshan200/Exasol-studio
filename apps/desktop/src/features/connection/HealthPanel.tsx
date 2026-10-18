@@ -53,7 +53,7 @@ export function HealthPanel({ profileId, connectionName, dbHost }: { profileId: 
 
   const q = useCallback(
     async (sql: string, maxRows = 1000) => {
-      const res = await ipc.executeSql(profileId, connectionName, sql, maxRows, false).catch(() => null);
+      const res = await ipc.executeSql(profileId, connectionName, sql, maxRows, false, false).catch(() => null);
       const set = res?.results.find((r) => r.kind === "resultSet");
       return res?.success && set ? set : null;
     },

@@ -42,6 +42,7 @@ import { TerminalView } from "@/features/workbench/TerminalView";
 import { ipc , isTauri } from "@/lib/ipc";
 import type { ExecuteResponse, HistoryEntry, StatementResult } from "@/lib/ipc";
 import { GitLogTab } from "./GitLogTab";
+import { useHistoryFilter } from "./HistoryToolbar";
 import { filterEntries, keyEntries, sortEntries, verbOf, type LogSortKey } from "@/lib/history-log";
 import { fmtClock } from "@/lib/sql-text";
 import { cellText, filterRows, resultSummary, rowTotal } from "@/lib/result-stats";
@@ -392,6 +393,7 @@ export function HistoryDock({
   onRefresh: () => void;
 }) {
   const [mode, setMode] = useState<"terminal" | "history" | "gitlog">("history");
+  const history = useHistoryFilter(entries);
   // Armed state for the destructive clear-history action; disarms on its own.
   const [confirmClear, setConfirmClear] = useState(false);
   useEffect(() => {
@@ -514,6 +516,7 @@ export function HistoryDock({
           <div className="flex items-center gap-0.5">
             {mode === "history" ? (
               <>
+                {history.toolbar}
                 <IconButton label="Refresh history" onClick={onRefresh}>
                   <RefreshCcw className="h-3.5 w-3.5" />
                 </IconButton>
@@ -615,7 +618,7 @@ export function HistoryDock({
               // in a proper cell grid. Headers sort (tap toggles asc/desc),
               // the SQL cell opens the statement in a query tab, and every
               // other cell expands into a detail view with the full value.
-              <LogTable entries={entries} onOpenSql={onPick} />
+              <LogTable entries={history.shown} onOpenSql={onPick} />
             )}
           </div>
         )}
