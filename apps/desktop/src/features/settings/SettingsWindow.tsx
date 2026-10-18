@@ -2,25 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Braces,
-  Database,
-  FileClock,
-  Fingerprint,
   Grid3x3,
   History as HistoryIcon,
-  KeyRound,
   ListTree,
   Maximize2,
   Minimize2,
   Palette,
   Play,
-  Quote,
   Radio,
   Search,
   Settings2,
   UserRound,
   Wrench,
-  Timer,
-  Type as TypeIcon,
   Workflow,
   X,
   type LucideIcon,
@@ -38,8 +31,8 @@ import { ThemePresetPicker } from "@/components/studio/ThemeCustomizer";
 import { SYNTAX_DEFAULTS, SYNTAX_ROLES, sanitizeHex, syntaxSettingKey, type SyntaxRoleKey } from "@/components/studio/monaco-theme";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { NumberInput } from "@/components/ui/number-input";
+import { APP_SETTING_DEFAULTS, MAX_ROWS_LIMIT, type SettingValue } from "@/lib/app-settings";
 
-type SettingValue = string | number | boolean;
 
 type Ctrl =
   | { key: string; label: string; type: "toggle"; help?: string }
@@ -80,7 +73,7 @@ const CATEGORIES: Category[] = [
     key: "appearance",
     icon: Palette,
     label: "Appearance",
-    desc: "Theme and interface density.",
+    desc: "Light, dark, or the system theme.",
     controls: [
       {
         key: "theme",
@@ -93,16 +86,6 @@ const CATEGORIES: Category[] = [
           { value: "dark", label: "Dark" },
         ],
       },
-      { key: "uiFontSize", label: "Interface font size", type: "number", min: 11, max: 18, unit: "px" },
-      {
-        key: "uiDensity",
-        label: "Density",
-        type: "select",
-        options: [
-          { value: "comfortable", label: "Comfortable" },
-          { value: "compact", label: "Compact" },
-        ],
-      },
     ],
   },
   {
@@ -112,30 +95,10 @@ const CATEGORIES: Category[] = [
     label: "Database Objects Tree",
     desc: "How schemas and objects are shown in the navigator.",
     controls: [
-      { key: "showSystemSchemas", label: "Show system schemas (SYS, EXA_*)", type: "toggle" },
-      { key: "autoExpandFirstSchema", label: "Auto-expand the first schema on connect", type: "toggle" },
+      { key: "showSystemSchemas", label: "Show system schemas (SYS, EXA_STATISTICS)", type: "toggle" },
     ],
   },
-  {
-    tab: "general",
-    key: "metadata",
-    icon: FileClock,
-    label: "Metadata",
-    desc: "Caching schema/table metadata avoids repeated round-trips. No data is cached — only names and types.",
-    controls: [
-      {
-        key: "metadataCache",
-        label: "Metadata cache",
-        type: "radio",
-        options: [
-          { value: "persistent", label: "Persistent — restored next session" },
-          { value: "transient", label: "Transient — cleared on exit" },
-          { value: "disabled", label: "Disabled" },
-        ],
-      },
-      { key: "metadataStaleDays", label: "Stale content threshold", type: "number", min: 0, max: 365, unit: "days" },
-    ],
-  },
+
   {
     tab: "general",
     key: "sqlEditor",
@@ -168,7 +131,7 @@ const CATEGORIES: Category[] = [
         type: "toggle",
         help: "Shows 1], 2], … next to each statement of a multi-statement buffer, matching the result tabs.",
       },
-      { key: "autoComplete", label: "Auto-completion", type: "toggle" },
+      { key: "autoComplete", label: "Auto-completion", type: "toggle", help: "Suggests tables, columns and keywords as you type. Off: suggestions only on Ctrl+Space." },
       {
         key: "sqlLinting",
         label: "Problem underlines",
@@ -181,7 +144,6 @@ const CATEGORIES: Category[] = [
         type: "toggle",
         help: "Suggests the rest of what you are typing as dim text, grounded in the connected schema. Press Tab to accept. Needs an AI model configured in the AI panel.",
       },
-      { key: "statementDelimiter", label: "Statement delimiter", type: "text", placeholder: ";" },
     ],
   },
   {
@@ -191,8 +153,8 @@ const CATEGORIES: Category[] = [
     label: "Result Grid",
     desc: "How query results are displayed.",
     controls: [
-      { key: "maxRows", label: "Max rows to fetch", type: "number", min: 10, max: 1000000, unit: "rows" },
-      { key: "nullText", label: "Display NULL as", type: "text", placeholder: "null" },
+      { key: "maxRows", label: "Max rows to fetch", type: "number", min: 1, max: MAX_ROWS_LIMIT, unit: "rows", help: "The default for new runs; the toolbar can change it per run." },
+      { key: "nullText", label: "Display NULL as", type: "text", placeholder: "null", help: "Shown in the result grid and the cell viewer. Exports always write an empty value." },
       { key: "gridFontSize", label: "Grid font size", type: "number", min: 10, max: 18, unit: "px" },
       { key: "zebraStripes", label: "Zebra striping", type: "toggle" },
     ],
@@ -204,9 +166,8 @@ const CATEGORIES: Category[] = [
     label: "Execution",
     desc: "Defaults applied when you run SQL.",
     controls: [
-      { key: "splitStatements", label: "Split buffer into separate statements", type: "toggle" },
-      { key: "stopOnError", label: "Stop on first error", type: "toggle" },
-      { key: "autoCommit", label: "Auto-commit", type: "toggle" },
+      { key: "splitStatements", label: "Split the script into statements", type: "toggle", help: "Off: Run Script sends the whole buffer as one statement (Run Buffer always does)." },
+      { key: "stopOnError", label: "Stop on first error", type: "toggle", help: "Off: a failing statement is reported and the script goes on." },
       { key: "stripComments", label: "Strip comments before executing", type: "toggle" },
     ],
   },
@@ -218,150 +179,26 @@ const CATEGORIES: Category[] = [
     desc: "Executed statements are kept for quick recall.",
     controls: [
       { key: "keepHistory", label: "Keep SQL history", type: "toggle" },
-      { key: "historyLimit", label: "History limit", type: "number", min: 10, max: 100000, unit: "entries" },
+      { key: "historyLimit", label: "History limit", type: "number", min: 10, max: 100000, unit: "entries", help: "The oldest entries are dropped past this many." },
     ],
   },
   // ── Database (Exasol) ──────────────────────────────────────────────────
-  {
-    tab: "database",
-    key: "authentication",
-    icon: KeyRound,
-    label: "Authentication",
-    desc: "Default session context for new connections.",
-    controls: [{ key: "defaultSchema", label: "Default schema", type: "text", placeholder: "(none)" }],
-  },
-  {
-    tab: "database",
-    key: "delimitedIdentifiers",
-    icon: Quote,
-    label: "Delimited Identifiers",
-    desc: "How object names are quoted in generated SQL.",
-    controls: [
-      {
-        key: "quoteIdentifiers",
-        label: "Quote identifiers",
-        type: "select",
-        options: [
-          { value: "asNeeded", label: "As needed" },
-          { value: "always", label: "Always" },
-          { value: "never", label: "Never" },
-        ],
-      },
-    ],
-  },
+  // Per-connection behaviour (TLS, compression, schema, transactions, query
+  // timeout) lives in each connection's Properties tab.
   {
     tab: "database",
     key: "physicalConnection",
     icon: Workflow,
     label: "Physical Connection",
-    desc: "Transport, timeouts and encryption for the Exasol WebSocket connection.",
+    desc: "Applies to every connection. Encryption, compression, schema and transactions are set per connection in its Properties tab.",
     controls: [
-      { key: "connectTimeoutMs", label: "Connect timeout", type: "number", min: 1000, max: 120000, unit: "ms" },
-      { key: "queryTimeoutMs", label: "Query timeout (0 = none)", type: "number", min: 0, max: 3600000, unit: "ms" },
-      { key: "compression", label: "Enable compression", type: "toggle" },
-      {
-        key: "tls",
-        label: "TLS / encryption",
-        type: "select",
-        options: [
-          { value: "preferred", label: "Preferred" },
-          { value: "required", label: "Required" },
-          { value: "disabled", label: "Disabled" },
-        ],
-      },
+      { key: "connectTimeoutMs", label: "Connect timeout", type: "number", min: 1000, max: 120000, unit: "ms", help: "How long reaching the server and logging in may take before Connect gives up." },
     ],
-  },
-  {
-    tab: "database",
-    key: "transaction",
-    icon: Fingerprint,
-    label: "Transaction",
-    desc: "Transaction handling for the connection.",
-    controls: [
-      { key: "dbAutoCommit", label: "Auto-commit", type: "toggle" },
-      {
-        key: "isolation",
-        label: "Isolation level",
-        type: "select",
-        options: [{ value: "serializable", label: "Serializable (Exasol default)" }],
-      },
-    ],
-  },
-  {
-    tab: "database",
-    key: "encoding",
-    icon: TypeIcon,
-    label: "Encoding",
-    desc: "Character set for results.",
-    controls: [
-      {
-        key: "charset",
-        label: "Character set",
-        type: "select",
-        options: [
-          { value: "UTF8", label: "UTF-8" },
-          { value: "Latin1", label: "Latin-1 (ISO-8859-1)" },
-        ],
-      },
-    ],
-  },
-  {
-    tab: "database",
-    key: "sqlStatements",
-    icon: Database,
-    label: "SQL Statements",
-    desc: "Fetching behavior for statements.",
-    controls: [{ key: "fetchSize", label: "Fetch size", type: "number", min: 100, max: 1000000, unit: "rows" }],
-  },
-  {
-    tab: "database",
-    key: "queryBuilder",
-    icon: Timer,
-    label: "Query Builder",
-    desc: "Defaults for the visual query builder.",
-    controls: [{ key: "qbDefaultLimit", label: "Default LIMIT", type: "number", min: 0, max: 100000, unit: "rows" }],
   },
 ];
 
 const DEFAULTS: Record<string, SettingValue> = {
-  theme: "system",
-  uiFontSize: 13,
-  uiDensity: "comfortable",
-  showSystemSchemas: false,
-  autoExpandFirstSchema: true,
-  metadataCache: "persistent",
-  metadataStaleDays: 60,
-  editorFontSize: 13,
-  editorFontFamily: "JetBrains Mono",
-  wordWrap: false,
-  stmtNumbers: true,
-  autoComplete: true,
-  sqlLinting: true,
-  aiGhostText: true,
-  statementDelimiter: ";",
-  maxRows: 5000,
-  nullText: "null",
-  gridFontSize: 12,
-  zebraStripes: true,
-  splitStatements: true,
-  stopOnError: true,
-  autoCommit: true,
-  stripComments: false,
-  keepHistory: true,
-  historyLimit: 1000,
-  aiModel: "claude-opus-4-8",
-  aiApiKey: "",
-  defaultSchema: "",
-  quoteIdentifiers: "asNeeded",
-  connectTimeoutMs: 15000,
-  queryTimeoutMs: 0,
-  compression: true,
-  tls: "preferred",
-  dbAutoCommit: true,
-  isolation: "serializable",
-  charset: "UTF8",
-  fetchSize: 5000,
-  qbDefaultLimit: 100,
+  ...APP_SETTING_DEFAULTS,
   // Per-token editor colors ("synDark_keyword": "#82dd4b", …) so "Restore
   // defaults" also resets any recolored syntax.
   ...Object.fromEntries(

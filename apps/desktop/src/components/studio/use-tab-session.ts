@@ -31,7 +31,7 @@ export function useTabSession(opts: {
     async (tabId = ctx.current.activeTabId) => {
       if (!tabId) return;
       try {
-        store(tabId, await ipc.sessionInfo(tabId));
+        store(tabId, await ipc.sessionInfo(tabId, ctx.current.connection?.profile.id));
       } catch {
         /* no session yet, or disconnected */
       }

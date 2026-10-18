@@ -459,6 +459,46 @@ async fn run_statement(
     }
 }
 
+/// When a script stops early (the run's execution options).
+#[derive(Clone, Copy, Debug)]
+pub struct StopPolicy {
+    pub on_error: bool,
+    /// After a query that returns no rows, or a DML statement that touches none.
+    pub on_no_rows: bool,
+}
+
+impl Default for StopPolicy {
+    fn default() -> Self {
+        Self { on_error: true, on_no_rows: false }
+    }
+}
+
+impl StopPolicy {
+    pub fn halts_after(&self, r: &StatementResult) -> bool {
+        if r.error.is_some() {
+            // A lost connection ends the script whatever the setting says.
+            return self.on_error || r.error.as_deref().is_some_and(crate::session::is_connection_lost);
+        }
+        r.row_count == 0 && (r.kind == "resultSet" || r.kind == "rowCount") && self.empty_halts(&r.statement)
+    }
+
+    /// Whether an empty result of this statement ends the script — a query,
+    /// or a DML statement (DDL touches no rows by nature).
+    pub fn empty_halts(&self, statement: &str) -> bool {
+        self.on_no_rows && (is_result_set_statement(statement) || is_dml(statement))
+    }
+
+    /// The same rule, per statement, for a bridge driver's own loop.
+    pub fn stop_if_empty(&self, statements: &[String]) -> Vec<bool> {
+        statements.iter().map(|s| self.empty_halts(s)).collect()
+    }
+}
+
+fn is_dml(statement: &str) -> bool {
+    let head = strip_leading_comments(statement).trim_start().to_ascii_uppercase();
+    matches!(head.split_whitespace().next(), Some("INSERT" | "UPDATE" | "DELETE" | "MERGE"))
+}
+
 #[tauri::command]
 pub async fn execute_sql(
     app: tauri::AppHandle,
@@ -471,7 +511,10 @@ pub async fn execute_sql(
     add_history: Option<bool>,
     progress_id: Option<String>,
     tab_id: Option<String>,
+    stop_on_error: Option<bool>,
+    stop_on_no_rows: Option<bool>,
 ) -> AppResult<ExecuteResponse> {
+    let stop = StopPolicy { on_error: stop_on_error.unwrap_or(true), on_no_rows: stop_on_no_rows.unwrap_or(false) };
     let max_rows = max_rows.unwrap_or(1000).clamp(1, 100_000);
     // `split` false runs the whole buffer as a single statement.
     let statements = if split.unwrap_or(true) {
@@ -493,13 +536,13 @@ pub async fn execute_sql(
     let (results, success, profile_session, profile_base_stmt) = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
         // exarrow is compiled in, so it runs on this runtime — no child
         // process, no spawn_blocking, and no sqlx pool standing in for it.
-        let resp = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows).await?;
+        let resp = crate::exarrow_exec::execute_exarrow(&profile, &statements, max_rows, stop).await?;
         (resp.results, resp.success, None, None)
     } else if crate::driver_exec::is_bridge_driver(&profile.driver_id) {
         let stmts = statements.clone();
         let app_for_driver = app.clone();
         let resp = tokio::task::spawn_blocking(move || {
-            crate::driver_exec::execute_via_driver(&app_for_driver, &profile, &stmts, max_rows)
+            crate::driver_exec::execute_via_driver(&app_for_driver, &profile, &stmts, max_rows, stop)
         })
         .await
         .map_err(|e| crate::error::AppError::Storage(e.to_string()))??;
@@ -625,11 +668,13 @@ pub async fn execute_sql(
                     result.error = Some(format!("Could not restart manual commit ({e}); the remaining statements were not run."));
                 }
             }
-            let failed = result.error.is_some();
-            results.push(result);
-            if failed {
+            if result.error.is_some() {
                 success = false;
-                break; // stop the script at the first failing statement
+            }
+            let halt = stop.halts_after(&result);
+            results.push(result);
+            if halt {
+                break;
             }
         }
         done.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -662,6 +707,7 @@ pub async fn execute_sql(
             } else {
                 let ran: Vec<(String, bool)> = results.iter().map(|r| (r.statement.clone(), r.error.is_none())).collect();
                 crate::session::after_run(g, &ran);
+                crate::session::note_schema(&state, g);
             }
         }
         if let Some(pid) = progress_id.as_ref().filter(|p| !p.is_empty()) {
@@ -815,6 +861,54 @@ mod live_decode {
 
 #[cfg(test)]
 mod tests {
+    fn result(statement: &str, kind: &str, rows: u64, error: Option<&str>) -> super::StatementResult {
+        super::StatementResult {
+            statement: statement.into(),
+            kind: kind.into(),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            row_count: rows,
+            truncated: false,
+            elapsed_ms: 0,
+            exec_ms: 0,
+            fetch_ms: 0,
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn a_script_stops_where_the_execution_options_say() {
+        use super::StopPolicy;
+        let default = StopPolicy { on_error: true, on_no_rows: false };
+        let keep_going = StopPolicy { on_error: false, on_no_rows: false };
+        let no_rows = StopPolicy { on_error: true, on_no_rows: true };
+        let err = result("SELECT * FROM NOPE", "resultSet", 0, Some("[42000] object NOPE not found"));
+        assert!(default.halts_after(&err));
+        assert!(!keep_going.halts_after(&err), "stop on error off: go on");
+        let lost = result("SELECT 1", "resultSet", 0, Some("WebSocket protocol error: Connection closed normally"));
+        assert!(keep_going.halts_after(&lost), "a lost connection always ends the script");
+        let empty = result("SELECT * FROM T WHERE 1=0", "resultSet", 0, None);
+        assert!(!default.halts_after(&empty));
+        assert!(no_rows.halts_after(&empty));
+        assert!(no_rows.halts_after(&result("-- fix\nUPDATE T SET A = 1 WHERE 1=0", "rowCount", 0, None)));
+        assert!(!no_rows.halts_after(&result("CREATE TABLE X (A INT)", "rowCount", 0, None)), "DDL touches no rows by nature");
+        assert!(!no_rows.halts_after(&result("SELECT 1", "resultSet", 1, None)));
+        assert!(!no_rows.halts_after(&result("DELETE FROM T", "rowCount", 3, None)));
+        assert!(!no_rows.halts_after(&result("INSERT INTO T SELECT 1", "executed", 0, None)), "no count is not zero rows");
+    }
+
+    #[test]
+    fn bridges_get_the_empty_result_rule_per_statement() {
+        use super::StopPolicy;
+        let stmts: Vec<String> = ["SELECT 1", "CREATE TABLE X (A INT)", "UPDATE T SET A = 1", "WITH q AS (SELECT 1) SELECT * FROM q"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(StopPolicy { on_error: true, on_no_rows: true }.stop_if_empty(&stmts), vec![true, false, true, true]);
+        assert_eq!(StopPolicy::default().stop_if_empty(&stmts), vec![false; 4]);
+        assert!(StopPolicy::default().on_error);
+    }
+
     use super::{is_result_set_statement, parse_activity_percent, split_statements};
     use super::{exact_text_type, history_row_total, integer_json};
 

@@ -85,6 +85,8 @@ pub fn run() {
             // override if valid + newer, else baked) BEFORE anything reads it.
             crate::component_lock::init_effective(&data_dir);
             app.manage(AppState::new(data_dir));
+            // Load app settings once, so the backend readers see them from the start.
+            let _ = crate::settings::get_app_settings(app.handle().clone());
             app.manage(crate::agent::AgentSidecar::default());
             app.manage(crate::local_llm::LlmEngine::default());
             app.manage(crate::dash_server::DashServer::default());

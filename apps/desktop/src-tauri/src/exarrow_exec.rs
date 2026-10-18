@@ -238,6 +238,7 @@ pub async fn execute_exarrow(
     profile: &ConnectionProfile,
     statements: &[String],
     max_rows: usize,
+    stop: crate::query::StopPolicy,
 ) -> AppResult<ExecuteResponse> {
     install_crypto_provider();
     let batch_started = Instant::now();
@@ -256,7 +257,10 @@ pub async fn execute_exarrow(
             Err(e) => {
                 results.push(failed(statement, started.elapsed(), e.to_string()));
                 success = false;
-                break;
+                if stop.halts_after(results.last().expect("just pushed")) {
+                    break;
+                }
+                continue;
             }
         };
         let exec = started.elapsed();
@@ -274,6 +278,9 @@ pub async fn execute_exarrow(
                 fetch_ms: 0,
                 error: None,
             });
+            if stop.halts_after(results.last().expect("just pushed")) {
+                break;
+            }
             continue;
         }
 
@@ -283,7 +290,10 @@ pub async fn execute_exarrow(
             Err(e) => {
                 results.push(failed(statement, started.elapsed(), e.to_string()));
                 success = false;
-                break;
+                if stop.halts_after(results.last().expect("just pushed")) {
+                    break;
+                }
+                continue;
             }
         };
         let (rows, truncated) = batches_to_rows(&batches, max_rows);
@@ -300,6 +310,9 @@ pub async fn execute_exarrow(
             fetch_ms: started.elapsed().saturating_sub(exec).as_millis() as u64,
             error: None,
         });
+        if stop.halts_after(results.last().expect("just pushed")) {
+            break;
+        }
     }
 
     // Best-effort: the batch's results are already in hand, so a close failure
@@ -496,6 +509,7 @@ mod tests {
                     .to_string(),
             ],
             10,
+            crate::query::StopPolicy::default(),
         )
         .await
         .expect("exarrow connects and runs");
@@ -522,6 +536,7 @@ mod tests {
             &profile,
             &["SELECT * FROM A_TABLE_THAT_DOES_NOT_EXIST_XYZ".to_string()],
             10,
+            crate::query::StopPolicy::default(),
         )
         .await
         .expect("the batch itself runs");

@@ -58,12 +58,16 @@ pub fn write_json<T: Serialize>(path: &Path, value: &T) -> AppResult<()> {
 
 /// Write a file only its owner can read (0600 on Unix). Studio's JSON files
 /// hold connection details and, sealed or not, are nobody else's business.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         use std::io::Write;
         use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::fs::PermissionsExt;
         let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
+        // `mode` only applies to a new file: an existing one (say 0644 from
+        // before) is tightened too.
+        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         f.write_all(bytes)
     }
     #[cfg(not(unix))]
@@ -83,6 +87,11 @@ mod private_tests {
         super::write_json(&path, &serde_json::json!({"a": 1})).unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "got {mode:o}");
+        // A file left world-readable by an older version is tightened.
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        super::write_private(&path, b"{}").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "an existing 0644 file stays {mode:o}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
