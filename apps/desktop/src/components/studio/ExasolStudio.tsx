@@ -94,6 +94,7 @@ import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/com
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel, type ResultActions } from "./ResultsPanel";
 import { countSql } from "@/lib/result-pages";
+import { isSqlFile, loadRecentFiles, pushRecent, saveRecentFiles } from "@/lib/recent-files";
 import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, fileName, newTab, tabHasWork, tabTarget, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
@@ -1466,7 +1467,52 @@ export function ExasolStudio({
   }
 
   // Open a local file's contents as a new query tab in the current workspace.
+  // Recently opened or saved files (the Welcome page lists them).
+  const [recentFiles, setRecentFiles] = useState<string[]>(() => loadRecentFiles());
+  const rememberFile = useCallback((path: string) => {
+    setRecentFiles((list) => {
+      const next = pushRecent(list, path);
+      saveRecentFiles(next);
+      return next;
+    });
+  }, []);
+  /** Open a file by path in a SQL tab (recent list, or dropped on the window). */
+  const openFilePath = async (path: string) => {
+    try {
+      openFile(fileName(path), await ipc.fsReadText(path), path);
+    } catch (e) {
+      setRecentFiles((list) => {
+        const next = list.filter((p) => p !== path);
+        saveRecentFiles(next);
+        return next;
+      });
+      pushNotification("warning", `Could not open ${fileName(path)}`, errorMessage(e));
+    }
+  };
+  const openFilePathRef = useRef(openFilePath);
+  openFilePathRef.current = openFilePath;
+  // .sql / .txt files dropped on the window open in tabs.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let off: (() => void) | undefined;
+    let gone = false;
+    void import("@tauri-apps/api/webview")
+      .then(({ getCurrentWebview }) =>
+        getCurrentWebview().onDragDropEvent((e) => {
+          if (e.payload.type !== "drop") return;
+          for (const p of e.payload.paths.filter(isSqlFile)) void openFilePathRef.current(p);
+        }),
+      )
+      .then((unlisten) => (gone ? unlisten() : (off = unlisten)))
+      .catch(() => undefined);
+    return () => {
+      gone = true;
+      off?.();
+    };
+  }, []);
+
   function openFile(name: string, content: string, path?: string) {
+    if (path) rememberFile(path);
     tabCounter.current += 1;
     const tab: SqlTab = {
       id: `tab-file-${Date.now()}-${tabCounter.current}`,
@@ -2490,6 +2536,7 @@ export function ExasolStudio({
       const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
       if (!saved) return;
       patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+      rememberFile(saved);
       setFilesRefresh((n) => n + 1);
     } catch (e) {
       pushNotification("warning", "Could not save", errorMessage(e));
@@ -2535,7 +2582,10 @@ export function ExasolStudio({
         try {
           const name = fileName(activeTab.filePath);
           const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
-          if (saved) patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+          if (saved) {
+            patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+            rememberFile(saved);
+          }
         } catch (e2) {
           pushNotification("warning", "Could not save", errorMessage(e2 ?? e));
         }
@@ -3681,6 +3731,8 @@ export function ExasolStudio({
                 onMarketplace={openMarketplace}
                 onGuides={(path) => openDocsTab(path)}
                 onOpenRecent={(id) => void connectSaved(id)}
+                recentFiles={recentFiles}
+                onOpenRecentFile={(p) => void openFilePath(p)}
               />
             </div>
           ) : activeTab.view === "marketplace" ? (

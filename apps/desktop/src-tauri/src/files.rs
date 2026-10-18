@@ -98,6 +98,11 @@ fn approved_paths() -> &'static std::sync::Mutex<std::collections::HashSet<std::
 }
 
 /// Record a path the user chose (opened it, or picked it in a dialog).
+/// Files a drop on the window opens in a tab.
+pub(crate) fn droppable(path: &std::path::Path) -> bool {
+    path.is_file() && path.extension().is_some_and(|e| matches!(e.to_string_lossy().to_ascii_lowercase().as_str(), "sql" | "txt"))
+}
+
 pub(crate) fn approve_path(path: &std::path::Path) {
     if let Ok(mut set) = approved_paths().lock() {
         set.insert(path.to_path_buf());

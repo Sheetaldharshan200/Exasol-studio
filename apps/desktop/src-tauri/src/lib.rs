@@ -318,6 +318,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running Exasol Studio")
         .run(|app, event| {
+            // A .sql / .txt file dropped on the window opens in a tab (the page
+            // listens for the drop); it may then be saved back, like one picked
+            // in the open dialog.
+            if let tauri::RunEvent::WindowEvent { event: tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }), .. } = &event {
+                for p in paths.iter().filter(|p| files::droppable(p)) {
+                    files::approve_path(p);
+                }
+            }
             // Closing the main window with uncommitted changes in a tab's
             // session asks first (Commit / Roll back / Cancel in the page).
             if let tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } = &event {
