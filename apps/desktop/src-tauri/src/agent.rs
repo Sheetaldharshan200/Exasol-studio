@@ -240,12 +240,25 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
         return Err(AppError::Assistant("The assistant cannot use this connection's CA file. Pin the server's certificate instead.".into()));
     }
     let (_, verify) = crate::tls_trust::driver_tls(&profile.ssl_mode);
+    // Through an SSH tunnel or proxy: the agent uses the open connection's
+    // loopback port (TLS to the database stays end to end, pin included).
+    let (host, port) = match profile.network {
+        Some(_) => {
+            let state = app.state::<AppState>();
+            let port = state.carriers.lock().ok().and_then(|c| c.get(&profile.id).and_then(|c| c.route_port()));
+            match port {
+                Some(p) => ("127.0.0.1".to_string(), p),
+                None => return Err(AppError::Assistant("Connect first: this connection runs through an SSH tunnel or proxy.".into())),
+            }
+        }
+        None => (profile.host.clone(), profile.port),
+    };
     let info = ensure_agent(&app)?;
     let body = serde_json::json!({
         "id": profile.id,
         "name": profile.name,
-        "host": profile.host,
-        "port": profile.port,
+        "host": host,
+        "port": port,
         "user": profile.username,
         "password": profile.password,
         "encryption": true,
@@ -278,9 +291,10 @@ pub async fn agent_grant_connection(app: AppHandle, profile_id: String) -> AppRe
             let _ = crate::process::command(&exapump)
                 .args(["profile", "remove", "studio"])
                 .output();
-            let port = profile.port.to_string();
+            // The same route as the agent: through the tunnel when routed.
+            let port = port.to_string();
             let mut args: Vec<&str> = vec![
-                "profile", "add", "studio", "--host", &profile.host, "--port", &port, "--user", &profile.username,
+                "profile", "add", "studio", "--host", &host, "--port", &port, "--user", &profile.username,
                 "--password", &profile.password, "--tls", "true",
             ];
             // The same trust as the connection: its pin, else its verify mode.

@@ -70,3 +70,11 @@ export function importNotice(r: { added: string[]; skipped: string[]; failed: st
     body: parts.join(" ") || "The file has no connections.",
   };
 }
+
+/** An SSH host key to decide about (host-key checking "Ask"). */
+export function hostKeyOffer(err: unknown): { host: string; fingerprint: string } | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as { kind?: unknown; host?: unknown; fingerprint?: unknown };
+  if (e.kind !== "unknown-host-key" || typeof e.host !== "string" || typeof e.fingerprint !== "string" || !e.fingerprint.includes("SHA256:")) return null;
+  return { host: e.host, fingerprint: e.fingerprint };
+}

@@ -197,6 +197,7 @@ mod live {
             fingerprint: None,
             ssl_ca: None,
             auth_method: "password".into(),
+            network: None,
         };
         let pool = crate::connection::open_pool(&profile).await.unwrap();
         let q = |s: &str| s.to_string();

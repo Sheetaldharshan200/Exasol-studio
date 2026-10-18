@@ -503,6 +503,7 @@ fn load_or_create_mcp_identity(
                         fingerprint: None,
                         ssl_ca: None,
                         auth_method: "password".into(),
+                        network: None,
                     },
                 )?;
                 let identity = McpIdentity {
@@ -584,6 +585,7 @@ fn load_or_create_mcp_identity(
             fingerprint: None,
             ssl_ca: None,
             auth_method: "password".into(),
+            network: None,
         },
     )?;
     let identity = McpIdentity {

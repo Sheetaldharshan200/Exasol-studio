@@ -19,12 +19,13 @@ import {
   Unplug,
 } from "lucide-react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { errorMessage, ipc, isTauri, type ConnectionProfile, type DriverInfo, type ServerInfo } from "@/lib/ipc";
+import { errorMessage, ipc, isTauri, type ConnectionProfile, type DriverInfo, type NetworkSettings, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
 import { cn } from "@/lib/utils";
 import { connectionUrl } from "@/lib/connection-url";
 import { AUTH_METHODS } from "@/lib/connect-flow";
 import { AddressNote, ConnectionTrustFields, SignInMethodRow, type TrustDraft } from "@/features/connection/ConnectionTrustFields";
+import { ConnectionNetworkFields } from "@/features/connection/ConnectionNetworkFields";
 import { checkHost, checkPort, parseDsn } from "@/lib/dsn";
 import { DEFAULT_CONN_SETTINGS, ENVIRONMENTS, withConnDefaults, type ConnSettings, type Environment } from "@/lib/conn-settings";
 export { DEFAULT_CONN_SETTINGS, type ConnSettings };
@@ -202,7 +203,7 @@ export function ConnectionPropertiesTab({
   profileId: string | null;
   /** New-connection mode: pre-fill these fields over the defaults (e.g. the
    *  bundled Exasol Personal profile when a direct connect couldn't proceed). */
-  initialDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string }>;
+  initialDraft?: Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string; network?: NetworkSettings | null }>;
   initialSection?: ConnectionSection;
   /** Bumped when the host tab is re-targeted at a section while open. */
   sectionNonce?: number;
@@ -223,7 +224,7 @@ export function ConnectionPropertiesTab({
   const [settings, setSettings] = useState<ConnSettings | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<string>("");
   const isNew = profileId === null;
-  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "verify_identity", compression: false, driverId: "sqlx-exasol", fingerprint: "", sslCa: "", authMethod: "password" });
+  const [profileDraft, setProfileDraft] = useState<{ name: string; notes: string; host: string; port: string; schema: string; username: string; password: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string; network?: NetworkSettings | null }>({ name: "", notes: "", host: "", port: "", schema: "", username: "", password: "", sslMode: "verify_identity", compression: false, driverId: "sqlx-exasol", fingerprint: "", sslCa: "", authMethod: "password" });
   const [drivers, setDrivers] = useState<DriverInfo[]>([]);
   const [driverReady, setDriverReady] = useState<Record<string, DriverReadiness>>({});
   const [testState, setTestState] = useState<{ busy: boolean; ok?: boolean; message?: string }>({ busy: false });
@@ -318,7 +319,7 @@ export function ConnectionPropertiesTab({
         // caller arg (e.g. a click event) must not pollute the draft, which
         // would blow up the JSON.stringify snapshots below and black-screen the
         // form. Password is never pre-filled.
-        const d = (initialDraft ?? {}) as Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string }>;
+        const d = (initialDraft ?? {}) as Partial<{ name: string; notes: string; host: string; port: string; schema: string; username: string; sslMode: string; compression: boolean; driverId: string; fingerprint?: string; sslCa?: string; authMethod?: string; network?: NetworkSettings | null }>;
         const draft = {
           name: typeof d.name === "string" ? d.name : "New Connection",
           notes: typeof d.notes === "string" ? d.notes : "",
@@ -355,6 +356,7 @@ export function ConnectionPropertiesTab({
         schema: p?.schema ?? "", username: p?.username ?? "", password: "",
         sslMode: p?.sslMode ?? "preferred", compression: p?.compression ?? false, driverId: p?.driverId ?? "sqlx-exasol",
         fingerprint: p?.fingerprint ?? "", sslCa: p?.sslCa ?? "", authMethod: p?.authMethod ?? "password",
+        network: p?.network ?? null,
       };
       setProfileDraft(draft);
       setProfileSnapshot(JSON.stringify(draft));
@@ -393,6 +395,7 @@ export function ConnectionPropertiesTab({
       fingerprint: profileDraft.fingerprint?.trim() || null,
       sslCa: profileDraft.sslCa?.trim() || null,
       authMethod: profileDraft.authMethod || "password",
+      network: profileDraft.network ?? null,
     };
   }
 
@@ -455,6 +458,7 @@ export function ConnectionPropertiesTab({
           fingerprint: profileDraft.fingerprint?.trim() || null,
           sslCa: profileDraft.sslCa?.trim() || null,
           authMethod: profileDraft.authMethod || "password",
+          network: profileDraft.network ?? null,
           // Blank keeps the stored password, unless the server, user or
           // sign-in changed (server-side rule). "This session only" moves the
           // typed one to memory right after (setSessionPassword clears it).
@@ -1003,6 +1007,9 @@ export function ConnectionPropertiesTab({
               </div>
               <ConnectionTrustFields draft={trustDraft} onChange={patchTrust} />
               <CheckRow label="Compression" checked={profileDraft.compression} onChange={(v) => setProfileDraft((x) => ({ ...x, compression: v }))} />
+            </SectionCard>
+            <SectionCard title="Network">
+              <ConnectionNetworkFields network={profileDraft.network} isNew={isNew} onChange={(n) => setProfileDraft((x) => ({ ...x, network: n }))} />
             </SectionCard>
           </div>
         </div>

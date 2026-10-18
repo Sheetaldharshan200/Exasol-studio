@@ -19,6 +19,9 @@ pub enum AppError {
     /// The server presents a different certificate than the pinned one.
     #[error("The server's certificate changed. Expected {}, got {}. If the server's certificate was renewed, check the new fingerprint with its administrator before trusting it.", crate::tls_trust::display_fingerprint(.expected), crate::tls_trust::display_fingerprint(.actual))]
     CertificateChanged { expected: String, actual: String },
+    /// The SSH server's host key is not known (host-key checking "ask").
+    #[error("The SSH host key of {host} is not known yet. Fingerprint: {fingerprint}")]
+    UnknownHostKey { host: String, fingerprint: String },
 }
 
 /// Turn a low-level driver / OS error into a message an end user can act on.
@@ -154,6 +157,7 @@ impl Serialize for AppError {
             AppError::Assistant(_) => "assistant",
             AppError::UntrustedCertificate { .. } => "untrusted-certificate",
             AppError::CertificateChanged { .. } => "certificate-changed",
+            AppError::UnknownHostKey { .. } => "unknown-host-key",
         };
         let mut state = serializer.serialize_struct("AppError", 4)?;
         state.serialize_field("kind", kind)?;
@@ -163,6 +167,10 @@ impl Serialize for AppError {
             AppError::CertificateChanged { expected, actual } => {
                 state.serialize_field("expected", expected)?;
                 state.serialize_field("fingerprint", actual)?;
+            }
+            AppError::UnknownHostKey { host, fingerprint } => {
+                state.serialize_field("host", host)?;
+                state.serialize_field("fingerprint", fingerprint)?;
             }
             _ => {}
         }

@@ -18,7 +18,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "net", "io-util"] }
 libc = "0.2"
 # The TransactionManager trait: a tab in manual-commit mode drives the Exasol
 # transaction manager directly on its own connection (see session.rs).
