@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { AlertTriangle, Check, Loader2, Star, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NodeCtx } from "@/features/workbench/tree-model";
-import { qualify as q } from "@/lib/sql-ident";
+import { qualify as q, quoteIdent } from "@/lib/sql-ident";
 
 /**
  * A destructive/DDL action rendered as a **confirmation** (never a form or a
@@ -32,13 +32,13 @@ function label(schema: string | undefined, name: string): string {
 }
 
 /** Build the right-click menu for an object, based on its type. */
-function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
+function itemsFor(ctx: NodeCtx, defaultSchema?: string, openRows = 1000): Item[] {
   const schema = ctx.schema ?? defaultSchema;
   switch (ctx.type) {
     case "table": {
       const t = q(schema, ctx.name);
       return [
-        { label: "Open data", kind: "run", sql: `SELECT * FROM ${t} LIMIT 1000;` },
+        { label: "Open data", kind: "run", sql: `SELECT * FROM ${t} LIMIT ${openRows};` },
         { label: "Generate SELECT", kind: "gen", sql: `SELECT * FROM ${t};` },
         { label: "Generate INSERT", kind: "gen", sql: `INSERT INTO ${t} (/* columns */) VALUES (/* values */);` },
         { label: "Generate UPDATE", kind: "gen", sql: `UPDATE ${t} SET /* col = value */ WHERE /* condition */;` },
@@ -54,13 +54,14 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Drop — generate SQL", kind: "gen", sql: `DROP TABLE ${t};` },
         { sep: true },
         { label: "Copy name", kind: "copy", text: ctx.name },
+        { label: "Copy qualified name", kind: "copy", text: q(schema, ctx.name) },
         { label: "Copy path", kind: "copy", text: label(schema, ctx.name) },
       ];
     }
     case "view": {
       const v = q(schema, ctx.name);
       return [
-        { label: "Open data", kind: "run", sql: `SELECT * FROM ${v} LIMIT 1000;` },
+        { label: "Open data", kind: "run", sql: `SELECT * FROM ${v} LIMIT ${openRows};` },
         { label: "Generate SELECT", kind: "gen", sql: `SELECT * FROM ${v};` },
         { sep: true },
         // Editing opens as reviewable SQL in a query tab (no dialog).
@@ -69,6 +70,7 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
         { label: "Drop — generate SQL", kind: "gen", sql: `DROP VIEW ${v};` },
         { sep: true },
         { label: "Copy name", kind: "copy", text: ctx.name },
+        { label: "Copy qualified name", kind: "copy", text: q(schema, ctx.name) },
       ];
     }
     case "schema":
@@ -119,12 +121,13 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string): Item[] {
     }
     case "column": {
       const t = q(schema, ctx.table ?? "");
-      const c = `"${ctx.name}"`;
+      const c = quoteIdent(ctx.name);
       return [
         // Column edits live in the table's Details → Columns editor; here we
         // only generate SQL (no dialog).
-        { label: "Rename — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} RENAME COLUMN ${c} TO "${ctx.name}_NEW";` },
-        { label: "Change type — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} MODIFY COLUMN ${c} VARCHAR(200);` },
+        { label: "Rename — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} RENAME COLUMN ${c} TO ${quoteIdent(`${ctx.name}_NEW`)};` },
+        // Proposes the column's current type, ready to edit.
+        { label: "Change type — generate SQL", kind: "gen", sql: `ALTER TABLE ${t} MODIFY COLUMN ${c} ${ctx.dataType || "VARCHAR(200)"};` },
         { label: "Comment — generate SQL", kind: "gen", sql: `COMMENT ON COLUMN ${t}.${c} IS '/* description */';` },
         {
           // Destructive → keep the confirmation model.
@@ -300,6 +303,7 @@ export function ObjectContextMenu({
   onDetails,
   onEditInDetails,
   onFavorite,
+  openRows,
 }: {
   ctx: NodeCtx;
   x: number;
@@ -316,8 +320,10 @@ export function ObjectContextMenu({
   onEditInDetails?: (tab: string, edit?: boolean) => void;
   /** Add this object to Favorites. */
   onFavorite?: () => void;
+  /** Rows "Open data" fetches: the Row limit setting. */
+  openRows?: number;
 }) {
-  const items = itemsFor(ctx, defaultSchema);
+  const items = itemsFor(ctx, defaultSchema, openRows);
   const canDetail =
     onDetails &&
     (ctx.type === "schema" || ctx.type === "virtual-schema" || ctx.type === "table" || ctx.type === "view" || ctx.type === "user");

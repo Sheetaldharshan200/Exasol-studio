@@ -3762,6 +3762,7 @@ export function ExasolStudio({
           ) : activeTab.view === "object" && activeTab.objectRef && activeTab.objectProfileId ? (
             <div className="min-h-0 flex-1">
               <ObjectDetailPanel
+                openRows={maxRows}
                 profileId={activeTab.objectProfileId}
                 connectionName={connections.find((c) => c.profile.id === activeTab.objectProfileId)?.profile.name ?? ""}
                 object={activeTab.objectRef}
@@ -4215,6 +4216,7 @@ export function ExasolStudio({
 
       {ctxMenu && ctxMenu.node.ctx ? (
         <ObjectContextMenu
+          openRows={maxRows}
           ctx={ctxMenu.node.ctx}
           x={ctxMenu.x}
           y={ctxMenu.y}

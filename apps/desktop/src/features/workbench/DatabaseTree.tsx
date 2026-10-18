@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { iconFor, type TreeNode } from "@/features/workbench/tree-model";
+import { expandedChildren } from "./tree-folders";
+import { treeKey, type FlatRow } from "./tree-keys";
+import { rowWindow } from "@/lib/grid-view";
 import { errorMessage } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +57,10 @@ export function DatabaseTree({
   const cache = useRef<Map<string, TreeNode[]>>(new Map());
   const firstCollapse = useRef(true);
 
-  const load = useCallback((node: TreeNode) => {
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  /** `cascade`: after a refresh, load the fresh children that are expanded too. */
+  const load = useCallback((node: TreeNode, cascade = false) => {
     const cached = cache.current.get(node.id);
     if (cached) {
       setStates((s) => ({ ...s, [node.id]: { status: "done", children: cached } }));
@@ -73,6 +79,7 @@ export function DatabaseTree({
       .then((children) => {
         cache.current.set(node.id, children);
         setStates((s) => ({ ...s, [node.id]: { status: "done", children } }));
+        if (cascade) for (const child of expandedChildren(children, expandedRef.current)) load(child, true);
       })
       .catch((err) =>
         setStates((s) => ({
@@ -80,6 +87,7 @@ export function DatabaseTree({
           [node.id]: { status: "error", children: [], error: errorMessage(err) },
         })),
       );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load any nodes that are expanded on first mount (e.g. the Schemas folder).
@@ -102,24 +110,13 @@ export function DatabaseTree({
   // Cache-clearing, stale-while-revalidate reload of every expanded node — the
   // in-place refresh used by both the catalog-changed event and refreshSignal.
   // Keeps current children on screen (load() is SWR) so nothing flashes.
+  // Top-down from the roots: each expanded folder reloads from its FRESH
+  // parent's children, so a dropped object is not reloaded and a renamed
+  // one is not looked up under its old node.
   const reloadExpanded = useCallback(() => {
-    // Snapshot every known node (roots + already-loaded children) BEFORE
-    // clearing the cache, so we can re-load the ones that are expanded.
-    const known = new Map<string, TreeNode>();
-    const collect = (nodes: TreeNode[]) => {
-      for (const n of nodes) {
-        known.set(n.id, n);
-        const kids = cache.current.get(n.id);
-        if (kids) collect(kids);
-      }
-    };
-    collect(roots);
     cache.current.clear();
-    for (const id of expanded) {
-      const node = known.get(id);
-      if (node) load(node);
-    }
-  }, [roots, load, expanded]);
+    for (const root of expandedChildren(roots, expandedRef.current)) load(root, true);
+  }, [roots, load]);
 
   // Stay live: when the catalog changes (a CREATE/DROP/import ran), refresh.
   useEffect(() => {
@@ -158,88 +155,150 @@ export function DatabaseTree({
     [states, load],
   );
 
-  const rows: React.ReactNode[] = [];
+  // The rows as shown, flattened in display order: only those in view of the
+  // sidebar's scroller are rendered, and the keyboard moves over them.
+  type Flat =
+    | { kind: "row"; node: TreeNode; trail: boolean[]; isLast: boolean; open: boolean }
+    | { kind: "placeholder"; key: string; trail: boolean[]; state: "loading" | "error"; text?: string };
+  const flat: Flat[] = [];
   const walk = (nodes: TreeNode[], trail: boolean[]) => {
     nodes.forEach((node, i) => {
       const isLast = i === nodes.length - 1;
       const open = expanded.has(node.id);
       const st = states[node.id];
-      const c = node.ctx;
-      const hasDetails =
-        !!onOpenDetails &&
-        !!c &&
-        (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view" || c.type === "user");
-      const source =
-        onOpenSource && c && (c.type === "script" || c.type === "function") && c.schema && c.name
-          ? { kind: c.type as "script" | "function", schema: c.schema, name: c.name }
-          : null;
-      rows.push(
-        <Row
-          key={node.id}
-          node={node}
-          trail={trail}
-          isLast={isLast}
-          open={open}
-          selected={selected === node.id}
-          // The chevron alone toggles the branch — a plain row click no longer
-          // expands, so it never gets in the way of opening details.
-          onToggle={() => {
-            setSelected(node.id);
-            toggle(node);
-          }}
-          // Single tap: show info — open the detail tab if this node has one;
-          // otherwise run the object, else fall back to expanding.
-          onOpen={() => {
-            setSelected(node.id);
-            if (source) {
-              onOpenSource!(source.kind, source.schema, source.name);
-            } else if (hasDetails) {
-              onOpenDetails!(node);
-            } else if (node.selectable) {
-              onOpenObject(node.selectable.schema, node.selectable.name);
-            } else if (node.expandable) {
-              toggle(node);
-            }
-          }}
-          // Double tap: open the dropdown (expand/collapse the branch).
-          onExpand={() => {
-            setSelected(node.id);
-            if (node.expandable) toggle(node);
-            else if (source) onOpenSource!(source.kind, source.schema, source.name);
-            else if (node.selectable) onOpenObject(node.selectable.schema, node.selectable.name);
-          }}
-          onContext={
-            node.ctx
-              ? (x, y) => {
-                  setSelected(node.id);
-                  onContext?.(node, x, y);
-                }
-              : undefined
-          }
-        />,
-      );
+      flat.push({ kind: "row", node, trail, isLast, open });
       if (open && st) {
         const childTrail = [...trail, !isLast];
-        if (st.status === "loading" && st.children.length === 0) {
-          rows.push(<Placeholder key={node.id + ":l"} trail={childTrail} kind="loading" />);
-        } else if (st.status === "loading") {
-          // Refreshing with existing data — keep it visible, no skeleton swap.
-          walk(st.children, childTrail);
-        } else if (st.status === "error") {
-          rows.push(
-            <Placeholder key={node.id + ":e"} trail={childTrail} kind="error" text={st.error} />,
-          );
-        } else {
-          walk(st.children, childTrail);
-        }
+        if (st.status === "loading" && st.children.length === 0) flat.push({ kind: "placeholder", key: node.id + ":l", trail: childTrail, state: "loading" });
+        else if (st.status === "error") flat.push({ kind: "placeholder", key: node.id + ":e", trail: childTrail, state: "error", text: st.error });
+        // Refreshing with existing data keeps it visible: no skeleton swap.
+        else walk(st.children, childTrail);
       }
     });
   };
   walk(roots, []);
+  const nodeRows = flat.flatMap((f, at) => (f.kind === "row" ? [{ at, f }] : []));
+  const keyRows: FlatRow[] = nodeRows.map(({ f }) => ({ id: f.node.id, depth: f.trail.length, expandable: !!f.node.expandable, open: f.open }));
+
+  const sourceOf = (node: TreeNode) => {
+    const c = node.ctx;
+    return onOpenSource && c && (c.type === "script" || c.type === "function") && c.schema && c.name
+      ? { kind: c.type as "script" | "function", schema: c.schema, name: c.name }
+      : null;
+  };
+  const hasDetails = (node: TreeNode) => {
+    const c = node.ctx;
+    return !!onOpenDetails && !!c && (c.type === "schema" || c.type === "virtual-schema" || c.type === "table" || c.type === "view" || c.type === "user");
+  };
+  // Single tap / Enter: show info — the detail tab if the node has one; else
+  // run the object, else expand.
+  const openNode = (node: TreeNode) => {
+    setSelected(node.id);
+    const source = sourceOf(node);
+    if (source) onOpenSource!(source.kind, source.schema, source.name);
+    else if (hasDetails(node)) onOpenDetails!(node);
+    else if (node.selectable) onOpenObject(node.selectable.schema, node.selectable.name);
+    else if (node.expandable) toggle(node);
+  };
+  // Double tap: expand/collapse the branch.
+  const expandNode = (node: TreeNode) => {
+    setSelected(node.id);
+    const source = sourceOf(node);
+    if (node.expandable) toggle(node);
+    else if (source) onOpenSource!(source.kind, source.schema, source.name);
+    else if (node.selectable) onOpenObject(node.selectable.schema, node.selectable.name);
+  };
+
+  // The window of rows in view of the nearest scrolling ancestor.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [view, setView] = useState({ top: 0, height: 800 });
+  const scrollerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    let scroller = el?.parentElement ?? null;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    if (!el || !scroller) return;
+    const sc = scroller;
+    scrollerRef.current = sc;
+    const measure = () => {
+      const top = sc.scrollTop - (el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+      setView((v) => (v.top === top && v.height === sc.clientHeight ? v : { top, height: sc.clientHeight }));
+    };
+    measure();
+    sc.addEventListener("scroll", measure, { passive: true });
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(sc);
+    return () => {
+      sc.removeEventListener("scroll", measure);
+      ro?.disconnect();
+    };
+  }, []);
+  const win = rowWindow(view.top, view.height, ROW_H, flat.length, 30);
+
+  const selectedAt = nodeRows.findIndex(({ f }) => f.node.id === selected);
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const action = treeKey(keyRows, selectedAt, e.key, e.shiftKey);
+    if (!action) return;
+    e.preventDefault();
+    const target = nodeRows[action.index]?.f;
+    if (!target || target.kind !== "row") return;
+    const node = target.node;
+    if (action.kind === "select") {
+      setSelected(node.id);
+      // Keep the selected row in view (it may not be rendered yet).
+      const sc = scrollerRef.current;
+      const rowTop = nodeRows[action.index].at * ROW_H;
+      if (sc && rowTop < view.top) sc.scrollTop -= view.top - rowTop;
+      else if (sc && rowTop + ROW_H > view.top + view.height) sc.scrollTop += rowTop + ROW_H - (view.top + view.height);
+    } else if (action.kind === "toggle") toggle(node);
+    else if (action.kind === "open") openNode(node);
+    else if (action.kind === "menu" && node.ctx) {
+      const r = rootRef.current?.querySelector(`[data-tree-row="${CSS.escape(node.id)}"]`)?.getBoundingClientRect();
+      onContext?.(node, r ? r.left + 24 : 0, r ? r.bottom : 0);
+    }
+  };
 
   return (
-    <div className="overflow-x-auto overflow-y-hidden py-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="w-max min-w-full">{rows}</div>
+    <div
+      ref={rootRef}
+      tabIndex={0}
+      role="tree"
+      onKeyDown={onKeyDown}
+      className="overflow-x-auto overflow-y-hidden py-0.5 outline-none [scrollbar-width:none] focus-visible:ring-1 focus-visible:ring-primary/40 [&::-webkit-scrollbar]:hidden"
+    >
+      <div className="w-max min-w-full">
+        {win.top ? <div style={{ height: win.top }} /> : null}
+        {flat.slice(win.start, win.end).map((f) =>
+          f.kind === "placeholder" ? (
+            <Placeholder key={f.key} trail={f.trail} kind={f.state} text={f.text} />
+          ) : (
+            <Row
+              key={f.node.id}
+              node={f.node}
+              trail={f.trail}
+              isLast={f.isLast}
+              open={f.open}
+              selected={selected === f.node.id}
+              // The chevron alone toggles the branch.
+              onToggle={() => {
+                setSelected(f.node.id);
+                toggle(f.node);
+              }}
+              onOpen={() => openNode(f.node)}
+              onExpand={() => expandNode(f.node)}
+              onContext={
+                f.node.ctx
+                  ? (x, y) => {
+                      setSelected(f.node.id);
+                      onContext?.(f.node, x, y);
+                    }
+                  : undefined
+              }
+            />
+          ),
+        )}
+        {win.bottom ? <div style={{ height: win.bottom }} /> : null}
+      </div>
     </div>
   );
 }
@@ -339,6 +398,10 @@ function Row({
     <div
       onClick={handleClick}
       title={tip}
+      role="treeitem"
+      aria-selected={selected}
+      aria-expanded={node.expandable ? open : undefined}
+      data-tree-row={node.id}
       onContextMenu={
         onContext
           ? (e) => {

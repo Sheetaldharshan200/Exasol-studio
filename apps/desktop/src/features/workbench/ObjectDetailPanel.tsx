@@ -29,6 +29,7 @@ export function ObjectDetailPanel({
   navTab,
   navEdit,
   navNonce,
+  openRows = 1000,
 }: {
   profileId: string;
   connectionName: string;
@@ -46,6 +47,8 @@ export function ObjectDetailPanel({
   navTab?: string;
   navEdit?: boolean;
   navNonce?: number;
+  /** Rows "Open data" fetches: the Row limit setting. */
+  openRows?: number;
 }) {
   const isTable = object.type === "table" || object.type === "view";
   const isUser = object.type === "user";
@@ -190,7 +193,7 @@ export function ObjectDetailPanel({
           </span>
           {isTable ? (
             <button
-              onClick={() => onOpenData(`SELECT * FROM ${qualify(object.schema, object.name)} LIMIT 1000;`)}
+              onClick={() => onOpenData(`SELECT * FROM ${qualify(object.schema, object.name)} LIMIT ${openRows};`)}
               disabled={busy}
               title={busy ? "A statement is already running on this connection" : undefined}
               className="ml-auto flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] text-foreground hover:bg-secondary disabled:opacity-50"
