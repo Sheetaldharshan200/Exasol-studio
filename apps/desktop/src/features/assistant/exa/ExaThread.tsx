@@ -282,10 +282,8 @@ function ExaShareListener() {
       }
       void (async () => {
         try {
-          const { save } = await import("@tauri-apps/plugin-dialog");
           const { ipc } = await import("@/lib/ipc");
-          const path = await save({ defaultPath: "exa-conversation.md", filters: [{ name: "Markdown", extensions: ["md"] }] });
-          if (path) await ipc.writeTextFile(path, lines.join("\n"));
+          await ipc.saveTextAs("exa-conversation.md", ["md"], lines.join("\n"));
         } catch {
           /* cancelled */
         }

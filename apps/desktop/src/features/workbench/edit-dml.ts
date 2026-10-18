@@ -36,8 +36,18 @@ export function lit(v: unknown, typeName: string): string {
   return `'${s.replace(/'/g, "''")}'`;
 }
 
+/** A quoted Exasol identifier: the name as the catalog holds it, `"` doubled. */
+export function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 export function qualify(schema: string | undefined, table: string): string {
-  return schema ? `"${schema}"."${table}"` : `"${table}"`;
+  return schema ? `${quoteIdent(schema)}.${quoteIdent(table)}` : quoteIdent(table);
+}
+
+/** One key column's condition: a NULL key matches with IS NULL — `= NULL` matches no row. */
+export function keyCondition(column: string, literal: string): string {
+  return literal === "NULL" ? `${quoteIdent(column)} IS NULL` : `${quoteIdent(column)} = ${literal}`;
 }
 
 /** UPDATEs, then DELETEs, then INSERTs — in that order, so a staged row that
@@ -50,7 +60,7 @@ export function buildDml(input: DmlInput): string[] {
   const idIdx = identity.map((n) => columns.findIndex((c) => c.name === n));
   const where = (row: readonly unknown[]): string =>
     identity
-      .map((name, i) => `"${colId(name)}" = ${lit(row[idIdx[i]], columns[idIdx[i]]?.typeName ?? "")}`)
+      .map((name, i) => keyCondition(colId(name), lit(row[idIdx[i]], columns[idIdx[i]]?.typeName ?? "")))
       .join(" AND ");
 
   const out: string[] = [];
@@ -60,7 +70,7 @@ export function buildDml(input: DmlInput): string[] {
     const sets = Object.entries(cols)
       .map(([cStr, val]) => {
         const c = Number(cStr);
-        return `"${colId(columns[c].name)}" = ${lit(val, columns[c].typeName)}`;
+        return `${quoteIdent(colId(columns[c].name))} = ${lit(val, columns[c].typeName)}`;
       })
       .join(", ");
     if (sets) out.push(`UPDATE ${t} SET ${sets} WHERE ${where(rows[r])};`);
@@ -76,7 +86,7 @@ export function buildDml(input: DmlInput): string[] {
       out.push(`INSERT INTO ${t} DEFAULT VALUES;`);
       continue;
     }
-    const names = cols.map((c) => `"${colId(c.name)}"`).join(", ");
+    const names = cols.map((c) => quoteIdent(colId(c.name))).join(", ");
     const vals = cols.map((c) => lit(values[c.name], c.typeName)).join(", ");
     out.push(`INSERT INTO ${t} (${names}) VALUES (${vals});`);
   }

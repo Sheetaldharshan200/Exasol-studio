@@ -35,6 +35,7 @@ mod exapump;
 mod files;
 mod fs;
 mod git;
+mod grid_edits;
 mod history;
 mod local_database;
 mod local_llm;
@@ -44,6 +45,7 @@ mod market;
 mod metadata;
 mod print;
 mod process;
+mod profile_secret;
 mod profiles;
 mod shared_registry;
 mod query;
@@ -193,6 +195,10 @@ pub fn run() {
             market::market_doc_file,
             market::open_external,
             local_network::open_local_network_settings,
+            profiles::set_session_password,
+            grid_edits::apply_row_edits,
+            files::save_text_as,
+            files::open_text_file,
             market::reveal_path,
             ai_clients::list_ai_clients,
             ai_clients::connect_ai_client,

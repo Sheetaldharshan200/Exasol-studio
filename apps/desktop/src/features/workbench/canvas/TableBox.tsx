@@ -77,7 +77,7 @@ export function rowActions(id: string, title: string, store: ReturnType<typeof u
       disabled: !hasRows,
       onClick: () => {
         const r = store.getState().runs[id]?.result;
-        if (r) downloadText(fileName(title, "csv"), toCsv(r.columns, r.rows), "text/csv;charset=utf-8;");
+        if (r) downloadText(fileName(title, "csv"), toCsv(r.columns, r.rows, { bom: true }), "text/csv;charset=utf-8;");
       },
     },
   ];

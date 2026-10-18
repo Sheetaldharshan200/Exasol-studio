@@ -800,6 +800,11 @@ export const ipc = {
   openExternal: (url: string) => call<null>("open_external", { url }),
   /** System Settings → Privacy & Security → Local Network (macOS). */
   openLocalNetworkSettings: () => call<null>("open_local_network_settings"),
+  /** Keep a password for this run only; removes any saved copy. Empty forgets it. */
+  setSessionPassword: (profileId: string, password: string) => call<null>("set_session_password", { profileId, password }),
+  /** Staged grid edits in one transaction; each must touch exactly one row, or nothing is saved. */
+  applyRowEdits: (profileId: string, connectionName: string, statements: string[]) =>
+    call<{ ok: boolean; failedIndex: number | null; error: string | null }>("apply_row_edits", { profileId, connectionName, statements }),
   gitStatus: () => call<GitStatus>("git_status"),
   gitInit: () => call<null>("git_init"),
   gitCommit: (message: string, stageAll?: boolean) => call<string>("git_commit", { message, stageAll }),
@@ -839,6 +844,11 @@ export const ipc = {
   revealPath: (path: string) => call<void>("reveal_path", { path }),
   writeTextFile: (path: string, contents: string) =>
     call<void>("write_text_file", { path, contents }),
+  /** Native save dialog, then write: the backend only writes where the person picked. Null when cancelled. */
+  saveTextAs: (defaultName: string, extensions: string[], contents: string) =>
+    call<string | null>("save_text_as", { defaultName, extensions, contents }),
+  /** Native open dialog for a .sql/.txt file: [path, text], or null when cancelled. The file may then be saved back. */
+  openTextFile: () => call<[string, string] | null>("open_text_file"),
   /** Open `html` in a print window and run the system print dialog on it;
    *  false when the window opened but the dialog did not. */
   printHtml: (title: string, html: string) => call<boolean>("print_html", { title, html }),

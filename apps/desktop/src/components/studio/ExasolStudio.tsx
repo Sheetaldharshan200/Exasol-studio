@@ -82,6 +82,8 @@ import { createSerialQueue } from "@/lib/serial-queue";
 import { useResultPaging } from "./use-result-paging";
 import { errorMessage, ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type DriverInfo, type ExecuteResponse, type HistoryEntry, type ServerInfo } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
+import { sqlBehindGrid } from "@/lib/run-meta";
+import { closeQuestion } from "@/lib/tab-close";
 
 export function ExasolStudio({
   connection,
@@ -789,7 +791,8 @@ export function ExasolStudio({
       setEditTable(null);
       return;
     }
-    const t = parseSingleTable(activeTab.sql);
+    // The table the DISPLAYED rows came from — not whatever the buffer says now.
+    const t = parseSingleTable(sqlBehindGrid(activeTab));
     const schema = t?.schema ?? connection.profile.schema ?? undefined;
     if (!t || !schema) {
       setEditTable(null);
@@ -811,24 +814,22 @@ export function ExasolStudio({
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab.response, activeTab.sql, activeTab.view, connection]);
+  }, [activeTab.response, activeTab.sql, activeTab.runMeta, activeTab.view, connection]);
 
-  // Apply staged row edits directly ("Confirm & Save"). Exasol returns
-  // statement errors INSIDE the result (not as a JS throw), so we inspect each
-  // one and stop at the first failure, returning it so the grid shows the
-  // inline error and keeps the user's edits.
+  // Apply staged row edits ("Confirm & Save"): one transaction on one
+  // connection, each change required to touch exactly one row — all of it or
+  // none. On failure the grid keeps the edits and names the change that
+  // stopped the batch. On success it refreshes from the statement that
+  // produced it, never the editor buffer.
   async function commitEdits(statements: string[]): Promise<{ ok: boolean; error?: string; failedSql?: string }> {
     if (!connection || !statements.length) return { ok: false, error: "No active connection." };
     try {
-      for (const st of statements) {
-        const r = await execSql(connection.profile.id, connection.profile.name, st, 1, false);
-        const errored = r.results.find((x) => x.error);
-        if (errored?.error) {
-          loadHistory();
-          return { ok: false, error: errored.error, failedSql: st };
-        }
+      const out = await ipc.applyRowEdits(connection.profile.id, connection.profile.name, statements);
+      loadHistory();
+      if (!out.ok) {
+        return { ok: false, error: out.error ?? "Nothing was saved.", failedSql: out.failedIndex != null ? statements[out.failedIndex] : undefined };
       }
-      const res = await execSql(connection.profile.id, connection.profile.name, activeTab.sql, maxRows, false);
+      const res = await execSql(connection.profile.id, connection.profile.name, sqlBehindGrid(activeTab), maxRows, false);
       patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
       void refreshSqlCatalog();
@@ -1429,14 +1430,14 @@ export function ExasolStudio({
       openFile("scratch.sql", "-- new query\n");
       return;
     }
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const picked = await open({ multiple: false, filters: [{ name: "SQL", extensions: ["sql", "txt"] }] });
-    if (typeof picked !== "string") return;
     try {
-      const text = await ipc.fsReadText(picked);
+      // The dialog runs in Rust, which is what lets this file be saved back to.
+      const opened = await ipc.openTextFile();
+      if (!opened) return;
+      const [picked, text] = opened;
       openFile(picked.split("/").pop() ?? "query.sql", text, picked);
-    } catch {
-      /* unreadable */
+    } catch (e) {
+      pushNotification("warning", "Could not open the file", errorMessage(e));
     }
   }
 
@@ -1479,8 +1480,11 @@ export function ExasolStudio({
     setActiveTabId(tab.id);
   }
 
+  // Closing never loses SQL silently: a tab with unsaved changes asks first.
   function closeTab(id: string) {
     const list = tabsFor(connKey);
+    const q = closeQuestion(list.filter((t) => t.id === id));
+    if (q && !window.confirm(q)) return;
     const next = list.filter((t) => t.id !== id);
     updateTabs(connKey, () => next);
     // Closing the last tab is allowed — the workspace falls back to Welcome.
@@ -1496,6 +1500,8 @@ export function ExasolStudio({
 
   // Bulk tab actions for the tab-bar overflow menu. Pinned tabs are always kept.
   function closeAllTabs() {
+    const q = closeQuestion(tabsFor(connKey).filter((t) => !t.pinned));
+    if (q && !window.confirm(q)) return;
     const kept = tabsFor(connKey).filter((t) => t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(kept[kept.length - 1]?.id ?? "");
@@ -1503,6 +1509,8 @@ export function ExasolStudio({
     setGroupsByConn((prev) => ({ ...prev, [connKey]: (prev[connKey] ?? []).filter((x) => live.has(x.id)) }));
   }
   function closeOtherTabs(keepId: string) {
+    const q = closeQuestion(tabsFor(connKey).filter((t) => t.id !== keepId && !t.pinned));
+    if (q && !window.confirm(q)) return;
     const kept = tabsFor(connKey).filter((t) => t.id === keepId || t.pinned);
     updateTabs(connKey, () => kept);
     setActiveTabId(keepId);
@@ -2355,8 +2363,16 @@ export function ExasolStudio({
           list.map((t) => (t.id === activeTab.id ? { ...t, fileMissing: false, savedSql: t.sql } : t)),
         );
         setFilesRefresh((n) => n + 1);
-      } catch {
-        /* ignore write error */
+      } catch (e) {
+        // A file Studio may not write back to (opened from the file tree, not
+        // picked in a dialog): offer the save dialog rather than failing.
+        try {
+          const name = activeTab.filePath.split("/").pop() ?? "query.sql";
+          const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
+          if (saved) patchTab(activeTab.id, { title: saved.split("/").pop() ?? name, savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+        } catch (e2) {
+          pushNotification("warning", "Could not save", errorMessage(e2 ?? e));
+        }
       }
       return;
     }
@@ -2369,8 +2385,8 @@ export function ExasolStudio({
         await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
         patchTab(activeTab.id, { title: fileName, savedSql: activeTab.sql, filePath: `${wsPath}/${fileName}` });
         setFilesRefresh((n) => n + 1);
-      } catch {
-        /* ignore write error */
+      } catch (e) {
+        pushNotification("warning", "Could not save", errorMessage(e));
       }
       return;
     }
@@ -2393,8 +2409,8 @@ export function ExasolStudio({
       await ipc.writeTextFile(`${wsPath}/${file}`, activeTab.sql);
       patchTab(activeTab.id, { title: file, savedSql: activeTab.sql, filePath: `${wsPath}/${file}` });
       setFilesRefresh((n) => n + 1);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      pushNotification("warning", "Could not save", errorMessage(e));
     }
   }
 

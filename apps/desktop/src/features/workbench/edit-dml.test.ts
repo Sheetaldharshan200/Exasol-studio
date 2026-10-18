@@ -97,3 +97,28 @@ test("a change staged against a row that is gone is dropped, not mis-targeted", 
 test("an edit entry with no cells produces no statement", () => {
   assert.deepEqual(buildDml(base({ edits: { 0: {} } })), []);
 });
+
+test("a NULL key value matches with IS NULL, never = NULL", () => {
+  const out = buildDml(
+    base({
+      identity: ["ID", "NAME"],
+      rows: [[1, null, true]],
+      edits: { 0: { 2: "false" } },
+    }),
+  );
+  assert.equal(out.length, 1);
+  assert.match(out[0], /WHERE "ID" = 1 AND "NAME" IS NULL;$/);
+  assert.doesNotMatch(out[0], /= NULL/);
+});
+
+test("identifiers with a double quote are escaped; big integers that arrive as text stay numbers", () => {
+  assert.equal(qualify('we"ird', 'ta"ble'), '"we""ird"."ta""ble"');
+  const out = buildDml(
+    base({
+      columns: [{ name: "ID", typeName: "DECIMAL(18,0)" }, { name: "NAME", typeName: "VARCHAR(50)" }],
+      rows: [["9007199254740993", "Ada"]],
+      edits: { 0: { 1: "Lovelace" } },
+    }),
+  );
+  assert.equal(out[0], `UPDATE "S"."T" SET "NAME" = 'Lovelace' WHERE "ID" = 9007199254740993;`);
+});
