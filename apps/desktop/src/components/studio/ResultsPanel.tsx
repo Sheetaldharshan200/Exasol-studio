@@ -7,12 +7,17 @@
  * instead of spawning a separate tab. The old "Show in Dashboard" view moved
  * into the per-connection Health tab (issue #45).
  */
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { NullTextContext } from "./null-text";
-import { AlertTriangle, ChevronLeft, ChevronRight, Download, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Table2 } from "lucide-react";
+import { AlertTriangle, Braces, ChevronLeft, ChevronRight, Clipboard, Gauge, Loader2, PanelRightClose, PanelRightOpen, Search, Sigma, Table2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitStatements } from "@/lib/sql-text";
-import { cellText, computeStats, filterRows, resultTabLabel, statementVerb, toCsv } from "@/lib/result-stats";
+import { computeStats, filterRows, resultTabLabel, statementVerb } from "@/lib/result-stats";
+import { prettyCell } from "@/lib/result-copy";
+import { countSql } from "@/lib/result-pages";
+import { ResultsExport } from "./ResultsExport";
+import { copyToClipboard } from "./ResultsGridMenus";
+import { sqlName } from "@/lib/sql-completion-scope";
 import { formatClock, formatElapsed } from "@/lib/elapsed";
 import { useElapsedMs } from "@/lib/use-elapsed-ms";
 import { ResultsGrid, RunStatusStrip } from "./HistoryDock";
@@ -28,7 +33,24 @@ const TABS: { id: ResultView; label: string; icon: typeof Table2 }[] = [
   { id: "performance", label: "Query Performance", icon: Gauge },
 ];
 
-export function ResultsPanel({
+/** What a result can do beyond its fetched rows, bound to the connection by
+ *  the shell: export every row (ExaPump) and count every row. */
+export type ResultActions = {
+  exportAll?: (statement: string, format: "csv" | "parquet") => Promise<string | null>;
+  countAll?: (statement: string) => Promise<number | null>;
+};
+const ResultActionsContext = createContext<ResultActions>({});
+
+export function ResultsPanel(props: Parameters<typeof ResultsPanelInner>[0] & { actions?: ResultActions }) {
+  const { actions, ...rest } = props;
+  return (
+    <ResultActionsContext.Provider value={actions ?? {}}>
+      <ResultsPanelInner {...rest} />
+    </ResultActionsContext.Provider>
+  );
+}
+
+function ResultsPanelInner({
   view: viewProp,
   onViewChange,
   sql,
@@ -468,31 +490,34 @@ function ResultsView({
   zebra: boolean;
 }) {
   const nullText = useContext(NullTextContext);
+  const actions = useContext(ResultActionsContext);
   const [filter, setFilter] = useState("");
   const [selected, setSelected] = useState<{ value: unknown; column: string; row: number; col: number } | null>(null);
+  const [total, setTotal] = useState<{ busy: boolean; count?: number | null; error?: string } | null>(null);
   const [showPanel, setShowPanel] = useState(true);
   // A new result (re-run, page change, different tab) invalidates the filter
   // and any inspected cell — their indices no longer mean anything.
   useEffect(() => {
     setFilter("");
     setSelected(null);
+    setTotal(null);
   }, [result]);
+  const counting = countSql(sql);
+  const countAll = async () => {
+    if (!actions.countAll || !counting) return;
+    setTotal({ busy: true });
+    try {
+      setTotal({ busy: false, count: await actions.countAll(sql) });
+    } catch (e) {
+      setTotal({ busy: false, error: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const exportAll = actions.exportAll && counting ? (format: "csv" | "parquet") => actions.exportAll!(sql, format) : undefined;
+  const insertTarget = editable ? [editable.schema, editable.table].filter(Boolean).map((n) => sqlName(n!)).join(".") : undefined;
+  const pretty = selected && selected.value !== null ? prettyCell(selected.value) : null;
 
   const displayRows = filter.trim() ? filterRows(result.rows, filter) : result.rows;
   const stats = computeStats({ timeMs: result.elapsedMs, rows: displayRows.length, cols: result.columns.length });
-
-  function exportCsv() {
-    const csv = toCsv(result.columns, displayRows, { bom: true });
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `results-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -515,13 +540,22 @@ function ResultsView({
           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
             {filter.trim() ? `${displayRows.length.toLocaleString()} of ${result.rowCount.toLocaleString()}` : `${result.rowCount.toLocaleString()} row${result.rowCount === 1 ? "" : "s"}`}
           </span>
-          <button
-            onClick={exportCsv}
-            title="Export the shown rows as CSV"
-            className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-          >
-            <Download className="h-3.5 w-3.5" /> Export CSV
-          </button>
+          {result.truncated && actions.countAll && counting ? (
+            total && !total.busy && total.count != null ? (
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">of {total.count.toLocaleString()} in all</span>
+            ) : (
+              <button
+                onClick={() => void countAll()}
+                disabled={total?.busy}
+                title={total?.error ?? "Count every row the statement returns (runs COUNT(*) on the server)"}
+                className="flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+              >
+                {total?.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sigma className="h-3.5 w-3.5" />}
+                {total?.error ? "Count failed" : "Count all"}
+              </button>
+            )
+          ) : null}
+          <ResultsExport columns={result.columns} rows={displayRows} table={insertTarget} truncated={result.truncated} onExportAll={exportAll} />
           <button
             onClick={() => setShowPanel((s) => !s)}
             title={showPanel ? "Hide details panel" : "Show details panel"}
@@ -555,9 +589,26 @@ function ResultsView({
           <InspectorSection title="Cell Value">
             {selected ? (
               <>
-                <p className="mb-1 font-mono text-[10px] text-muted-foreground">{selected.column}</p>
-                <pre className="max-h-40 overflow-auto rounded bg-secondary/50 p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words text-foreground">
-                  {selected.value === null ? <span className="text-muted-foreground italic">{nullText}</span> : cellText(selected.value)}
+                <div className="mb-1 flex items-center gap-1.5">
+                  <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">{selected.column}</p>
+                  {pretty?.json ? (
+                    <span className="flex items-center gap-0.5 font-mono text-[10px] text-muted-foreground" title="Shown formatted as JSON">
+                      <Braces className="h-3 w-3" /> JSON
+                    </span>
+                  ) : null}
+                  {pretty ? <span className="font-mono text-[10px] text-muted-foreground">{pretty.text.length.toLocaleString()} ch</span> : null}
+                  <button
+                    onClick={() => copyToClipboard(pretty?.text ?? "")}
+                    disabled={!pretty}
+                    title="Copy the value"
+                    aria-label="Copy the value"
+                    className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35"
+                  >
+                    <Clipboard className="h-3 w-3" />
+                  </button>
+                </div>
+                <pre className="max-h-80 overflow-auto rounded bg-secondary/50 p-2 font-mono text-[11.5px] whitespace-pre-wrap break-words text-foreground select-text">
+                  {pretty ? pretty.text : <span className="text-muted-foreground italic">{nullText}</span>}
                 </pre>
               </>
             ) : (

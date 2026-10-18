@@ -35,6 +35,10 @@ pub async fn write_text_file(path: String, contents: String) -> AppResult<()> {
 
 /// The safety checks every write passes, then the write.
 fn write_checked(target: &std::path::Path, contents: &str, home: Option<&std::path::Path>) -> AppResult<()> {
+    write_checked_bytes(target, contents.as_bytes(), home)
+}
+
+pub(crate) fn write_checked_bytes(target: &std::path::Path, bytes: &[u8], home: Option<&std::path::Path>) -> AppResult<()> {
     write_permitted(target, home).map_err(crate::error::AppError::InvalidSettings)?;
     // A symlink — at the file itself or a folder above it — must not lead
     // somewhere the rules forbid.
@@ -45,7 +49,7 @@ fn write_checked(target: &std::path::Path, contents: &str, home: Option<&std::pa
         let real = real_parent.join(target.file_name().unwrap_or_default());
         write_permitted(&real, home).map_err(crate::error::AppError::InvalidSettings)?;
     }
-    write_no_follow(target, contents.as_bytes())?;
+    write_no_follow(target, bytes)?;
     Ok(())
 }
 
@@ -82,7 +86,7 @@ pub async fn open_text_file(app: tauri::AppHandle) -> AppResult<Option<(String, 
     Ok(Some((path.to_string_lossy().into_owned(), text)))
 }
 
-fn home_dir() -> Option<std::path::PathBuf> {
+pub(crate) fn home_dir() -> Option<std::path::PathBuf> {
     std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(std::path::PathBuf::from)
 }
 
@@ -131,6 +135,8 @@ pub async fn save_text_as(app: tauri::AppHandle, default_name: String, extension
 /// shell, launchd or an app would load and run.
 const WRITABLE_EXTENSIONS: &[&str] = &[
     "sql", "txt", "md", "markdown", "html", "htm", "csv", "tsv", "json", "jsonl", "ndjson", "log", "yaml", "yml", "xml",
+    // A workbook without macros (.xlsm would carry them).
+    "xlsx", "parquet",
 ];
 
 /// Whether the page may write `path`. The page can name any path, so a

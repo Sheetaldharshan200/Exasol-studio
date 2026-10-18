@@ -396,7 +396,7 @@ async fn test_with_driver(app: tauri::AppHandle, profile: ConnectionProfile) -> 
     let resp = if crate::exarrow_exec::is_exarrow(&profile.driver_id) {
         crate::exarrow_exec::execute_exarrow(&profile, &stmts, 10, stop).await?
     } else {
-        tokio::task::spawn_blocking(move || crate::driver_exec::execute_via_driver(&app, &profile, &stmts, 10, stop))
+        tokio::task::spawn_blocking(move || crate::driver_exec::execute_via_driver(&app, &profile, &stmts, 10, stop, &crate::query::CancelFlag::new()))
             .await
             .map_err(|e| AppError::Storage(e.to_string()))??
     };

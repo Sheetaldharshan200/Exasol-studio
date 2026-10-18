@@ -92,7 +92,8 @@ import { QueryPlanView } from "./QueryPlanView";
 import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
-import { ResultsPanel } from "./ResultsPanel";
+import { ResultsPanel, type ResultActions } from "./ResultsPanel";
+import { countSql } from "@/lib/result-pages";
 import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, fileName, newTab, tabHasWork, tabTarget, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
@@ -2458,6 +2459,29 @@ export function ExasolStudio({
   const cancelRunningRef = useRef(cancelRunning);
   cancelRunningRef.current = cancelRunning;
 
+  // Beyond the fetched rows: count and export every row of a result.
+  const resultActions = useMemo<ResultActions>(
+    () => ({
+      exportAll: isTauri()
+        ? async (statement, format) => {
+            const conn = connectionRef.current;
+            return conn ? ipc.exapumpExport(conn.profile.id, statement, format) : null;
+          }
+        : undefined,
+      countAll: async (statement) => {
+        const conn = connectionRef.current;
+        const sql = countSql(statement);
+        if (!conn || !sql) return null;
+        const res = await execSql(conn.profile.id, conn.profile.name, sql, 1, false, false);
+        const r = res.results[0];
+        if (r?.error) throw new Error(r.error);
+        const n = Number(r?.rows?.[0]?.[0]);
+        return Number.isFinite(n) ? n : null;
+      },
+    }),
+    [execSql],
+  );
+
   /** Save the tab's SQL to a file chosen in the save dialog. */
   async function saveTabAs() {
     if (!isTauri()) return void saveTab();
@@ -4067,6 +4091,7 @@ export function ExasolStudio({
                   profiling={profiling}
                   onProfile={() => void profileQuery(activeTab.sql)}
                   onOpenPlanTab={openPlanTab}
+                  actions={resultActions}
                 />
                 </NullTextContext.Provider>
               </ResizablePanel>

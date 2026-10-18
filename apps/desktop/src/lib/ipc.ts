@@ -979,6 +979,13 @@ export const ipc = {
     delimiter?: string;
     dryRun: boolean;
   }) => call<{ ok: boolean }>("exapump_upload", args),
+  /** Export a query's whole result (not just the fetched rows) with ExaPump
+   *  to a file picked in the save dialog. Null when cancelled. */
+  exapumpExport: (profileId: string, query: string, format: "csv" | "parquet") =>
+    call<string | null>("exapump_export", { profileId, query, format }),
+  /** Save rows as an Excel workbook via the save dialog. Null when cancelled. */
+  saveXlsxAs: (defaultName: string, columns: ColumnMeta[], rows: unknown[][]) =>
+    call<string | null>("save_xlsx_as", { defaultName, columns, rows }),
   executeSql: (
     profileId: string,
     connectionName: string,
