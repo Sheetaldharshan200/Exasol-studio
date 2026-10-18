@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { registerExasolCompletion, buildCatalog, emptyCatalog, setSharedCatalog, type SqlCatalog } from "@/lib/sql-completion";
+import { registerExasolCompletion, emptyCatalog, type SqlCatalog } from "@/lib/sql-completion";
+import { NAMES_CAP, NAMES_SQL, SCRIPTS_SQL, catalogFromNames, changesCatalog, columnsSql, withSchemaColumns } from "@/lib/sql-catalog";
 import { InlineSqlDiff, type InlineDiffState } from "@/features/workbench/InlineSqlDiff";
 import { Activity, BarChart3, Blocks, Check, ChevronDown, ChevronLeft, Boxes, ChevronRight, Combine, Database, GitCommitHorizontal, Info, MoreHorizontal, Loader2, PanelRight, Pin, Plus, RotateCcw, Save, SaveAll, Search, Settings2, Sparkles, Square, Trash2, X } from "lucide-react";
 import { RunScriptIcon, RunCurrentIcon, RunExplainIcon, RunBufferIcon } from "./run-icons";
@@ -73,6 +74,12 @@ import { APP_SETTING_DEFAULTS } from "@/lib/app-settings";
 import { nullLabel } from "@/lib/null-label";
 import { NullTextContext } from "./null-text";
 import { markRunError } from "./run-error-markers";
+import { useShortcuts } from "./use-shortcuts";
+import { ShortcutSheet } from "./ShortcutSheet";
+import { ParamsDialog, askParams } from "./ParamsDialog";
+import { findParams, substituteParams } from "@/lib/sql-params";
+import { installSqlFormatting } from "./sql-formatting";
+import { installSqlSignatureHelp } from "./sql-signature-help";
 import { useConnSettings } from "./use-conn-settings";
 import { EnvBadge, envOf } from "./EnvBadge";
 import { DEFAULT_CONN_SETTINGS } from "@/lib/conn-settings";
@@ -86,7 +93,7 @@ import { BrandLoader } from "@/components/brand/BrandLoader";
 import { IQuickInputService } from "monaco-editor/esm/vs/platform/quickinput/common/quickInput";
 import { HistoryDock } from "./HistoryDock";
 import { ResultsPanel } from "./ResultsPanel";
-import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, newTab, tabHasWork, type SqlTab, type TabGroup } from "./tabs";
+import { NO_CONNECTION, TAB_ICON, WELCOME_TAB, adoptPendingTabs, fileName, newTab, tabHasWork, tabTarget, type SqlTab, type TabGroup } from "./tabs";
 import { loadWorkspace, saveWorkspace } from "@/lib/workspace-persist";
 import { normalizeProfileRows, type Plan, type ProfileSource } from "@/lib/plan-model";
 import { createSerialQueue } from "@/lib/serial-queue";
@@ -372,36 +379,40 @@ export function ExasolStudio({
       const t = res?.results.find((r) => r.kind === "resultSet");
       return (t?.rows as unknown[][]) ?? [];
     };
-    const [cols, scriptRows] = await Promise.all([
-      rowsOf(
-        "SELECT COLUMN_SCHEMA, COLUMN_TABLE, COLUMN_NAME, COLUMN_TYPE FROM SYS.EXA_ALL_COLUMNS WHERE COLUMN_SCHEMA NOT IN ('SYS','EXA_STATISTICS') ORDER BY 1, 2 LIMIT 20000",
-        20000,
-      ),
-      rowsOf("SELECT SCRIPT_SCHEMA, SCRIPT_NAME, SCRIPT_LANGUAGE FROM SYS.EXA_ALL_SCRIPTS LIMIT 2000", 2000),
-    ]);
+    // Names only (cheap); columns come per schema when completion needs them.
+    const [names, scriptRows] = await Promise.all([rowsOf(NAMES_SQL, NAMES_CAP + 1), rowsOf(SCRIPTS_SQL, 2000)]);
     // A newer refresh already started (or won) — drop this stale result.
     if (token !== catalogReq.current || conn.profile.id !== connectionRef.current?.profile.id) return;
-    const next = buildCatalog(cols);
-    next.scripts = scriptRows.map((r) => ({ schema: String(r[0] ?? ""), name: String(r[1] ?? ""), type: String(r[2] ?? "SCRIPT") }));
+    const next = catalogFromNames(names, scriptRows);
     sqlCatalogRef.current = next;
-    setSharedCatalog(next); // expose to the dashboard widget query editor
+    sqlMarkersRef.current?.refresh();
+  }, []);
+  /** Load these schemas' columns into the catalog (for completion). */
+  const loadCatalogSchemas = useCallback(async (schemas: string[]) => {
+    const conn = connectionRef.current;
+    if (!conn) return;
+    const token = catalogReq.current;
+    for (const schema of schemas) {
+      const res = await execSql(conn.profile.id, conn.profile.name, columnsSql(schema), 100_000, false, false).catch(() => null);
+      const rows = (res?.results.find((r) => r.kind === "resultSet")?.rows as unknown[][]) ?? [];
+      // A reload in between replaced the catalog: its own loads follow.
+      if (token !== catalogReq.current) return;
+      sqlCatalogRef.current = withSchemaColumns(sqlCatalogRef.current, schema, rows);
+    }
   }, []);
   const connectionRef = useRef(connection);
   connectionRef.current = connection;
-  // Fresh on connect, after every statement run, and on a slow freshness tick
-  // (catches agent-driven DDL/imports) — so new schemas/tables complete
-  // immediately instead of only after reconnecting.
+  // Fresh on connect, after statements that change structure, and when
+  // something else says the catalog changed (the agent, a commit) — not on a
+  // timer and not after every run.
   useEffect(() => {
     sqlCatalogRef.current = emptyCatalog();
-    setSharedCatalog(emptyCatalog());
     if (!connection) return;
     void refreshSqlCatalog();
     const onChanged = () => void refreshSqlCatalog();
     window.addEventListener("studio:catalog-changed", onChanged);
     window.addEventListener("studio:git-changed", onChanged); // agent commits often follow DDL
-    const timer = window.setInterval(refreshSqlCatalog, 45_000);
     return () => {
-      window.clearInterval(timer);
       window.removeEventListener("studio:catalog-changed", onChanged);
       window.removeEventListener("studio:git-changed", onChanged);
     };
@@ -839,7 +850,6 @@ export function ExasolStudio({
       const res = await execSql(connection.profile.id, connection.profile.name, sqlBehindGrid(activeTab), maxRows, false, true, undefined, activeTab.id);
       patchTab(activeTab.id, { response: res, execError: null, resultPage: 0 });
       loadHistory();
-      void refreshSqlCatalog();
       window.dispatchEvent(new CustomEvent("studio:catalog-changed", { detail: { profileId: connection.profile.id } }));
       return { ok: true };
     } catch (e) {
@@ -1448,7 +1458,7 @@ export function ExasolStudio({
       const opened = await ipc.openTextFile();
       if (!opened) return;
       const [picked, text] = opened;
-      openFile(picked.split("/").pop() ?? "query.sql", text, picked);
+      openFile(fileName(picked), text, picked);
     } catch (e) {
       pushNotification("warning", "Could not open the file", errorMessage(e));
     }
@@ -1780,7 +1790,7 @@ export function ExasolStudio({
           ),
         );
         loadHistory();
-      void refreshSqlCatalog();
+        if (changesCatalog(sql)) void refreshSqlCatalog();
       } catch (e) {
         updateTabs(key, (list) =>
           list.map((t) =>
@@ -2296,6 +2306,13 @@ export function ExasolStudio({
       const unstripped = sqlToRun;
       if (execSettings.stripComments) sqlToRun = stripSqlComments(sqlToRun);
       if (!sqlToRun.trim()) return;
+      // Placeholders (&name, :name) are filled in before anything runs.
+      const params = findParams(sqlToRun);
+      if (params.length) {
+        const values = await askParams(params);
+        if (!values) return;
+        sqlToRun = substituteParams(sqlToRun, values);
+      }
 
       // "buffer" runs everything as a single statement; others split unless
       // splitting is off (Settings → Execution, or the toolbar).
@@ -2393,7 +2410,8 @@ export function ExasolStudio({
           });
         }
         loadHistory();
-      void refreshSqlCatalog();
+        // Reloaded only when the script may have changed structure.
+        if (changesCatalog(sqlToRun)) void refreshSqlCatalog();
       } catch (err) {
         patchTab(activeTab.id, {
           execError: errorMessage(err),
@@ -2412,9 +2430,14 @@ export function ExasolStudio({
 
   // Stop: cancel the in-flight query (KILL STATEMENT — the session survives).
   const [stopping, setStopping] = useState(false);
+  const stoppingRef = useRef(false);
+  const stoppedPid = useRef<string | null>(null);
   const cancelRunning = useCallback(async () => {
     const pid = runningProgressId.current;
-    if (!pid || stopping) return;
+    // One KILL per run: a held key or a second click sends no more.
+    if (!pid || stoppingRef.current || stoppedPid.current === pid) return;
+    stoppingRef.current = true;
+    stoppedPid.current = pid;
     setStopping(true);
     try {
       const killed = await ipc.cancelQuery(pid);
@@ -2423,12 +2446,54 @@ export function ExasolStudio({
         killed ? "Stopping query" : "Nothing to stop",
         killed ? "Cancelling the running statement…" : "The query already finished.",
       );
+      if (!killed) stoppedPid.current = null;
     } catch (e) {
+      stoppedPid.current = null;
       pushNotification("warning", "Could not stop the query", errorMessage(e));
     } finally {
+      stoppingRef.current = false;
       setStopping(false);
     }
-  }, [stopping]);
+  }, []);
+  const cancelRunningRef = useRef(cancelRunning);
+  cancelRunningRef.current = cancelRunning;
+
+  /** Save the tab's SQL to a file chosen in the save dialog. */
+  async function saveTabAs() {
+    if (!isTauri()) return void saveTab();
+    const name = activeTab.filePath ? fileName(activeTab.filePath) : `${activeTab.title.replace(/\s+/g, "_").toLowerCase().replace(/\.sql$/, "")}.sql`;
+    try {
+      const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
+      if (!saved) return;
+      patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+      setFilesRefresh((n) => n + 1);
+    } catch (e) {
+      pushNotification("warning", "Could not save", errorMessage(e));
+    }
+  }
+
+  // Keyboard shortcuts (lib/shortcuts.ts); Mod+K search is GlobalSearch's.
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const goToTab = (move: { by: number } | { n: number }) => {
+    const i = tabTarget(tabs.length, tabs.findIndex((t) => t.id === activeTab.id), move);
+    if (i !== null) setActiveTabId(tabs[i].id);
+  };
+  const focusArea = (area: "navigator" | "results") => (document.querySelector(`[data-focus="${area}"]`) as HTMLElement | null)?.focus();
+  useShortcuts({
+    "run.cancel": () => void cancelRunning(),
+    "tab.new": () => openSqlTab("", "SQL"),
+    "tab.close": () => closeTab(activeTab.id),
+    "tab.next": () => goToTab({ by: 1 }),
+    "tab.prev": () => goToTab({ by: -1 }),
+    ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`tab.${i + 1}`, () => goToTab({ n: i + 1 })])),
+    "file.save": () => void (activeTab.view === "sql" ? saveTab() : undefined),
+    "file.saveAs": () => void (activeTab.view === "sql" ? saveTabAs() : undefined),
+    "file.open": () => void openSqlFile(),
+    "focus.tree": () => focusArea("navigator"),
+    "focus.editor": () => editorRef.current?.focus(),
+    "focus.results": () => focusArea("results"),
+    "help.shortcuts": () => setShowShortcuts(true),
+  });
 
   async function saveTab() {
     // A tab opened from an existing file saves back to that same file.
@@ -2444,9 +2509,9 @@ export function ExasolStudio({
         // A file Studio may not write back to (opened from the file tree, not
         // picked in a dialog): offer the save dialog rather than failing.
         try {
-          const name = activeTab.filePath.split("/").pop() ?? "query.sql";
+          const name = fileName(activeTab.filePath);
           const saved = await ipc.saveTextAs(name, ["sql", "txt"], activeTab.sql);
-          if (saved) patchTab(activeTab.id, { title: saved.split("/").pop() ?? name, savedSql: activeTab.sql, filePath: saved, fileMissing: false });
+          if (saved) patchTab(activeTab.id, { title: fileName(saved), savedSql: activeTab.sql, filePath: saved, fileMissing: false });
         } catch (e2) {
           pushNotification("warning", "Could not save", errorMessage(e2 ?? e));
         }
@@ -2454,13 +2519,13 @@ export function ExasolStudio({
       return;
     }
     const base = activeTab.title.replace(/\s+/g, "_").toLowerCase().replace(/\.sql$/, "");
-    const fileName = `${base}.sql`;
+    const newName = `${base}.sql`;
     // Save straight into the workspace folder (shown in the Files panel) —
     // no separate save window. Fall back to a download in the browser preview.
     if (isTauri() && wsPath) {
       try {
-        await ipc.writeTextFile(`${wsPath}/${fileName}`, activeTab.sql);
-        patchTab(activeTab.id, { title: fileName, savedSql: activeTab.sql, filePath: `${wsPath}/${fileName}` });
+        await ipc.writeTextFile(`${wsPath}/${newName}`, activeTab.sql);
+        patchTab(activeTab.id, { title: newName, savedSql: activeTab.sql, filePath: `${wsPath}/${newName}` });
         setFilesRefresh((n) => n + 1);
       } catch (e) {
         pushNotification("warning", "Could not save", errorMessage(e));
@@ -2471,7 +2536,7 @@ export function ExasolStudio({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = fileName;
+    a.download = newName;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -2954,6 +3019,8 @@ export function ExasolStudio({
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
       <UncommittedDialog pending={tabSession.pending} />
+      <ParamsDialog />
+      <ShortcutSheet open={showShortcuts} onClose={() => setShowShortcuts(false)} />
       <TitleBar
         env={safety.env}
         connection={connection}
@@ -3642,7 +3709,7 @@ export function ExasolStudio({
                   applyMonacoThemes(m);
                   // Register Exasol autocompletion on the shared monaco (guarded
                   // internally) so notebook SQL cells get completions too.
-                  registerExasolCompletion(m, () => sqlCatalogRef.current);
+                  registerExasolCompletion(m, () => sqlCatalogRef.current, () => udfLangsRef.current.map((l) => l.id), loadCatalogSchemas);
                 }}
                 onConnectDb={() => openConnect()}
                 onAddVirtualSchema={() => (connection ? openAddSource(connection.profile.id) : openConnect())}
@@ -3741,7 +3808,7 @@ export function ExasolStudio({
                     editorTheme,
                     beforeMount: (m) => {
                       applyMonacoThemes(m);
-                      registerExasolCompletion(m, () => sqlCatalogRef.current);
+                      registerExasolCompletion(m, () => sqlCatalogRef.current, () => udfLangsRef.current.map((l) => l.id), loadCatalogSchemas);
                     },
                     openSql: (sql, title) => void openBuiltSql(sql, false, title),
                   }}
@@ -3775,6 +3842,8 @@ export function ExasolStudio({
                 <Editor
                   beforeMount={(m) => {
                     applyMonacoThemes(m);
+                    installSqlFormatting(m);
+                    installSqlSignatureHelp(m, () => sqlCatalogRef.current, loadCatalogSchemas);
                     // A UDF body is written in whatever language its header
                     // names — tokenize it as that, not as SQL. Which
                     // languages exist comes from the server (SCRIPT_LANGUAGES).
@@ -3795,7 +3864,7 @@ export function ExasolStudio({
                   onMount={(editor, monaco) => {
                     editorRef.current = editor;
                     setStatusEditor(editor);
-                    registerExasolCompletion(monaco, () => sqlCatalogRef.current, () => udfLangsRef.current.map((l) => l.id));
+                    registerExasolCompletion(monaco, () => sqlCatalogRef.current, () => udfLangsRef.current.map((l) => l.id), loadCatalogSchemas);
                     stmtBadgesRef.current = installStatementBadges(editor, monaco);
                     // Typing inside a script block follows its language.
                     udfTypingRef.current?.dispose();
@@ -3808,7 +3877,8 @@ export function ExasolStudio({
                     sqlMarkersRef.current?.dispose();
                     sqlMarkersRef.current = installSqlMarkers(editor, monaco, {
                       enabled: () => lintOnRef.current,
-                      catalog: () => sqlCatalogRef.current,
+                      // "No such table" only from a complete catalog.
+                      catalog: () => (sqlCatalogRef.current.complete === false ? undefined : sqlCatalogRef.current),
                       languages: () => udfLangsRef.current.map((l) => l.id),
                     });
                     // "your Python code goes here" on an empty UDF body — the
@@ -3933,6 +4003,11 @@ export function ExasolStudio({
                       });
                     };
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => openQuickAccess(""));
+                    // Cmd/Ctrl+. runs the current statement, so Quick Fix is
+                    // Alt+Enter here; Stop must work while typing, too.
+                    // Alt+Enter in the Find widget stays "select all matches".
+                    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Enter, () => editor.trigger("keyboard", "editor.action.quickFix", null), "editorTextFocus && !findWidgetVisible");
+                    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Period, () => void cancelRunningRef.current());
                     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyP, () => openQuickAccess(">"));
                   }}
                   options={{

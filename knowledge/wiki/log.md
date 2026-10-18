@@ -309,3 +309,12 @@ Three designs, two rejected by review — worth knowing before touching TLS here
 - **TLS over a route:** the certificate never names 127.0.0.1, so a verify mode leads to trust on first use and the pin tunnel — read through the same route.
 - **Proxies:** SOCKS5 (RFC 1928/1929) and HTTP CONNECT through a loopback relay; database TLS end to end; proxy credentials are plaintext to the proxy (said in the UI).
 - Live-tested against a throwaway Alpine sshd forwarding to Exasol. Three Codex passes; all fixed.
+
+## [2026-10-04] editor | workbench-hardening phase 7.1 — editor polish
+- **NOW() is valid Exasol** (checked live); the dialect lint that flagged it is gone.
+- **Catalog:** table and view names load at once (cap 50,000, then lint stays off — "no such table" only on a complete catalog); columns load per schema when a statement, completion or hover needs them; reload only after DDL (`changesCatalog`), not on a 45 s timer or twice per run.
+- **Completion:** mixed-case names insert quoted (`sqlName`), the scope is the statement from `splitStatements` (a `;` in a comment or string no longer cuts it), comma joins resolve.
+- **Shortcuts** live in one table (`lib/shortcuts.ts`) that the shell matcher and the shortcut sheet (⌘⇧/) share. Gotchas: Tauri's default macOS menu binds ⌘W to Close Window, so the page never sees it — `app_menu.rs` is the default minus that item. ⌘. runs the current statement, so Quick Fix is ⌥⏎ (only with editor text focus: in the Find widget ⌥⏎ stays "select all matches"). ⌘K opens search only outside Monaco (its chords start with ⌘K). While a dialog is open only Stop works; held keys repeat only tab cycling; AltGr (Ctrl+Alt on Windows/Linux) is never a shortcut. Stop sends one KILL per run.
+- **Paths from Rust can be Windows paths:** take file names with `fileName()` (splits on `/` and `\`), not `split("/")`.
+- **Signature help / hover:** built-in signatures checked live (SUBSTRING with commas is valid; RANDOM takes both bounds or none; DECODE repeats search/result pairs). Table hover only in table positions (FROM/JOIN/INTO/UPDATE/TABLE or a FROM list), never in strings/comments, a WITH name shadows a table, `S` in `S.T` is not a table. Monaco providers are registered once; the catalog getter is swapped on remount instead.
+- Two Codex passes (10 + 6 findings), all fixed; one rejected after a live check (SUBSTRING).

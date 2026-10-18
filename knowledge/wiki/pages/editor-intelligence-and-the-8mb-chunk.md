@@ -70,7 +70,8 @@ Two deliberately separate modules:
 - `lib/sql-lint.ts` — what is wrong in THIS connection: a schema or table the
   catalog does not have, a script language SCRIPT_LANGUAGES does not offer,
   and Exasol dialect shapes (`FETCH FIRST`, `SELECT TOP`, `ISNULL`,
-  `GETDATE()`, `NOW()`).
+  `GETDATE()`). `NOW()` was listed too, wrongly: Exasol 8 accepts it
+  (checked live, 2026-10-04), so the rule was removed.
 
 `maskNonCode()` blanks strings, comments and UDF bodies **with spaces of equal
 length**, so offsets survive and every regex below it runs on code only.

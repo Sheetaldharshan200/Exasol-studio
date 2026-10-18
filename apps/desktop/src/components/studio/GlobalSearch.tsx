@@ -59,7 +59,12 @@ export function GlobalSearch({ getItems }: { getItems: () => SearchItem[] }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      // Inside the SQL editor Cmd/Ctrl+K starts Monaco's chords (comment,
+      // fold …) — search is Cmd/Ctrl+P there.
+      if (e.isComposing || e.repeat || (e.target as HTMLElement | null)?.closest?.(".monaco-editor")) return;
+      // Not over another dialog: that one keeps the keyboard.
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         show();
       }
@@ -102,6 +107,9 @@ export function GlobalSearch({ getItems }: { getItems: () => SearchItem[] }) {
   return (
     <div className="fixed inset-0 z-[140] flex items-start justify-center bg-black/40 pt-[12vh]" onMouseDown={() => setOpen(false)}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search everything"
         onMouseDown={(e) => e.stopPropagation()}
         className="w-[min(640px,92vw)] overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
       >
