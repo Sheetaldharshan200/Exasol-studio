@@ -816,6 +816,10 @@ export async function mockInvoke(
       return null;
     case "about_info":
       return { appVersion: "preview", tauriVersion: "", os: "browser", arch: "", dataDir: "", logsDir: "" };
+    case "reopen_picked_file":
+      return "";
+    case "discard_prepared_load":
+      return null;
     case "prepare_csv_load":
       return { path: String(args?.path ?? ""), rows: 0, rejected: 0, rejectPath: null };
     case "open_logs_dir":

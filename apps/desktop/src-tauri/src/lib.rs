@@ -101,6 +101,7 @@ pub fn run() {
             // Resolve the effective verified component lock (signed remote
             // override if valid + newer, else baked) BEFORE anything reads it.
             crate::component_lock::init_effective(&data_dir);
+            crate::files::init_picked_store(&data_dir);
             app.manage(AppState::new(data_dir));
             // Load app settings once, so the backend readers see them from the start.
             let _ = crate::settings::get_app_settings(app.handle().clone());
@@ -224,11 +225,13 @@ pub fn run() {
             profile_io::import_connections,
             grid_edits::apply_row_edits,
             files::save_text_as,
+            files::reopen_picked_file,
             xlsx::save_xlsx_as,
             about::about_info,
             about::open_logs_dir,
             about::recent_log,
             load_prep::prepare_csv_load,
+            load_prep::discard_prepared_load,
             exapump::exapump_export,
             files::open_text_file,
             session_cmd::session_info,

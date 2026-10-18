@@ -29,6 +29,10 @@ test("a table's DDL has keys, distribution, partition and comments", () => {
   );
 });
 
+test("an identity column keeps its numbering instead of a default", () => {
+  assert.equal(tableDdl("S", "T", [{ name: "ID", dataType: "DECIMAL(18,0)", identity: 1042, default: "0", comment: null }], []), 'CREATE TABLE "S"."T" (\n  "ID" DECIMAL(18,0) IDENTITY 1042\n);');
+});
+
 test("without extras: no partition and no table comment", () => {
   assert.equal(tableDdl(undefined, 'a"b', [cols[1]], []), 'CREATE TABLE "a""b" (\n  "Day" DATE DEFAULT CURRENT_DATE\n);');
 });

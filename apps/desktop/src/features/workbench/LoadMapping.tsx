@@ -6,6 +6,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ipc, type TablePreview } from "@/lib/ipc";
 import { defaultMapping } from "@/lib/load-mapping";
+import { catalogName } from "@/lib/sql-completion-scope";
 
 export type Mapping = { targets: string[]; mapping: (number | null)[] } | null;
 
@@ -16,6 +17,7 @@ export function LoadMapping({
   table,
   canMap,
   onMapping,
+  defaultSchema,
 }: {
   profileId: string;
   filePath: string;
@@ -24,6 +26,8 @@ export function LoadMapping({
   /** Mapping needs a CSV (ExaPump loads Parquet as it is). */
   canMap: boolean;
   onMapping: (m: Mapping) => void;
+  /** The connection's schema, when the schema field is left empty. */
+  defaultSchema?: string | null;
 }) {
   const [preview, setPreview] = useState<TablePreview | null>(null);
   const [targets, setTargets] = useState<string[] | null>(null);
@@ -36,11 +40,13 @@ export function LoadMapping({
   // An existing table: look its columns up (debounced while typing the name).
   useEffect(() => {
     setTargets(null);
-    if (!canMap || !schema.trim() || !table.trim()) return;
+    // As Exasol reads the names: unquoted folds to upper case.
+    const s = schema.trim() || defaultSchema?.trim() || "";
+    if (!canMap || !s || !table.trim()) return;
     let current = true;
     const t = setTimeout(() => {
       ipc
-        .getTableDetails(profileId, schema.trim(), table.trim())
+        .getTableDetails(profileId, catalogName(s), catalogName(table.trim()))
         .then((d) => current && setTargets(d.columns.length ? d.columns.map((c) => c.name) : null))
         .catch(() => current && setTargets(null));
     }, 400);
@@ -48,7 +54,7 @@ export function LoadMapping({
       current = false;
       clearTimeout(t);
     };
-  }, [profileId, schema, table, canMap]);
+  }, [profileId, schema, table, canMap, defaultSchema]);
 
   useEffect(() => {
     if (targets && preview) setMapping(defaultMapping(preview.columns, targets));

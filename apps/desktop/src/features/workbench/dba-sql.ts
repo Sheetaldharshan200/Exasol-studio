@@ -57,11 +57,12 @@ export const dbaSql = {
   killStatement: (sessionId: string) => `KILL STATEMENT IN SESSION ${sessionId.replace(/[^0-9]/g, "")}`,
 };
 
-/** Statements running now, longest first (DURATION is h:mm:ss text, so
- *  the order is by the parsed seconds). */
+/** Statements running now (any status but idle: SQL, prepared, batch,
+ *  queued, fetching), longest first. DURATION is h:mm:ss text (checked live),
+ *  so the order is by the parsed seconds. */
 export const RUNNING_SQL = `SELECT SESSION_ID, USER_NAME, COMMAND_NAME, DURATION, ACTIVITY, SQL_TEXT
 FROM SYS.EXA_DBA_SESSIONS
-WHERE STATUS = 'EXECUTE SQL' AND SESSION_ID <> CURRENT_SESSION
+WHERE STATUS NOT IN ('IDLE', 'DISCONNECTED') AND SESSION_ID <> CURRENT_SESSION
 ORDER BY TO_NUMBER(REGEXP_SUBSTR(DURATION, '^[0-9]+')) * 3600
        + TO_NUMBER(REGEXP_SUBSTR(DURATION, '[0-9]+', 1, 2)) * 60
        + TO_NUMBER(REGEXP_SUBSTR(DURATION, '[0-9]+', 1, 3)) DESC`;

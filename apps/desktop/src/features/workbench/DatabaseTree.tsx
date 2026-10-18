@@ -237,6 +237,8 @@ export function DatabaseTree({
 
   const selectedAt = nodeRows.findIndex(({ f }) => f.node.id === selected);
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // Keys on the tree itself; a focused chevron button keeps its own Enter.
+    if (e.target !== e.currentTarget) return;
     const action = treeKey(keyRows, selectedAt, e.key, e.shiftKey);
     if (!action) return;
     e.preventDefault();

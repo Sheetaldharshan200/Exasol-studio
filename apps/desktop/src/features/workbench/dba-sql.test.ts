@@ -9,7 +9,7 @@ test("kills take only the digits of a session id", () => {
 });
 
 test("monitoring reads running statements and waiting conflicts", () => {
-  assert.match(RUNNING_SQL, /STATUS = 'EXECUTE SQL'/);
+  assert.match(RUNNING_SQL, /STATUS NOT IN \('IDLE', 'DISCONNECTED'\)/, "prepared and batch statements count too");
   assert.match(RUNNING_SQL, /SESSION_ID <> CURRENT_SESSION/, "the monitor's own query is not listed");
   assert.match(LOCKS_SQL, /EXA_STATISTICS\.EXA_DBA_TRANSACTION_CONFLICTS/);
   assert.match(LOCKS_SQL, /STOP_TIME IS NULL/);

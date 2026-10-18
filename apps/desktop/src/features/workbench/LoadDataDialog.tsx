@@ -72,23 +72,27 @@ export function LoadDataDialog({
       // An existing table: load a copy in its column order; malformed rows
       // go to a reject file instead of failing the load.
       let file = filePath;
+      let prepared: string | null = null;
       if (mapped && isCsv) {
         const prep = await ipc.prepareCsvLoad(filePath, delimiter, mapped.targets, mapped.mapping);
         file = prep.path;
+        prepared = prep.path;
         setLines((p) => [
           ...p,
           { level: "info", text: `Prepared ${prep.rows.toLocaleString()} rows in the table's column order.` },
           ...(prep.rejected ? [{ level: "err", text: `${prep.rejected.toLocaleString()} rows had the wrong number of fields and were set aside: ${prep.rejectPath}` }] : []),
         ]);
       }
-      await ipc.exapumpUpload({
-        profileId: profile.id,
-        schema: schema || undefined,
-        file,
-        table: fullTable,
-        delimiter: isCsv ? delimiter : undefined,
-        dryRun,
-      });
+      await ipc
+        .exapumpUpload({
+          profileId: profile.id,
+          schema: schema || undefined,
+          file,
+          table: fullTable,
+          delimiter: isCsv ? delimiter : undefined,
+          dryRun,
+        })
+        .finally(() => prepared && void ipc.discardPreparedLoad(prepared).catch(() => undefined));
       if (!isTauri()) {
         setLines([
           { level: "cmd", text: `$ exapump upload ${fileName} --table ${fullTable}${dryRun ? " --dry-run" : ""}` },
@@ -151,7 +155,7 @@ export function LoadDataDialog({
                 <input value={delimiter} onChange={(e) => setDelimiter(e.target.value)} className="mt-0.5 h-8 w-24 rounded-md border border-border bg-editor px-2 font-mono text-[12px] text-foreground" />
               </label>
             ) : null}
-            <LoadMapping profileId={profile.id} filePath={filePath} schema={schema} table={table} canMap={isCsv} onMapping={setMapped} />
+            <LoadMapping profileId={profile.id} filePath={filePath} schema={schema} table={table} canMap={isCsv} onMapping={setMapped} defaultSchema={profile.schema} />
             <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Database className="h-3.5 w-3.5" /> Loads into <span className="font-mono text-foreground">{fullTable}</span> via ExaPump. The
               table is auto-created from the file if it doesn’t exist.

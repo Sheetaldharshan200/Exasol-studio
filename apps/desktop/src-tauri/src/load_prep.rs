@@ -71,7 +71,9 @@ pub async fn prepare_csv_load(app: tauri::AppHandle, path: String, delimiter: Op
     let dir = app.state::<crate::state::AppState>().data_dir.join("loads");
     std::fs::create_dir_all(&dir)?;
     let stem = std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
-    let (mapped, rejects) = (dir.join(format!("{stem}-mapped.csv")), dir.join(format!("{stem}-rejected.csv")));
+    // Unique per load: two loads of same-named files never share a copy.
+    let run = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
+    let (mapped, rejects) = (dir.join(format!("{stem}-{run}-mapped.csv")), dir.join(format!("{stem}-{run}-rejected.csv")));
     let (input, out, rej) = (std::fs::File::open(&path)?, std::fs::File::create(&mapped)?, std::fs::File::create(&rejects)?);
     let (rows, rejected) = tauri::async_runtime::spawn_blocking(move || remap(std::io::BufReader::new(input), delim, &targets, &mapping, out, rej))
         .await
@@ -87,8 +89,33 @@ pub async fn prepare_csv_load(app: tauri::AppHandle, path: String, delimiter: Op
     })
 }
 
+/// Delete a prepared copy once its upload is over (reject files stay for the person).
+#[tauri::command]
+pub fn discard_prepared_load(app: tauri::AppHandle, path: String) -> AppResult<()> {
+    let dir = app.state::<crate::state::AppState>().data_dir.join("loads");
+    let p = std::path::Path::new(&path);
+    if is_prepared_copy(p, &dir) {
+        let _ = std::fs::remove_file(p);
+    }
+    Ok(())
+}
+
+/// Only Studio's own prepared copies may be deleted this way.
+fn is_prepared_copy(p: &std::path::Path, loads: &std::path::Path) -> bool {
+    p.parent() == Some(loads) && p.file_name().is_some_and(|n| n.to_string_lossy().ends_with("-mapped.csv"))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_prepared_copies_in_the_loads_folder_are_discarded() {
+        let loads = std::path::Path::new("/d/loads");
+        assert!(super::is_prepared_copy(std::path::Path::new("/d/loads/a-1-mapped.csv"), loads));
+        assert!(!super::is_prepared_copy(std::path::Path::new("/d/loads/a-1-rejected.csv"), loads));
+        assert!(!super::is_prepared_copy(std::path::Path::new("/home/a-mapped.csv"), loads));
+        assert!(!super::is_prepared_copy(std::path::Path::new("/d/loads/sub/a-mapped.csv"), loads));
+    }
+
     use super::*;
 
     fn run(input: &str, targets: &[&str], mapping: &[Option<usize>]) -> (String, String, u64, u64) {

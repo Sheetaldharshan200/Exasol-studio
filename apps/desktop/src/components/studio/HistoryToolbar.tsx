@@ -12,8 +12,11 @@ export function useHistoryFilter(entries: HistoryEntry[]) {
   const [connection, setConnection] = useState("");
   const connections = useMemo(() => connectionsOf(entries), [entries]);
   const shown = useMemo(() => searchEntries(entries, text, connection), [entries, text, connection]);
+  // What the table lists after its own column filters, in its order.
+  const [listed, setListed] = useState<HistoryEntry[] | null>(null);
+  const exported = listed ?? shown;
   const exportAs = (format: "csv" | "json") =>
-    void ipc.saveTextAs(`sql-history.${format}`, [format], historyExport(shown, format)).catch(() => undefined);
+    void ipc.saveTextAs(`sql-history.${format}`, [format], historyExport(exported, format)).catch(() => undefined);
 
   const toolbar = (
     <div className="flex items-center gap-1">
@@ -48,18 +51,18 @@ export function useHistoryFilter(entries: HistoryEntry[]) {
           <button
             title="Export the entries shown"
             aria-label="Export history"
-            disabled={!shown.length}
+            disabled={!exported.length}
             className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
           >
             <Download className="h-3.5 w-3.5" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => exportAs("csv")}>Export {shown.length} as CSV</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => exportAs("json")}>Export {shown.length} as JSON</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => exportAs("csv")}>Export {exported.length} as CSV</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => exportAs("json")}>Export {exported.length} as JSON</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
   );
-  return { shown, toolbar };
+  return { shown, toolbar, setListed };
 }

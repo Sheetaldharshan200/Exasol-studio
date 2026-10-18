@@ -1482,10 +1482,11 @@ export function ExasolStudio({
       return next;
     });
   }, []);
-  /** Open a file by path in a SQL tab (recent list, or dropped on the window). */
-  const openFilePath = async (path: string) => {
+  /** Open a file by path in a SQL tab: from the recent list (approved again
+   *  by the backend, so it can be saved back), or dropped on the window. */
+  const openFilePath = async (path: string, recent = false) => {
     try {
-      openFile(fileName(path), await ipc.fsReadText(path), path);
+      openFile(fileName(path), recent ? await ipc.reopenPickedFile(path) : await ipc.fsReadText(path), path);
     } catch (e) {
       setRecentFiles((list) => {
         const next = list.filter((p) => p !== path);
@@ -1652,15 +1653,17 @@ export function ExasolStudio({
         tabIndex={tab.id === activeTabId ? 0 : -1}
         onKeyDown={(e) => {
           if (isEditing) return;
-          const at = tabs.findIndex((t) => t.id === tab.id);
           const move =
             e.key === "ArrowRight" ? { by: 1 } : e.key === "ArrowLeft" ? { by: -1 } : e.key === "Home" ? { n: 1 } : e.key === "End" ? { n: 9 } : null;
           if (move) {
             e.preventDefault();
-            const i = tabTarget(tabs.length, at, move);
-            if (i === null) return;
-            setActiveTabId(tabs[i].id);
-            (document.querySelector(`[data-tab-id="${CSS.escape(tabs[i].id)}"]`) as HTMLElement | null)?.focus();
+            // The strip as shown (pinned first, collapsed groups hidden), not the list order.
+            const shown = Array.from(e.currentTarget.closest('[role="tablist"]')?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []);
+            const i = tabTarget(shown.length, shown.indexOf(e.currentTarget), move);
+            const next = i === null ? null : shown[i];
+            if (!next?.dataset.tabId) return;
+            setActiveTabId(next.dataset.tabId);
+            next.focus();
           } else if (e.key === "F2" && (tab.view === "sql" || tab.view === "visualizer")) {
             e.preventDefault();
             startRename(tab.id, tab.title);
@@ -3774,7 +3777,7 @@ export function ExasolStudio({
                 onGuides={(path) => openDocsTab(path)}
                 onOpenRecent={(id) => void connectSaved(id)}
                 recentFiles={recentFiles}
-                onOpenRecentFile={(p) => void openFilePath(p)}
+                onOpenRecentFile={(p) => void openFilePath(p, true)}
               />
             </div>
           ) : activeTab.view === "marketplace" ? (

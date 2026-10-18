@@ -988,6 +988,10 @@ export const ipc = {
   /** Rewrite a CSV into a table's column order; malformed rows go to a reject file. */
   prepareCsvLoad: (path: string, delimiter: string | undefined, targets: string[], mapping: (number | null)[]) =>
     call<{ path: string; rows: number; rejected: number; rejectPath: string | null }>("prepare_csv_load", { path, delimiter, targets, mapping }),
+  /** Reopen a recent file the person picked before (it may then be saved back). */
+  reopenPickedFile: (path: string) => call<string>("reopen_picked_file", { path }),
+  /** Delete a prepared load copy after its upload. */
+  discardPreparedLoad: (path: string) => call<void>("discard_prepared_load", { path }),
   /** Versions and the system, for the About dialog (no connection details). */
   aboutInfo: () => call<AboutInfo>("about_info"),
   /** Open the logs folder in the file manager. */

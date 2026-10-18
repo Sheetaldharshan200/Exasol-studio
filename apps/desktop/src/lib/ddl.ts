@@ -13,7 +13,9 @@ export type TableExtras = { comment?: string | null; partitionBy?: string[] };
 export function tableDdl(schema: string | undefined, name: string, cols: ColumnInfo[], cons: ConstraintInfo[], extras: TableExtras = {}): string {
   const lines = cols.map((c) => {
     let l = `  ${quoteIdent(c.name)} ${c.dataType}`;
-    if (c.default) l += ` DEFAULT ${c.default}`;
+    // An identity column keeps numbering from its current value.
+    if (c.identity !== null && c.identity !== undefined && c.identity !== "") l += ` IDENTITY ${c.identity}`;
+    else if (c.default) l += ` DEFAULT ${c.default}`;
     if (c.nullable === false) l += " NOT NULL";
     if (c.comment) l += ` COMMENT IS ${literal(c.comment)}`;
     return l;

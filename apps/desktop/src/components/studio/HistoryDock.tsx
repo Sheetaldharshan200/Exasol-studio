@@ -7,7 +7,7 @@
  * ~5,000-line shell. They depend on the shell only through props plus the
  * shared SqlTab type and IconButton, so they move as a unit.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
@@ -53,7 +53,7 @@ import { IconButton } from "./IconButton";
 import type { SqlTab } from "./tabs";
 
 
-function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void }) {
+function LogTable({ entries, onOpenSql, onShown }: { entries: HistoryEntry[]; onOpenSql: (sql: string) => void; onShown?: (shown: HistoryEntry[]) => void }) {
   const [sort, setSort] = useState<{ key: LogSortKey; dir: 1 | -1 }>({ key: "time", dir: -1 });
   const [detail, setDetail] = useState<{ label: string; value: string; mono: boolean; sql?: string } | null>(null);
   // Value filters (empty set = show everything). Status and Command filter by
@@ -66,11 +66,12 @@ function LogTable({ entries, onOpenSql }: { entries: HistoryEntry[]; onOpenSql: 
   // duplicate-id-safe render keys).
   const verb = verbOf;
   const commandOptions = [...new Set(entries.map(verbOf))].sort();
-  const sorted = sortEntries(
-    filterEntries(keyEntries(entries), statusFilter, commandFilter),
-    sort.key,
-    sort.dir,
+  const sorted = useMemo(
+    () => sortEntries(filterEntries(keyEntries(entries), statusFilter, commandFilter), sort.key, sort.dir),
+    [entries, statusFilter, commandFilter, sort],
   );
+  // The toolbar exports exactly what is listed (column filters included).
+  useEffect(() => onShown?.(sorted.map((k) => k.e)), [sorted, onShown]);
   const flip = (key: LogSortKey) =>
     setSort((cur) => (cur.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: key === "time" ? -1 : 1 }));
   const toggleIn = (set: Set<string>, value: string): Set<string> => {
@@ -618,7 +619,7 @@ export function HistoryDock({
               // in a proper cell grid. Headers sort (tap toggles asc/desc),
               // the SQL cell opens the statement in a query tab, and every
               // other cell expands into a detail view with the full value.
-              <LogTable entries={history.shown} onOpenSql={onPick} />
+              <LogTable entries={history.shown} onOpenSql={onPick} onShown={history.setListed} />
             )}
           </div>
         )}

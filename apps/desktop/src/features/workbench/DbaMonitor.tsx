@@ -3,7 +3,7 @@
 // opens the SQL to review, like every DBA action: a statement (the session
 // survives) or a whole session.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCcw, X } from "lucide-react";
 import { errorMessage, ipc } from "@/lib/ipc";
 import { dbaSql, LOCKS_SQL, RUNNING_SQL } from "./dba-sql";
@@ -28,27 +28,34 @@ export function DbaMonitor({
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState(true);
 
+  // Only the latest request may fill the table: a Running answer arriving
+  // after a switch to Locks would put the wrong rows (and kill buttons) there.
+  const latest = useRef(0);
   const load = useCallback(async () => {
+    const req = ++latest.current;
     setBusy(true);
     try {
       const res = await ipc.executeSql(profileId, connectionName, kind === "running" ? RUNNING_SQL : LOCKS_SQL, 1000, false, false);
+      if (req !== latest.current) return;
       const r = res.results.find((x) => x.kind === "resultSet");
       if (r?.error) throw new Error(r.error);
       setRows((r?.rows as unknown[][]) ?? []);
       setError(null);
     } catch (e) {
-      setError(errorMessage(e));
+      if (req === latest.current) setError(errorMessage(e));
     } finally {
-      setBusy(false);
+      if (req === latest.current) setBusy(false);
     }
   }, [profileId, connectionName, kind]);
 
   useEffect(() => {
     setRows(null);
     void load();
-    if (!live) return;
-    const t = window.setInterval(() => void load(), REFRESH_MS);
-    return () => window.clearInterval(t);
+    const t = live ? window.setInterval(() => void load(), REFRESH_MS) : undefined;
+    return () => {
+      window.clearInterval(t);
+      latest.current++;
+    };
   }, [load, live]);
 
   const head =
