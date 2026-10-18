@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, type PanelImperativeHandle } from "@/components/ui/resizable";
+import { useDefaultLayout } from "react-resizable-panels";
+import { safeStorage } from "@/lib/safe-storage";
 import { cn } from "@/lib/utils";
 import { ConnectionPropertiesTab } from "@/features/connection/ConnectionPropertiesTab";
 import { WelcomeScreen } from "@/features/workbench/WelcomeScreen";
@@ -424,6 +426,9 @@ export function ExasolStudio({
   // Imperative handles for the collapsible side panels.
   const sidebarPanelRef = useRef<PanelImperativeHandle | null>(null);
   const aiPanelRef = useRef<PanelImperativeHandle | null>(null);
+  // Pane sizes are remembered (only sizes the person dragged, not window resizes).
+  const mainLayout = useDefaultLayout({ id: "studio.layout.main", storage: safeStorage, onlySaveAfterUserInteractions: true });
+  const editorLayout = useDefaultLayout({ id: "studio.layout.editor", storage: safeStorage, onlySaveAfterUserInteractions: true });
   // Stable fallback tab per connection, used for the first render before the
   // bucket is committed to state (avoids identity churn / remounts).
   // A bucket may legitimately have zero tabs — the workspace then shows the
@@ -1641,6 +1646,32 @@ export function ExasolStudio({
       <div
         key={tab.id}
         data-tab-id={tab.id}
+        role="tab"
+        aria-selected={tab.id === activeTabId}
+        // One tab in the Tab order; arrows move between tabs (tablist pattern).
+        tabIndex={tab.id === activeTabId ? 0 : -1}
+        onKeyDown={(e) => {
+          if (isEditing) return;
+          const at = tabs.findIndex((t) => t.id === tab.id);
+          const move =
+            e.key === "ArrowRight" ? { by: 1 } : e.key === "ArrowLeft" ? { by: -1 } : e.key === "Home" ? { n: 1 } : e.key === "End" ? { n: 9 } : null;
+          if (move) {
+            e.preventDefault();
+            const i = tabTarget(tabs.length, at, move);
+            if (i === null) return;
+            setActiveTabId(tabs[i].id);
+            (document.querySelector(`[data-tab-id="${CSS.escape(tabs[i].id)}"]`) as HTMLElement | null)?.focus();
+          } else if (e.key === "F2" && (tab.view === "sql" || tab.view === "visualizer")) {
+            e.preventDefault();
+            startRename(tab.id, tab.title);
+          } else if (e.key === "Delete") {
+            e.preventDefault();
+            closeTab(tab.id);
+          } else if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setActiveTabId(tab.id);
+          }
+        }}
         // Pointer-based drag reorder — HTML5 DnD is unreliable inside the
         // WKWebView titlebar region, so we track the pointer ourselves.
         onPointerDown={(e) => {
@@ -1670,7 +1701,7 @@ export function ExasolStudio({
         title={tab.view === "sql" || tab.view === "visualizer" ? "Double-click to rename · right-click to group" : "Right-click to group"}
         style={tabEdge ? { boxShadow: `inset 0 2px 0 0 ${tabEdge}` } : undefined}
         className={cn(
-          "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] select-none",
+          "group relative flex h-9 shrink-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-[12px] outline-none select-none focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:ring-inset",
           grouped && "border-r-0",
           tab.id === activeTabId
             ? "bg-editor text-foreground"
@@ -3172,9 +3203,10 @@ export function ExasolStudio({
           onToggleAi={toggleAi}
         />
 
-        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+        <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1" defaultLayout={mainLayout.defaultLayout} onLayoutChanged={mainLayout.onLayoutChanged}>
           {/* Left navigator — resizable + collapsible */}
           <ResizablePanel
+            id="sidebar"
             panelRef={sidebarPanelRef}
             collapsible
             collapsedSize="0px"
@@ -3262,12 +3294,14 @@ export function ExasolStudio({
           <ResizableHandle groupDirection="horizontal" />
 
           {/* Editor column */}
-          <ResizablePanel minSize="360px" className="min-w-0">
+          <ResizablePanel id="workspace" minSize="360px" className="min-w-0">
             <div className="relative flex h-full min-w-0 flex-col bg-editor">
           <>
           {/* Tab strip */}
           <div data-tour="tabbar" className="flex h-9 shrink-0 items-center border-b border-border bg-titlebar pr-1">
             <div
+              role="tablist"
+              aria-label="Open tabs"
               className="flex min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               onDoubleClick={(e) => {
                 // Double-click empty tab-bar space opens a new query (VS Code style).
@@ -3901,8 +3935,8 @@ export function ExasolStudio({
               )}
             </div>
           ) : (
-            <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-              <ResizablePanel defaultSize="55%" minSize="120px" className="relative flex min-h-0 flex-col">
+            <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1" defaultLayout={editorLayout.defaultLayout} onLayoutChanged={editorLayout.onLayoutChanged}>
+              <ResizablePanel id="editor" defaultSize="55%" minSize="120px" className="relative flex min-h-0 flex-col">
                 {inlineDiff ? (
                   <InlineSqlDiff
                     state={inlineDiff}
@@ -4123,7 +4157,7 @@ export function ExasolStudio({
                 <EditorStatusBar editor={statusEditor} sql={activeTab.sql} />
               </ResizablePanel>
               <ResizableHandle groupDirection="vertical" />
-              <ResizablePanel defaultSize="45%" minSize="80px" className="min-h-0">
+              <ResizablePanel id="results" defaultSize="45%" minSize="80px" className="min-h-0">
                 <NullTextContext.Provider value={nullText}>
                 <ResultsPanel
                   view={activeTab.resultView ?? "results"}
@@ -4167,6 +4201,7 @@ export function ExasolStudio({
           {/* Exa (opencode) assistant — resizable + collapsible. Same panel as
               the full "Exa" tab, so both surfaces are one agent. */}
           <ResizablePanel
+            id="ai"
             panelRef={aiPanelRef}
             collapsible
             collapsedSize="0px"
