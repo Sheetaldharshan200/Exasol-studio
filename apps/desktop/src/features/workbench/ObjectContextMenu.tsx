@@ -22,7 +22,7 @@ export type ObjectAction = {
 
 type Item =
   | { sep: true }
-  | { label: string; kind: "run" | "gen" | "copy"; sql?: string; text?: string }
+  | { label: string; kind: "run" | "gen" | "copy" | "export"; sql?: string; text?: string }
   | { label: string; kind: "nav"; navTab: string; navEdit?: boolean }
   | { label: string; kind: "action"; danger?: boolean; action: ObjectAction };
 
@@ -39,6 +39,7 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string, openRows = 1000): Item[]
       const t = q(schema, ctx.name);
       return [
         { label: "Open data", kind: "run", sql: `SELECT * FROM ${t} LIMIT ${openRows};` },
+        { label: "Export data…", kind: "export", sql: `SELECT * FROM ${t}` },
         { label: "Generate SELECT", kind: "gen", sql: `SELECT * FROM ${t};` },
         { label: "Generate INSERT", kind: "gen", sql: `INSERT INTO ${t} (/* columns */) VALUES (/* values */);` },
         { label: "Generate UPDATE", kind: "gen", sql: `UPDATE ${t} SET /* col = value */ WHERE /* condition */;` },
@@ -62,6 +63,7 @@ function itemsFor(ctx: NodeCtx, defaultSchema?: string, openRows = 1000): Item[]
       const v = q(schema, ctx.name);
       return [
         { label: "Open data", kind: "run", sql: `SELECT * FROM ${v} LIMIT ${openRows};` },
+        { label: "Export data…", kind: "export", sql: `SELECT * FROM ${v}` },
         { label: "Generate SELECT", kind: "gen", sql: `SELECT * FROM ${v};` },
         { sep: true },
         // Editing opens as reviewable SQL in a query tab (no dialog).
@@ -304,6 +306,7 @@ export function ObjectContextMenu({
   onEditInDetails,
   onFavorite,
   openRows,
+  onExport,
 }: {
   ctx: NodeCtx;
   x: number;
@@ -322,8 +325,10 @@ export function ObjectContextMenu({
   onFavorite?: () => void;
   /** Rows "Open data" fetches: the Row limit setting. */
   openRows?: number;
+  /** Export every row of a query to a file (ExaPump). */
+  onExport?: (sql: string) => void;
 }) {
-  const items = itemsFor(ctx, defaultSchema, openRows);
+  const items = itemsFor(ctx, defaultSchema, openRows).filter((it) => !("kind" in it) || it.kind !== "export" || onExport);
   const canDetail =
     onDetails &&
     (ctx.type === "schema" || ctx.type === "virtual-schema" || ctx.type === "table" || ctx.type === "view" || ctx.type === "user");
@@ -380,6 +385,7 @@ export function ObjectContextMenu({
                 );
               }
               else if (it.kind === "action") onAction(it.action);
+              else if (it.kind === "export") onExport?.(it.sql ?? "");
               else if (it.kind === "nav") onEditInDetails?.(it.navTab, it.navEdit);
               else onEditorSql(it.sql ?? "", it.kind === "run");
               onClose();

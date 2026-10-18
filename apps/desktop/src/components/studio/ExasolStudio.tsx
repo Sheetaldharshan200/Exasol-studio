@@ -4312,6 +4312,17 @@ export function ExasolStudio({
       {ctxMenu && ctxMenu.node.ctx ? (
         <ObjectContextMenu
           openRows={maxRows}
+          onExport={
+            isTauri()
+              ? (sql) => {
+                  const id = ctxMenu.profileId;
+                  void ipc
+                    .exapumpExport(id, sql, "csv")
+                    .then((path) => path && pushNotification("success", "Exported", path))
+                    .catch((e) => pushNotification("warning", "Could not export", errorMessage(e)));
+                }
+              : undefined
+          }
           ctx={ctxMenu.node.ctx}
           x={ctxMenu.x}
           y={ctxMenu.y}

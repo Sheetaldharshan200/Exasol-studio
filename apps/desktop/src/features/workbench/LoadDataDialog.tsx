@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Check, Database, Loader2, Play, Upload, X } from "lucide-react";
 import { errorMessage, ipc, isTauri, type ConnectionProfile } from "@/lib/ipc";
 import { cn } from "@/lib/utils";
+import { LoadMapping, type Mapping } from "./LoadMapping";
 
 type Line = { level: string; text: string };
 
@@ -36,6 +37,7 @@ export function LoadDataDialog({
   const [ok, setOk] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [mapped, setMapped] = useState<Mapping>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
   const unlisten = useRef<UnlistenFn[]>([]);
 
@@ -67,10 +69,22 @@ export function LoadDataDialog({
       unlisten.current.push(onLog, onDone);
     }
     try {
+      // An existing table: load a copy in its column order; malformed rows
+      // go to a reject file instead of failing the load.
+      let file = filePath;
+      if (mapped && isCsv) {
+        const prep = await ipc.prepareCsvLoad(filePath, delimiter, mapped.targets, mapped.mapping);
+        file = prep.path;
+        setLines((p) => [
+          ...p,
+          { level: "info", text: `Prepared ${prep.rows.toLocaleString()} rows in the table's column order.` },
+          ...(prep.rejected ? [{ level: "err", text: `${prep.rejected.toLocaleString()} rows had the wrong number of fields and were set aside: ${prep.rejectPath}` }] : []),
+        ]);
+      }
       await ipc.exapumpUpload({
         profileId: profile.id,
         schema: schema || undefined,
-        file: filePath,
+        file,
         table: fullTable,
         delimiter: isCsv ? delimiter : undefined,
         dryRun,
@@ -94,7 +108,7 @@ export function LoadDataDialog({
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-[520px] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
+        className="flex max-h-[85vh] w-[600px] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
@@ -137,6 +151,7 @@ export function LoadDataDialog({
                 <input value={delimiter} onChange={(e) => setDelimiter(e.target.value)} className="mt-0.5 h-8 w-24 rounded-md border border-border bg-editor px-2 font-mono text-[12px] text-foreground" />
               </label>
             ) : null}
+            <LoadMapping profileId={profile.id} filePath={filePath} schema={schema} table={table} canMap={isCsv} onMapping={setMapped} />
             <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Database className="h-3.5 w-3.5" /> Loads into <span className="font-mono text-foreground">{fullTable}</span> via ExaPump. The
               table is auto-created from the file if it doesn’t exist.

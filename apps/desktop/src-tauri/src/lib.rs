@@ -1,5 +1,6 @@
 mod about;
 mod agent;
+mod load_prep;
 mod xlsx;
 #[cfg(target_os = "macos")]
 mod app_menu;
@@ -227,6 +228,7 @@ pub fn run() {
             about::about_info,
             about::open_logs_dir,
             about::recent_log,
+            load_prep::prepare_csv_load,
             exapump::exapump_export,
             files::open_text_file,
             session_cmd::session_info,

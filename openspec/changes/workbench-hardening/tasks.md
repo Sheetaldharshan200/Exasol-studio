@@ -134,9 +134,9 @@ PR with tests and a Codex review. A task that adds logic names its test file.
 - [x] 7.3.7 Replace the ★ glyph with an icon.
 
 ### 7.4 History, files, monitoring, diagnostics
-- [ ] 7.4.1 History per connection, searchable, exportable; dashboard runs do not crowd it out (`history.rs`; test: `history.rs`).
-- [ ] 7.4.2 Save As via the native save dialog; OS drag-drop of .sql files; recent files.
-- [ ] 7.4.3 Monitoring: locks / transaction conflicts, long-running statements, kill one statement.
-- [ ] 7.4.4 About dialog with versions, "Open logs", "Copy diagnostics".
-- [ ] 7.4.5 Pane sizes remembered; tab controls keyboard-operable.
-- [ ] 7.4.6 Import wizard: column mapping, row preview, reject file; export a whole table.
+- [x] 7.4.1 History per connection, searchable, exportable; dashboard runs do not crowd it out (`lib/history-log.ts`; test: `history-log.test.ts`). Background panels (health, logs, DBA) no longer record.
+- [x] 7.4.2 Save As via the native save dialog; OS drag-drop of .sql files; recent files (`lib/recent-files.ts`; test: `recent-files.test.ts`).
+- [x] 7.4.3 Monitoring: locks / transaction conflicts, long-running statements, kill one statement (`DbaMonitor.tsx`, `dba-sql.ts`; test: `dba-sql.test.ts`).
+- [x] 7.4.4 About dialog with versions, "Open logs", "Copy diagnostics" (`about.rs`, `lib/diagnostics.ts`; tests in both).
+- [x] 7.4.5 Pane sizes remembered; tab controls keyboard-operable.
+- [x] 7.4.6 Import wizard: column mapping, row preview, reject file; export a whole table (`load_prep.rs`, `lib/load-mapping.ts`; tests in both). Rejects are rows with the wrong number of fields; type errors still fail the load at the server.

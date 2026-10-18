@@ -985,6 +985,9 @@ export const ipc = {
    *  to a file picked in the save dialog. Null when cancelled. */
   exapumpExport: (profileId: string, query: string, format: "csv" | "parquet") =>
     call<string | null>("exapump_export", { profileId, query, format }),
+  /** Rewrite a CSV into a table's column order; malformed rows go to a reject file. */
+  prepareCsvLoad: (path: string, delimiter: string | undefined, targets: string[], mapping: (number | null)[]) =>
+    call<{ path: string; rows: number; rejected: number; rejectPath: string | null }>("prepare_csv_load", { path, delimiter, targets, mapping }),
   /** Versions and the system, for the About dialog (no connection details). */
   aboutInfo: () => call<AboutInfo>("about_info"),
   /** Open the logs folder in the file manager. */
