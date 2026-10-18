@@ -7,6 +7,8 @@ import {
   EV_READY,
   EV_REQUEST,
   EV_TESTED,
+  EV_TRUSTED,
+  type TrustedCertificate,
   type ConnectRequest,
 } from "@/lib/connect-window";
 
@@ -64,6 +66,12 @@ export function ConnectRunWindow() {
         const { emit } = await import("@tauri-apps/api/event");
         await emit(EV_ESTABLISHED, { profile, server });
         await closeWindow();
+      }}
+      onTrusted={async (fingerprint) => {
+        // The form that opened this window adopts the pin.
+        const { emit } = await import("@tauri-apps/api/event");
+        const trusted: TrustedCertificate = { host: req.draft.host, port: req.draft.port, fingerprint };
+        await emit(EV_TRUSTED, trusted);
       }}
       onDone={async (status) => {
         // Report the test result back so the opener can show a ✓ on "Test".

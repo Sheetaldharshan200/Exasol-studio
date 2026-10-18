@@ -24,6 +24,9 @@ import {
   Shapes,
   Shield,
   Trash2,
+  Copy,
+  FileDown,
+  FileUp,
   Unplug,
   Waypoints,
   X,
@@ -77,6 +80,7 @@ function ConnectionSection({
   onRefresh,
   onDisconnect,
   onRemove,
+  onDuplicate,
   onOpenView,
   onNewVs,
   onUploadDriver,
@@ -100,6 +104,7 @@ function ConnectionSection({
   onRefresh: () => void;
   onDisconnect: () => void;
   onRemove: () => void;
+  onDuplicate?: () => void;
   onOpenView: (view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVs: () => void;
   onUploadDriver: () => void;
@@ -217,6 +222,11 @@ function ConnectionSection({
               <DropdownMenuItem onClick={() => onDisconnect()}>
                 <Unplug className="h-3.5 w-3.5" /> Disconnect
               </DropdownMenuItem>
+              {onDuplicate ? (
+                <DropdownMenuItem onClick={() => onDuplicate()}>
+                  <Copy className="h-3.5 w-3.5" /> Duplicate connection
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onClick={() => onRemove()} className="text-destructive focus:text-destructive">
                 <Trash2 className="h-3.5 w-3.5" /> Remove connection
               </DropdownMenuItem>
@@ -345,6 +355,9 @@ export function Sidebar({
   onFocusConnection,
   onDisconnect,
   onRemoveConnection,
+  onDuplicateConnection,
+  onImportConnections,
+  onExportConnections,
   onRefreshConnection,
   onOpenView,
   onNewVirtualSchema,
@@ -382,6 +395,11 @@ export function Sidebar({
   onFocusConnection: (profileId: string) => void;
   onDisconnect: (profileId: string) => void;
   onRemoveConnection: (profileId: string) => void;
+  /** Copy a connection (secret and settings) under a new name. */
+  onDuplicateConnection?: (profileId: string) => void;
+  /** Connections file (JSON, no passwords). */
+  onImportConnections?: () => void;
+  onExportConnections?: () => void;
   onRefreshConnection: (profileId: string) => void;
   onOpenView: (profileId: string, view: "dbInfo" | "dataTypes" | "dba" | "connInfo" | "connProps" | "logs" | "bucketfs" | "backups" | "health") => void;
   onNewVirtualSchema: (profileId: string) => void;
@@ -594,6 +612,16 @@ export function Sidebar({
               connect
             </span>
           </button>
+          {onDuplicateConnection ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDuplicateConnection(p.id); }}
+              title={`Duplicate ${p.name}`}
+              aria-label={`Duplicate ${p.name}`}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-secondary hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
           <button
             onClick={(e) => { e.stopPropagation(); onRemoveConnection(p.id); }}
             title={`Remove ${p.name}`}
@@ -682,6 +710,31 @@ export function Sidebar({
           <IconButton label="Add connection" data-agent-id="sidebar.add-connection" onClick={onConnect}>
             <Plus className="h-3.5 w-3.5" />
           </IconButton>
+          {onImportConnections || onExportConnections ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  aria-label="More connection actions"
+                  title="Import or export connections"
+                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {onImportConnections ? (
+                  <DropdownMenuItem onClick={onImportConnections}>
+                    <FileUp className="h-3.5 w-3.5" /> Import connections…
+                  </DropdownMenuItem>
+                ) : null}
+                {onExportConnections ? (
+                  <DropdownMenuItem onClick={onExportConnections}>
+                    <FileDown className="h-3.5 w-3.5" /> Export connections…
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
           {hasConnections ? (
             <IconButton label="Search objects" active={showSearch} onClick={() => setShowSearch((s) => !s)}>
               <Search className="h-3.5 w-3.5" />
@@ -761,6 +814,7 @@ export function Sidebar({
               onRefresh={() => onRefreshConnection(conn.profile.id)}
               onDisconnect={() => onDisconnect(conn.profile.id)}
               onRemove={() => onRemoveConnection(conn.profile.id)}
+              onDuplicate={onDuplicateConnection ? () => onDuplicateConnection(conn.profile.id) : undefined}
               onOpenView={(view) => onOpenView(conn.profile.id, view)}
               onNewVs={() => onNewVirtualSchema(conn.profile.id)}
               onUploadDriver={() => onUploadDriver(conn.profile.id)}

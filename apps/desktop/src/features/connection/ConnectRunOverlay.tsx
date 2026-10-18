@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { displayFingerprint, trustOffer, type TrustOffer } from "@/lib/connect-flow";
 import {
   errorMessage,
   ipc,
@@ -39,6 +40,7 @@ export function ConnectRunOverlay({
   onSaved,
   onConnected,
   onDone,
+  onTrusted,
 }: {
   open: boolean;
   mode: "test" | "connect";
@@ -48,6 +50,8 @@ export function ConnectRunOverlay({
   onSaved: () => void | Promise<void>;
   onConnected: (profile: ConnectionProfile, server: ServerInfo) => void | Promise<void>;
   onDone?: (status: "ok" | "fail") => void;
+  /** The person trusted the server's certificate (it is now pinned). */
+  onTrusted?: (fingerprint: string) => void;
 }) {
   const [steps, setSteps] = useState<Record<"reach" | "auth" | "db", StepState>>({
     reach: "idle",
@@ -56,12 +60,17 @@ export function ConnectRunOverlay({
   });
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [done, setDone] = useState<null | "ok" | "fail">(null);
+  // A certificate to decide about, and the draft a retry would use.
+  const [offer, setOffer] = useState<TrustOffer | null>(null);
+  // Connect failed: the draft can still be saved, without connecting.
+  const [unsaved, setUnsaved] = useState<Draft | null>(null);
+  const rerun = useRef<(d: Draft) => void>(() => undefined);
   const [pos, setPos] = useState({ x: 0, y: 0 });
 
   // Keep the latest props in a ref so the run effect can fire exactly once
   // per open (no re-runs from changing object identities → no flicker/dupes).
-  const latest = useRef({ draft, mode, onSaved, onConnected, onDone });
-  latest.current = { draft, mode, onSaved, onConnected, onDone };
+  const latest = useRef({ draft, mode, onSaved, onConnected, onDone, onTrusted });
+  latest.current = { draft, mode, onSaved, onConnected, onDone, onTrusted };
   const startedRef = useRef(false);
   const dragOrigin = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
 
@@ -92,12 +101,9 @@ export function ConnectRunOverlay({
     if (startedRef.current) return;
     startedRef.current = true;
 
-    const { draft: d, mode: m, onSaved: saved, onConnected: connected } = latest.current;
+    const { mode: m, onSaved: saved, onConnected: connected } = latest.current;
     let cancelled = false;
-
-    setSteps({ reach: "idle", auth: "idle", db: "idle" });
     setLogs([]);
-    setDone(null);
     setPos({ x: 0, y: 0 });
 
     const finish = (status: "ok" | "fail") => {
@@ -109,7 +115,11 @@ export function ConnectRunOverlay({
     const setStep = (key: "reach" | "auth" | "db", state: StepState) =>
       setSteps((s) => ({ ...s, [key]: state }));
 
-    (async () => {
+    const run = async (d: Draft) => {
+      setSteps({ reach: "idle", auth: "idle", db: "idle" });
+      setDone(null);
+      setOffer(null);
+      setUnsaved(null);
       setStep("reach", "running");
       append("info", `Pinging ${d.host}:${d.port} …`);
       try {
@@ -132,13 +142,14 @@ export function ConnectRunOverlay({
       }
 
       setStep("auth", "running");
-      append("info", `Authenticating as ${d.username} (encryption: ${d.sslMode}) …`);
+      const who = d.authMethod && d.authMethod !== "password" ? "with a token" : `as ${d.username}`;
+      append("info", `Signing in ${who} (${d.fingerprint ? "pinned certificate" : `encryption: ${d.sslMode}`}) …`);
       try {
         let server: ServerInfo;
         let profile: ConnectionProfile | null = null;
-        if (m === "test") {
-          server = await ipc.testConnection(d);
-        } else {
+        // Connect saves only what has connected: the draft is tried first.
+        server = await ipc.testConnection(d);
+        if (m === "connect") {
           profile = await ipc.saveConnectionProfile(d);
           await saved();
           append("info", "Connection saved. Opening session …");
@@ -147,6 +158,7 @@ export function ConnectRunOverlay({
         if (cancelled) return;
         setStep("auth", "ok");
         append("success", "Authenticated.");
+        for (const h of server.hookErrors ?? []) append("error", `Connection hook failed: ${h}`);
         setStep("db", "ok");
         append(
           "success",
@@ -163,9 +175,14 @@ export function ConnectRunOverlay({
         if (cancelled) return;
         setSteps((s) => ({ ...s, auth: s.auth === "running" ? "fail" : s.auth, db: "idle" }));
         append("error", errorMessage(err));
+        const o = trustOffer(err);
+        if (o) setOffer(o);
+        else if (m === "connect") setUnsaved(d);
         finish("fail");
       }
-    })();
+    };
+    rerun.current = (d: Draft) => void run(d);
+    void run(latest.current.draft);
 
     return () => {
       cancelled = true;
@@ -317,8 +334,56 @@ export function ConnectRunOverlay({
         </div>
       </div>
 
-      {done ? (
+      {offer ? (
+        <div className="shrink-0 space-y-2 border-t border-border px-4 py-3">
+          <p className="text-[12.5px] text-foreground">
+            {offer.changedFrom
+              ? "This server now presents a different certificate than the one you trusted. Trust the new one only if its administrator confirms the fingerprint."
+              : "The server's certificate is not signed by an authority this machine trusts — common for Exasol's own self-signed certificate. Compare its fingerprint with the one your administrator gives you."}
+          </p>
+          <p className="font-mono text-[11.5px] break-all text-muted-foreground">SHA-256 {displayFingerprint(offer.fingerprint)}</p>
+          {offer.changedFrom ? (
+            <p className="font-mono text-[11.5px] break-all text-muted-foreground/70 line-through">was {displayFingerprint(offer.changedFrom)}</p>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={onClose}
+              className="flex h-8 items-center rounded-lg border border-border px-3 text-[13px] text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                const fp = offer.fingerprint;
+                latest.current.onTrusted?.(fp);
+                rerun.current({ ...latest.current.draft, fingerprint: fp });
+              }}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/85"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" /> {offer.changedFrom ? "Trust the new certificate" : "Trust this certificate"}
+            </button>
+          </div>
+        </div>
+      ) : done ? (
         <div className="flex h-12 shrink-0 items-center justify-end gap-2 border-t border-border px-4">
+          {unsaved ? (
+            <button
+              onClick={async () => {
+                const d = unsaved;
+                setUnsaved(null);
+                try {
+                  await ipc.saveConnectionProfile(d);
+                  await latest.current.onSaved();
+                  setLogs((l) => [...l, { id: ++logId, ts: clock(), level: "info", text: "Saved without connecting." }]);
+                } catch (e) {
+                  setLogs((l) => [...l, { id: ++logId, ts: clock(), level: "error", text: errorMessage(e) }]);
+                }
+              }}
+              className="mr-auto flex h-8 items-center rounded-lg border border-border px-3 text-[13px] text-muted-foreground hover:text-foreground"
+            >
+              Save without connecting
+            </button>
+          ) : null}
           <button
             onClick={onClose}
             className="flex h-8 items-center rounded-lg border border-border px-3 text-[13px] text-muted-foreground hover:text-foreground"

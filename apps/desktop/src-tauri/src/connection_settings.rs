@@ -31,13 +31,18 @@ pub fn connection_settings_set(
     profile_id: String,
     settings: Value,
 ) -> AppResult<Value> {
+    write_settings(&state, &profile_id, settings.clone())?;
+    Ok(settings)
+}
+
+/// Store one connection's settings (read-modify-write under a lock).
+pub fn write_settings(state: &AppState, profile_id: &str, settings: Value) -> AppResult<()> {
     use std::sync::Mutex;
     static LOCK: Mutex<()> = Mutex::new(());
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut all: HashMap<String, Value> = read_json(&settings_path(&state), HashMap::new())?;
-    all.insert(profile_id, settings.clone());
-    write_json(&settings_path(&state), &all)?;
-    Ok(settings)
+    let mut all: HashMap<String, Value> = read_json(&settings_path(state), HashMap::new())?;
+    all.insert(profile_id.to_string(), settings);
+    write_json(&settings_path(state), &all)
 }
 
 /// Convenience getters for the keys the backend wires.

@@ -17,6 +17,7 @@ import { LocalSetupFloating } from "@/features/marketplace/LocalSetupFloating";
 import { ipc, isTauri, type ConnectionProfile, type PersonalLocalStatus, type ServerInfo } from "@/lib/ipc";
 import { agent as agentClient } from "@/lib/agent-client";
 import { VaultSetup, VaultUnlock } from "@/features/security/VaultScreens";
+import { ConnectPasswordDialog } from "@/features/connection/ConnectPasswordDialog";
 
 const ONBOARDED_KEY = "exasol-studio-onboarded";
 const SETUP_KEY = "exasol-studio-setup-done";
@@ -39,6 +40,7 @@ export function App() {
   return (
     <>
       <MainApp />
+      <ConnectPasswordDialog />
       {/* Web-only settings modal; inert in Tauri (native window is used). */}
       <SettingsModalHost />
     </>

@@ -729,6 +729,12 @@ export async function mockInvoke(
       return [];
     case "connection_alive":
       return true;
+    case "profile_secret_missing":
+      return false;
+    case "server_certificate":
+      return "AB".repeat(32);
+    case "pick_ca_file":
+      return null;
     case "session_close":
     case "quit_ack":
       return null;

@@ -42,6 +42,21 @@ pub struct ConnectionProfile {
     pub created_at: Option<String>,
     #[serde(default)]
     pub last_used_at: Option<String>,
+    /// Pinned TLS certificate (SHA-256, 64 upper-case hex). When set, the
+    /// server must present exactly this certificate (tls_trust.rs).
+    #[serde(default)]
+    pub fingerprint: Option<String>,
+    /// A CA certificate file to verify the server against (verify modes).
+    #[serde(default)]
+    pub ssl_ca: Option<String>,
+    /// password | access_token | refresh_token. For a token the secret sits
+    /// where the password does (keychain / vault), and no user is sent.
+    #[serde(default = "default_auth_method")]
+    pub auth_method: String,
+}
+
+fn default_auth_method() -> String {
+    "password".to_string()
 }
 
 fn default_port() -> u16 {
@@ -91,6 +106,32 @@ pub fn find_profile(state: &AppState, profile_id: &str) -> AppResult<ConnectionP
         plain
     };
     Ok(profile)
+}
+
+/// Copy a connection — its secret and its Properties settings — under a free
+/// name. The copy is a connection of its own from then on.
+#[tauri::command]
+pub fn duplicate_profile(state: State<'_, AppState>, profile_id: String) -> AppResult<ConnectionProfile> {
+    let src = find_profile(&state, &profile_id)?;
+    let taken: Vec<String> = load_profiles(&state)?.into_iter().map(|p| p.name).collect();
+    let mut copy = src.clone();
+    copy.id = String::new();
+    copy.name = crate::profile_check::copy_name(&src.name, &taken);
+    copy.created_at = None;
+    copy.last_used_at = None;
+    let saved = save_profile(&state, copy)?;
+    let settings = crate::connection_settings::read_settings(&state, &profile_id);
+    if !settings.is_null() {
+        crate::connection_settings::write_settings(&state, &saved.id, settings)?;
+    }
+    Ok(saved)
+}
+
+/// Whether connecting needs the secret asked for: none is stored, and none
+/// is kept for this session.
+#[tauri::command]
+pub fn profile_secret_missing(state: State<'_, AppState>, profile_id: String) -> AppResult<bool> {
+    Ok(find_profile(&state, &profile_id)?.password.is_empty())
 }
 
 /// Keep a password for this run only, and remove any stored copy — file and
@@ -272,12 +313,7 @@ pub fn save_profile(
     state: &AppState,
     mut profile: ConnectionProfile,
 ) -> AppResult<ConnectionProfile> {
-    if profile.host.trim().is_empty() {
-        return Err(AppError::InvalidSettings("host is required".into()));
-    }
-    if profile.username.trim().is_empty() {
-        return Err(AppError::InvalidSettings("username is required".into()));
-    }
+    crate::profile_check::validate_profile(&mut profile)?;
     if profile.name.trim().is_empty() {
         profile.name = format!("{}@{}", profile.username, profile.host);
     }
@@ -290,12 +326,7 @@ pub fn save_profile(
     let existing_index = if !profile.id.is_empty() {
         profiles.iter().position(|p| p.id == profile.id)
     } else {
-        profiles.iter().position(|p| {
-            p.host.trim().eq_ignore_ascii_case(profile.host.trim())
-                && p.port == profile.port
-                && p.username == profile.username
-                && p.driver_id == profile.driver_id
-        })
+        profiles.iter().position(|p| crate::profile_check::same_connection(p, &profile))
     };
 
     // Encrypt the password at rest (no-op when no vault is configured). If the
@@ -317,6 +348,11 @@ pub fn save_profile(
                 let _ = crate::shared_registry::remove(&old);
             }
             if profile.password.is_empty() {
+                if !crate::profile_check::may_reuse_secret(&profiles[idx], &profile) {
+                    return Err(AppError::InvalidSettings(
+                        "Enter the password or token again: the server, user or sign-in method changed, and the saved one is not sent anywhere else.".into(),
+                    ));
+                }
                 profile.password = profiles[idx].password.clone();
             } else {
                 profile.password = crate::profile_secret::to_store(key.as_ref(), &profile.id, &profile.password, crate::shared_registry::write_credential);
@@ -341,7 +377,9 @@ pub fn save_profile(
     // Publish outward so the `exa` CLI sees this database too. Best effort:
     // a shared-registry problem must never fail saving a connection here.
     // Internal AI identities never publish — not even transiently on create.
-    if is_mcp_identity(&profile.username) {
+    // The shared exa registry knows user + password only: a token sign-in is
+    // not published there (it would be read back as a password).
+    if is_mcp_identity(&profile.username) || profile.auth_method != "password" {
         profile.password = String::new();
         return Ok(profile);
     }
@@ -395,6 +433,11 @@ pub fn publish_local_profiles(state: &AppState) -> AppResult<usize> {
             if known {
                 let _ = crate::shared_registry::remove(&id);
             }
+            continue;
+        }
+        // A token sign-in is not a password: not published (an entry with
+        // the same address may belong to another, password, connection).
+        if profile.auth_method != "password" {
             continue;
         }
         let credential_present = crate::shared_registry::read_credential(&id).is_some();
@@ -458,6 +501,9 @@ pub fn import_shared_connections(state: &AppState) -> AppResult<usize> {
             driver_id: default_driver(),
             created_at: entry.created_at.clone(),
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
         };
         if save_profile(state, profile).is_ok() {
             imported += 1;
@@ -519,6 +565,9 @@ pub fn ensure_local_profile(
             driver_id: default_driver(),
             created_at: None,
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
         },
     )
 }
@@ -528,10 +577,8 @@ pub async fn delete_connection_profile(
     state: State<'_, AppState>,
     profile_id: String,
 ) -> AppResult<()> {
-    // Close the pool if this profile is currently connected.
-    if let Some(pool) = state.pools.write().await.remove(&profile_id) {
-        pool.close().await;
-    }
+    // End the connection if it is open — sessions, pool and tunnel alike.
+    let _ = crate::connection::close_connection(&state, &profile_id).await;
     let mut profiles = load_profiles(&state)?;
     // Unpublish from the shared registry too — every list re-imports registry
     // entries that are "missing locally", so a delete that only touched

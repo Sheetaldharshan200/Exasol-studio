@@ -191,6 +191,9 @@ mod live {
             driver_id: "sqlx-exasol".into(),
             created_at: None,
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
         };
         let pool = crate::connection::open_pool(&profile).await.unwrap();
         let q = |s: &str| s.to_string();

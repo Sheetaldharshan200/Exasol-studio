@@ -6,6 +6,7 @@
 import type { ResultKind } from "./result-stats.ts";
 import { invoke } from "@tauri-apps/api/core";
 import { mockInvoke } from "@/lib/ipc-mock";
+import { hookNotice } from "./connect-flow";
 
 export type DriverInfo = {
   id: string;
@@ -32,6 +33,12 @@ export type ConnectionProfile = {
   driverId: string;
   createdAt?: string | null;
   lastUsedAt?: string | null;
+  /** Pinned TLS certificate: SHA-256, 64 upper-case hex digits. */
+  fingerprint?: string | null;
+  /** A CA certificate file to verify the server against. */
+  sslCa?: string | null;
+  /** password | access_token | refresh_token; a token sits in `password`. */
+  authMethod?: string;
 };
 
 export type PingResult = {
@@ -47,6 +54,8 @@ export type ServerInfo = {
   currentSchema: string | null;
   sessionId: string;
   nodes: number | null;
+  /** Connect hook statements that failed; the connection still works. */
+  hookErrors?: string[];
 };
 
 export type SchemaSummary = {
@@ -622,6 +631,23 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   return mockInvoke(command, args) as Promise<T>;
 }
 
+export type SecretAnswer = { secret: string; remember: boolean };
+type SecretPrompt = (req: { profileId: string }) => Promise<SecretAnswer | null>;
+let secretPrompt: SecretPrompt | null = null;
+/** The dialog that asks for a missing password or token (ConnectPasswordDialog). */
+export function setSecretPrompt(fn: SecretPrompt | null) {
+  secretPrompt = fn;
+}
+
+/** Failed connection hooks are told to the person wherever a connect or
+ *  disconnect started (the shell shows `studio:notice`). */
+function reportHooks(errors: string[] | undefined, phase: "connect" | "disconnect") {
+  const n = hookNotice(errors, phase);
+  if (n && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("studio:notice", { detail: { kind: "warning", ...n } }));
+  }
+}
+
 export function errorMessage(err: unknown): string {
   if (typeof err === "string") return err;
   if (err && typeof err === "object" && "message" in err) {
@@ -635,16 +661,42 @@ export const ipc = {
   listConnectionProfiles: () => call<ConnectionProfile[]>("list_connection_profiles"),
   saveConnectionProfile: (profile: Omit<ConnectionProfile, "id"> & { id?: string }) =>
     call<ConnectionProfile>("save_connection_profile", { profile: { id: "", ...profile } }),
+  /** Copy a connection with its secret and settings under a free name. */
+  duplicateConnectionProfile: (profileId: string) => call<ConnectionProfile>("duplicate_profile", { profileId }),
+  /** Save every connection to a JSON file (no passwords); its path, or null when cancelled. */
+  exportConnections: () => call<string | null>("export_connections"),
+  /** Import a connections file; null when cancelled. */
+  importConnections: () => call<{ added: string[]; skipped: string[]; failed: string[] } | null>("import_connections"),
   deleteConnectionProfile: (profileId: string) =>
     call<void>("delete_connection_profile", { profileId }),
+  /** The SHA-256 fingerprint of the certificate the server presents now. */
+  serverCertificate: (host: string, port: number) => call<string>("server_certificate", { host, port }),
+  /** Choose a CA certificate file; its full path, or null when cancelled. */
+  pickCaFile: () => call<string | null>("pick_ca_file"),
   /** Whether a connected profile still runs a query (not just an open port). */
   connectionAlive: (profileId: string) => call<boolean>("connection_alive", { profileId }),
   pingServer: (host: string, port: number) =>
     call<PingResult>("ping_server", { host, port }),
   testConnection: (profile: Omit<ConnectionProfile, "id"> & { id?: string }) =>
     call<ServerInfo>("test_connection", { profile: { id: "", ...profile } }),
-  connect: (profileId: string) => call<ServerInfo>("connect", { profileId }),
-  disconnect: (profileId: string) => call<void>("disconnect", { profileId }),
+  connect: async (profileId: string) => {
+    // No secret stored (session-only, cleared, lost): ask first.
+    if (secretPrompt && (await call<boolean>("profile_secret_missing", { profileId }).catch(() => false))) {
+      const answer = await secretPrompt({ profileId });
+      if (!answer) throw { kind: "invalid-settings", message: "Sign-in cancelled." };
+      if (answer.remember) {
+        const p = (await call<ConnectionProfile[]>("list_connection_profiles")).find((x) => x.id === profileId);
+        if (p) await call("save_connection_profile", { profile: { ...p, password: answer.secret } });
+      } else {
+        await call("set_session_password", { profileId, password: answer.secret });
+      }
+    }
+    const info = await call<ServerInfo>("connect", { profileId });
+    reportHooks(info.hookErrors, "connect");
+    return info;
+  },
+  disconnect: (profileId: string) =>
+    call<string[] | null>("disconnect", { profileId }).then((errors) => reportHooks(errors ?? undefined, "disconnect")),
   listOpenConnections: () => call<string[]>("list_open_connections"),
   getDatabaseOverview: (profileId: string) =>
     call<DatabaseOverview>("get_database_overview", { profileId }),

@@ -282,3 +282,13 @@ Gotchas worth keeping:
 - **Error markers**: Exasol reports `[line L, column C]` relative to the statement as sent. The failed statement is located by its index in the run (identical statements are common in scripts); with comments stripped only the whole statement is marked.
 - **Go bridge** was compiled only by the release workflow; CI now vets and builds it on every PR.
 - Two Codex passes (7 + 3 findings), all fixed.
+
+## [2026-10-02] security | workbench-hardening phase 4 — certificate pinning that actually pins
+Three designs, two rejected by review — worth knowing before touching TLS here:
+- **Check, then connect** (read the server certificate, compare the pin, then let the driver connect with `required`) is not pinning: a man in the middle relays the check to the real server and takes the login on the second connection.
+- **Pinned certificate as `ssl-ca` in verify_identity** is not exclusive: sqlx-core's rustls setup ADDS the CA file to its built-in webpki roots, and every sqlx-exasol TLS feature pulls a root store (the no-roots `_tls-rustls` alone does not compile — the crypto provider is chosen by the root features). A publicly trusted certificate for the host name would pass. Also sqlx's `verify_ca` checks the chain but not the name, against those public roots too — labelled "weak" in the UI.
+- **What ships:** a pinned connection's driver talks plaintext to a loopback port (`pin_tunnel.rs`); each relay opens Studio's own TLS with `tls_trust::PinVerifier` (leaf SHA-256 must equal the pin, handshake signatures verified), so nothing leaves the machine unpinned. Tunnel registered with its pool under one lock; dropping it ends every relay (JoinSet); host ranges fail over node by node.
+- Other paths: agent-core checks `fingerprint256` on the ws `upgrade` event, before the driver sends the login; Panorama checks the peer leaf after its handshake; exapump has `--certificate-fingerprint`. Bridge drivers and exarrow refuse pinned / CA-file / token profiles rather than connect less safely.
+- "preferred" falls back to plaintext when TLS fails (a downgrade an attacker can force); it and "disabled" connect as "required".
+- Exasol's self-signed certificates name the node's host names and IPs (SAN), e.g. Personal: localhost, 127.0.0.1, ::1.
+- Four Codex passes (10 + 2 + 5 + earlier); all fixed.

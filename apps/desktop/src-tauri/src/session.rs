@@ -494,6 +494,9 @@ mod live {
             driver_id: "sqlx-exasol".into(),
             created_at: None,
             last_used_at: None,
+            fingerprint: None,
+            ssl_ca: None,
+            auth_method: "password".into(),
         };
         let pool = crate::connection::open_pool(&profile).await.unwrap();
         pool.execute("CREATE SCHEMA IF NOT EXISTS STUDIO_SESSION_PROBE").await.ok();
