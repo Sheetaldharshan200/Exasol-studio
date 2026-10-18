@@ -218,6 +218,13 @@ impl TabSessions {
         }
     }
 
+    /// The connection a tab's session belongs to, if it has one.
+    pub async fn profile_of(&self, tab_id: &str) -> Option<String> {
+        let slot = self.0.lock().await.get(tab_id).cloned()?;
+        let guard = slot.lock().await;
+        guard.as_ref().map(|s| s.profile_id.clone())
+    }
+
     /// The tab's session state without opening one.
     pub async fn peek(&self, tab_id: &str) -> SessionInfo {
         let slot = self.0.lock().await.get(tab_id).cloned();

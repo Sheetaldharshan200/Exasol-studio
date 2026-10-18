@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { agent } from "@/lib/agent-client";
 import { ipc, isTauri } from "@/lib/ipc";
 import type { ActiveConnection } from "@/state/useConnections";
+import { EnvBadge } from "./EnvBadge";
+import type { Environment } from "@/lib/conn-settings";
 
 /**
  * The docs ship inside the exa engine the app already runs — serving them
@@ -30,8 +32,11 @@ export function TitleBar({
   onConnect,
   onDisconnect,
   hideConnect,
+  env,
 }: {
   connection: ActiveConnection | null;
+  /** The connection's environment tag. */
+  env?: Environment;
   onConnect: () => void;
   onDisconnect: () => void;
   /** Hide the Connect CTA while the connect view is already on screen. */
@@ -61,6 +66,7 @@ export function TitleBar({
           <span className={cn("font-medium", connected && "text-foreground")}>
             {connected ? connection!.profile.name : "Not connected"}
           </span>
+          {connected ? <EnvBadge env={env} /> : null}
         </div>
       </div>
 

@@ -52,6 +52,9 @@ pub async fn apply_row_edits(
     if statements.is_empty() {
         return Ok(EditOutcome { ok: true, failed_index: None, error: None });
     }
+    if crate::safety::read_only(&state, &profile_id) {
+        return Err(crate::error::AppError::InvalidSettings(format!("\"{connection_name}\" is read-only: its data cannot be edited.")));
+    }
     let started = std::time::Instant::now();
     // A tab in manual-commit mode: the edits join ITS open transaction and
     // show as uncommitted, instead of committing on their own.

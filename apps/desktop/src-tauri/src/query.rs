@@ -527,6 +527,13 @@ pub async fn execute_sql(
             vec![trimmed]
         }
     };
+    // A read-only connection runs only statements that change nothing — on
+    // every path that runs SQL here, before anything reaches the server.
+    if crate::safety::read_only(&state, &profile_id) {
+        if let Some(why) = crate::safety::read_only_refusal(&statements, &connection_name) {
+            return Err(crate::error::AppError::InvalidSettings(why));
+        }
+    }
 
     let started = std::time::Instant::now();
 

@@ -68,12 +68,8 @@ export function LoadDataDialog({
     }
     try {
       await ipc.exapumpUpload({
-        host: profile.host,
-        port: profile.port,
-        user: profile.username,
-        password: profile.password,
+        profileId: profile.id,
         schema: schema || undefined,
-        tls: profile.sslMode !== "disabled",
         file: filePath,
         table: fullTable,
         delimiter: isCsv ? delimiter : undefined,

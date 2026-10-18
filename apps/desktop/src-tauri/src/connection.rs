@@ -427,7 +427,10 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
             Vec::new()
         };
 
-    let (pool, info, tunnel) = open_checked(&profile, pool_size, connect_hooks, connect_timeout(&state)).await?;
+    let read_only = crate::safety::read_only(&state, &profile_id);
+    let (connect_hooks, skipped_hooks) = crate::safety::hooks_allowed(connect_hooks, read_only);
+    let (pool, mut info, tunnel) = open_checked(&profile, pool_size, connect_hooks, connect_timeout(&state)).await?;
+    info.hook_errors.extend(skipped_hooks);
 
     // Connection Keep-Alive: validate on an interval while the pool lives.
     // The task holds only a pool clone; pool.close() (disconnect) ends it.
@@ -435,8 +438,9 @@ pub async fn connect(state: State<'_, AppState>, profile_id: String) -> AppResul
         let idle = crate::connection_settings::num_at(&settings, &["physical", "idleSeconds"])
             .unwrap_or(120)
             .max(10);
+        // A read-only connection keeps alive with a read.
         let validation = crate::connection_settings::str_at(&settings, &["physical", "validationSql"])
-            .filter(|s| !s.trim().is_empty())
+            .filter(|s| !s.trim().is_empty() && !(read_only && crate::safety::is_write(s)))
             .unwrap_or("SELECT 1")
             .to_string();
         let ka_pool = pool.clone();
@@ -506,7 +510,10 @@ pub(crate) async fn close_connection(state: &AppState, profile_id: &str) -> Vec<
         // Run SQL at Disconnect (Connection Hooks) while the pool still lives.
         if crate::connection_settings::bool_at(&settings, &["hooks", "disconnectEnabled"]).unwrap_or(false) {
             if let Some(sql) = crate::connection_settings::str_at(&settings, &["hooks", "disconnectSql"]) {
-                hook_errors = run_hook_sql(&pool, sql).await;
+                let stmts = sql.split(';').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
+                let (run, skipped) = crate::safety::hooks_allowed(stmts, crate::safety::read_only(state, profile_id));
+                hook_errors = run_hook_sql(&pool, &run.join(";")).await;
+                hook_errors.extend(skipped);
             }
         }
         pool.close().await;
